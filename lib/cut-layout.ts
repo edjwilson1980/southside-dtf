@@ -8,10 +8,11 @@ export const SHORT_SHEET_IN = 12
 /** Teneth CCD cameras lock onto filled 5 mm circles, not squares or L marks. */
 export const MARK_SIZE_IN = 5 / 25.4
 export const MARK_PAD_IN = 2 / 25.4
-export const MARK_INSET_IN = 10 / 25.4
+/** Keep the circles on the film edge, matching the working cutter sheet. */
+export const MARK_INSET_IN = 2 / 25.4
 export const MARK_CLEARANCE_IN = MARK_INSET_IN + MARK_PAD_IN * 2 + MARK_SIZE_IN + CUT_MARGIN_IN
-/** Extra film after the last mark so the CCD can read it before the media ends. */
-export const MARK_TRAIL_IN = 1
+/** Extra film after the last mark so the CCD can stop instead of running off the media. */
+export const MARK_TRAIL_IN = 2
 const PLT_UNITS_PER_IN = 1016
 const MARK_ROW_GAP_IN = MARK_SIZE_IN + MARK_PAD_IN * 2
 
@@ -95,6 +96,22 @@ function contentSpanInSection(
   }
 }
 
+function designRowsInSection(
+  pieces: PlacedSheetPiece[] | undefined,
+  sectionStart: number,
+  sectionHeightIn: number,
+) {
+  const sectionEnd = sectionStart + sectionHeightIn
+  const rows: Array<{ yIn: number; bottom: number }> = []
+  for (const piece of [...(pieces ?? [])].sort((a, b) => a.yIn - b.yIn)) {
+    if (piece.yIn >= sectionEnd - 1e-6 || piece.yIn + piece.heightIn <= sectionStart + 1e-6) continue
+    const row = rows.find((item) => Math.abs(item.yIn - piece.yIn) < 1e-6)
+    if (row) row.bottom = Math.max(row.bottom, piece.yIn + piece.heightIn)
+    else rows.push({ yIn: piece.yIn, bottom: piece.yIn + piece.heightIn })
+  }
+  return rows
+}
+
 function sectionMarkYs(
   sectionStart: number,
   sectionHeightIn: number,
@@ -108,6 +125,11 @@ function sectionMarkYs(
     return [sectionStart + Math.max(0, (sectionHeightIn - MARK_SIZE_IN) / 2)]
   }
   const sets = span.bottom - span.top < SHORT_SHEET_IN ? 2 : 3
+  const rows = designRowsInSection(pieces, sectionStart, sectionHeightIn)
+  if (rows.length === 2 && sets === 3) {
+    const gapMid = (rows[0].bottom + rows[1].yIn) / 2 - MARK_SIZE_IN / 2
+    return [first, gapMid, last]
+  }
   const ys = evenMarkYs(first, last, sets)
   if (ys.length === 3 && (ys[1] - ys[0] < MARK_ROW_GAP_IN || ys[2] - ys[1] < MARK_ROW_GAP_IN)) {
     return [first, last]

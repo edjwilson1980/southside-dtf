@@ -20,6 +20,8 @@ export const LABEL_MARGIN_IN = 0.75
 const LABEL_HEIGHT_IN = LABEL_PT / 72
 const LABEL_PAD_IN = 0.125
 export const ART_INSET_IN = LABEL_PAD_IN + LABEL_HEIGHT_IN + PRINT_MARGIN_IN
+/** Pre-cut sheets skip the extra 1.5 in print margin so the first crop marks sit near the leading edge. */
+export const CUT_ART_START_IN = LABEL_PAD_IN + LABEL_HEIGHT_IN + LABEL_MARGIN_IN
 
 export function pieceHeightInches(piece: {
   placement: string;
@@ -44,12 +46,12 @@ export function pieceHeightInches(piece: {
 
 export function layoutSheetRows(
   rows: SheetPiece[][],
-  opts?: { sectionLengthIn?: number; boxMarginIn?: number; sideInsetIn?: number },
+  opts?: { sectionLengthIn?: number; boxMarginIn?: number; sideInsetIn?: number; startYIn?: number },
 ) {
   const sectionLengthIn = opts?.sectionLengthIn
   const boxMarginIn = opts?.boxMarginIn ?? 0
   const sideInsetIn = opts?.sideInsetIn ?? 0
-  let yIn = ART_INSET_IN
+  let yIn = opts?.startYIn ?? ART_INSET_IN
   const pieces: PlacedSheetPiece[] = []
 
   for (const row of rows) {
