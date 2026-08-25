@@ -10,6 +10,8 @@ export const MARK_SIZE_IN = 5 / 25.4
 export const MARK_PAD_IN = 2 / 25.4
 export const MARK_INSET_IN = 10 / 25.4
 export const MARK_CLEARANCE_IN = MARK_INSET_IN + MARK_PAD_IN * 2 + MARK_SIZE_IN + CUT_MARGIN_IN
+/** Extra film after the last mark so the CCD can read it before the media ends. */
+export const MARK_TRAIL_IN = 1
 const PLT_UNITS_PER_IN = 1016
 const MARK_ROW_GAP_IN = MARK_SIZE_IN + MARK_PAD_IN * 2
 
@@ -66,22 +68,57 @@ function markStack(xIn: number, yIn: number): PrintMark[] {
   ]
 }
 
-function sectionMarkYs(sectionStart: number, sectionHeightIn: number) {
+function evenMarkYs(firstY: number, lastY: number, setCount: number) {
+  if (setCount <= 1) return [firstY]
+  const step = (lastY - firstY) / (setCount - 1)
+  return Array.from({ length: setCount }, (_, index) => firstY + index * step)
+}
+
+function contentSpanInSection(
+  pieces: PlacedSheetPiece[] | undefined,
+  sectionStart: number,
+  sectionHeightIn: number,
+) {
+  const sectionEnd = sectionStart + sectionHeightIn
+  const hits = (pieces ?? []).filter(
+    (piece) => piece.yIn < sectionEnd - 1e-6 && piece.yIn + piece.heightIn > sectionStart + 1e-6,
+  )
+  if (hits.length === 0) {
+    return {
+      top: sectionStart + MARK_INSET_IN + MARK_PAD_IN,
+      bottom: sectionStart + Math.max(MARK_SIZE_IN, sectionHeightIn - MARK_TRAIL_IN),
+    }
+  }
+  return {
+    top: Math.max(sectionStart, Math.min(...hits.map((piece) => piece.yIn))),
+    bottom: Math.min(sectionEnd, Math.max(...hits.map((piece) => piece.yIn + piece.heightIn))),
+  }
+}
+
+function sectionMarkYs(
+  sectionStart: number,
+  sectionHeightIn: number,
+  pieces?: PlacedSheetPiece[],
+) {
   if (sectionHeightIn <= 0) return []
-  const top = sectionStart + MARK_INSET_IN + MARK_PAD_IN
-  const bottom = sectionStart + sectionHeightIn - MARK_INSET_IN - MARK_PAD_IN - MARK_SIZE_IN
-  if (bottom < top) {
+  const span = contentSpanInSection(pieces, sectionStart, sectionHeightIn)
+  const first = span.top
+  const last = span.bottom - MARK_SIZE_IN
+  if (last < first) {
     return [sectionStart + Math.max(0, (sectionHeightIn - MARK_SIZE_IN) / 2)]
   }
-  if (sectionHeightIn < SHORT_SHEET_IN) return [top, bottom]
-  const middle = sectionStart + sectionHeightIn / 2 - MARK_SIZE_IN / 2
-  if (middle - top < MARK_ROW_GAP_IN || bottom - middle < MARK_ROW_GAP_IN) return [top, bottom]
-  return [top, middle, bottom]
+  const sets = span.bottom - span.top < SHORT_SHEET_IN ? 2 : 3
+  const ys = evenMarkYs(first, last, sets)
+  if (ys.length === 3 && (ys[1] - ys[0] < MARK_ROW_GAP_IN || ys[2] - ys[1] < MARK_ROW_GAP_IN)) {
+    return [first, last]
+  }
+  return ys
 }
 
 export function registrationMarkBounds(
   sheetHeightIn: number,
   sheetWidthIn = SHEET_WIDTH_IN,
+  pieces: PlacedSheetPiece[] = [],
 ) {
   const sectionCount = Math.max(1, Math.ceil(sheetHeightIn / CUT_SECTION_IN - 1e-9))
   return Array.from({ length: sectionCount }, (_, index) => {
@@ -89,7 +126,7 @@ export function registrationMarkBounds(
     const sectionHeightIn = Math.min(CUT_SECTION_IN, Math.max(0, sheetHeightIn - sectionStart))
     const left = MARK_INSET_IN + MARK_PAD_IN
     const right = sheetWidthIn - MARK_INSET_IN - MARK_PAD_IN - MARK_SIZE_IN
-    return sectionMarkYs(sectionStart, sectionHeightIn).flatMap((yIn, row) => [
+    return sectionMarkYs(sectionStart, sectionHeightIn, pieces).flatMap((yIn, row) => [
       { xIn: left, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: index === 0 && row === 0 },
       { xIn: right, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: false },
     ])
@@ -99,8 +136,17 @@ export function registrationMarkBounds(
 export function registrationMarkRects(
   sheetHeightIn: number,
   sheetWidthIn = SHEET_WIDTH_IN,
+  pieces: PlacedSheetPiece[] = [],
 ): PrintMark[] {
-  return registrationMarkBounds(sheetHeightIn, sheetWidthIn).flatMap((mark) => markStack(mark.xIn, mark.yIn))
+  return registrationMarkBounds(sheetHeightIn, sheetWidthIn, pieces).flatMap((mark) => markStack(mark.xIn, mark.yIn))
+}
+
+export function sheetHeightWithMarkTrail(
+  sheetHeightIn: number,
+  marks: Array<{ yIn: number; heightIn: number }>,
+) {
+  const lastMark = marks.reduce((max, mark) => Math.max(max, mark.yIn + mark.heightIn), 0)
+  return Math.max(sheetHeightIn, lastMark + MARK_TRAIL_IN)
 }
 
 function toUnits(inches: number) {

@@ -9,7 +9,7 @@ import { DesignInspector } from '@/components/design-inspector'
 import { SheetPreviewModal } from '@/components/sheet-preview-modal'
 import { composeGangSheet, layoutSheetRows, pieceHeightInches, ART_INSET_IN, SHEET_GUTTER_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
-import { CUT_MARGIN_IN, CUT_SECTION_IN, MARK_CLEARANCE_IN, cutPltSections, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects } from '@/lib/cut-layout'
+import { CUT_MARGIN_IN, CUT_SECTION_IN, MARK_CLEARANCE_IN, cutPltSections, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, sheetHeightWithMarkTrail } from '@/lib/cut-layout'
 import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
@@ -250,11 +250,13 @@ export default function Home() {
     ? { sectionLengthIn: CUT_SECTION_IN, boxMarginIn: MARK_CLEARANCE_IN, sideInsetIn: MARK_CLEARANCE_IN }
     : undefined)
   const packedHeight = Math.max(0, sheetLayout.contentEndY - ART_INSET_IN)
-  const printHeight = sheetLayout.contentEndY + ART_INSET_IN
+  const cutMarkRects = cutOut ? registrationMarkRects(sheetLayout.contentEndY + ART_INSET_IN, SHEET_WIDTH_IN, sheetLayout.pieces) : []
+  const cutMarks = cutOut ? registrationMarkBounds(sheetLayout.contentEndY + ART_INSET_IN, SHEET_WIDTH_IN, sheetLayout.pieces) : []
+  const printHeight = cutOut
+    ? sheetHeightWithMarkTrail(sheetLayout.contentEndY + ART_INSET_IN, cutMarks)
+    : sheetLayout.contentEndY + ART_INSET_IN
   const billedLength = billedSheetLength(packedHeight)
   const cutBoxes = cutOut ? cutPreviewBoxes(sheetLayout.pieces, SHEET_WIDTH_IN, printHeight) : []
-  const cutMarks = cutOut ? registrationMarkBounds(printHeight) : []
-  const cutMarkRects = cutOut ? registrationMarkRects(printHeight) : []
   const cutTooTall = cutOut && sheetLayout.pieces.some((piece) => piece.heightIn + CUT_MARGIN_IN * 2 > CUT_SECTION_IN)
   const layoutKey = designs.map((design) => [
     design.id, design.quantity, design.size, design.placement,

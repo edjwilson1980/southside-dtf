@@ -99,7 +99,7 @@ const checks = [
   [preview.includes('black 5 mm circles'), 'preview copy describes circles'],
   [preview.includes('Sheets under 12 in get two pairs'), 'preview copy explains 12 in and 30 in placement'],
   [layout.includes('SHORT_SHEET_IN = 12'), 'short sheets use a 12 in two-pair rule'],
-  [layout.includes('function sectionMarkYs'), 'mark rows follow each cutter section height'],
+  [layout.includes('function evenMarkYs'), 'mark rows are evenly spaced along the designs'],
   [centerBlack, `center pixel is black (${cr},${cg},${cb},${ca})`],
   [cornerOpaque === 0, `bounding-box corners are transparent, not a white square (${cornerOpaque} opaque)`],
 ]

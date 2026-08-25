@@ -11,7 +11,7 @@ function cropMarkPreviewCopy(markCount: number) {
   const perSide = Math.max(0, Math.round(markCount / 2))
   const countLabel = markCount === 4 ? 'four' : markCount === 6 ? 'six' : String(markCount)
   const sideLabel = perSide === 2 ? 'two' : perSide === 3 ? 'three' : String(perSide)
-  return `The ${countLabel} black 5 mm circles (${sideLabel} on each side) ARE printed on the PNG for the cutter camera. Sheets under 12 in get two pairs; up to 30 in get three pairs; over 30 in leaves a gap and repeats another set of marks.`
+  return `The ${countLabel} black 5 mm circles (${sideLabel} on each side) ARE printed on the PNG for the cutter camera. They sit beside the designs, evenly spaced. Sheets under 12 in get two pairs; up to 30 in get three pairs; over 30 in leaves a gap and repeats. Extra space after the last mark keeps the cutter from running past it.`
 }
 
 const zoomPresets = [
