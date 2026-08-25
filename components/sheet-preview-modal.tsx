@@ -149,7 +149,7 @@ export function SheetPreviewModal({
             <h2 id="sheet-preview-title">{sheetLabel}</h2>
             <p>
               22 in wide · {sheetLengthIn} in long · {totalTransfers} transfers.
-              {cutOut ? ` Red boxes are 2 mm cut lines for the plotter — preview only, not printed. The six black squares (three on each side) ARE printed on the PNG for the cutter camera. Dashed lines mark ${CUT_SECTION_IN} in cutter sections.` : ' Scroll or zoom to inspect the layout.'}
+              {cutOut ? ` Red boxes are 2 mm cut lines for the plotter — preview only, not printed. The six black 5 mm circles (three on each side) ARE printed on the PNG for the cutter camera. Dashed lines mark ${CUT_SECTION_IN} in cutter sections.` : ' Scroll or zoom to inspect the layout.'}
             </p>
           </div>
           <button className="size-popup-close" aria-label="Close gang sheet preview" onClick={onClose} disabled={saving}>

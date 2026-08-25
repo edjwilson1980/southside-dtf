@@ -3,7 +3,8 @@ import { SHEET_WIDTH_IN, type PlacedSheetPiece } from '@/lib/compose-sheet'
 export const CUT_MARGIN_MM = 2
 export const CUT_MARGIN_IN = CUT_MARGIN_MM / 25.4
 export const CUT_SECTION_IN = 30
-export const MARK_SIZE_IN = 10 / 25.4
+/** Teneth CCD cameras lock onto filled 5 mm circles, not squares or L marks. */
+export const MARK_SIZE_IN = 5 / 25.4
 export const MARK_PAD_IN = 2 / 25.4
 export const MARK_INSET_IN = 10 / 25.4
 export const MARK_CLEARANCE_IN = MARK_INSET_IN + MARK_PAD_IN * 2 + MARK_SIZE_IN + CUT_MARGIN_IN
@@ -37,7 +38,7 @@ export function cutPreviewBoxes(
   return pieces.map((piece) => cutBoxForPiece(piece, sheetWidthIn, sheetHeightIn))
 }
 
-export type PrintMark = CutBox & { color: string }
+export type PrintMark = CutBox & { color: string; shape: 'rect' | 'circle' }
 
 function markStack(xIn: number, yIn: number): PrintMark[] {
   const pad = MARK_PAD_IN
@@ -49,6 +50,7 @@ function markStack(xIn: number, yIn: number): PrintMark[] {
       widthIn: size + pad * 2,
       heightIn: size + pad * 2,
       color: '#ffffff',
+      shape: 'rect',
     },
     {
       xIn,
@@ -56,6 +58,7 @@ function markStack(xIn: number, yIn: number): PrintMark[] {
       widthIn: size,
       heightIn: size,
       color: '#000000',
+      shape: 'circle',
     },
   ]
 }
