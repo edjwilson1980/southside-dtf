@@ -8,10 +8,8 @@ import { readImageSize } from '@/lib/image-utils'
 import { SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 
 function cropMarkPreviewCopy(markCount: number) {
-  const perSide = Math.max(0, Math.round(markCount / 2))
   const countLabel = markCount === 4 ? 'four' : markCount === 6 ? 'six' : String(markCount)
-  const sideLabel = perSide === 2 ? 'two' : perSide === 3 ? 'three' : String(perSide)
-  return `The ${countLabel} black 5 mm circles (${sideLabel} on each side) ARE printed on the PNG for the cutter camera. They sit on the left and right edges beside the designs, with even space between each set (top row, between rows, bottom row). Sheets under 12 in get two pairs; up to 30 in get three pairs; over 30 in leaves a gap and repeats. The last pair is not on the film end — extra film after it keeps the cutter from running past the marks.`
+  return `The ${countLabel} black 5 mm circles ARE printed on the PNG for the cutter camera. Rows are never more than 12 in apart. Left and right marks are never more than 22.5 in apart, and each mark stays within 2.5 in of the artwork. Red cut boxes are the image plus 2 mm. Extra film after the last mark keeps the cutter from running past it.`
 }
 
 const zoomPresets = [
