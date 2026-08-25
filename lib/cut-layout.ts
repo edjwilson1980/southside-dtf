@@ -13,8 +13,10 @@ export const MARK_SIZE_IN = 5 / 25.4
 export const MARK_PAD_IN = 2 / 25.4
 export const MARK_INSET_IN = 2 / 25.4
 export const MARK_CLEARANCE_IN = MARK_INSET_IN + MARK_PAD_IN * 2 + MARK_SIZE_IN + CUT_MARGIN_IN
-/** Extra film after the last mark so the CCD can stop instead of running off the media. */
-export const MARK_TRAIL_IN = 2
+/** First crop-mark row, measured from the leading edge of the film. */
+export const MARK_LEAD_IN = 10 / 25.4
+/** Film after the last mark — enough for the camera, not another 10 in search. */
+export const MARK_TRAIL_IN = 0.75
 const PLT_UNITS_PER_IN = 1016
 
 export type CutBox = {
@@ -80,14 +82,16 @@ function artBounds(pieces: PlacedSheetPiece[]) {
 
 function markYs(pieces: PlacedSheetPiece[], sheetHeightIn: number) {
   if (sheetHeightIn <= 0) return []
-  const first = pieces.length > 0 ? artBounds(pieces).top : MARK_INSET_IN + MARK_PAD_IN
-  const last = pieces.length > 0
-    ? Math.max(first, artBounds(pieces).bottom - MARK_SIZE_IN)
-    : Math.max(first, sheetHeightIn - MARK_TRAIL_IN - MARK_SIZE_IN)
-  const ys: number[] = []
-  const limit = Math.max(last, first + MARK_GAP_Y_IN)
-  for (let yIn = first; yIn <= limit + 1e-9; yIn += MARK_GAP_Y_IN) {
-    ys.push(yIn)
+  const first = MARK_LEAD_IN
+  const contentBottom = pieces.length > 0
+    ? artBounds(pieces).bottom + CUT_MARGIN_IN
+    : sheetHeightIn
+  const ys: number[] = [first]
+  while (
+    ys[ys.length - 1] + MARK_SIZE_IN < contentBottom - 1e-9
+    || ys.length < 2
+  ) {
+    ys.push(ys[ys.length - 1] + MARK_GAP_Y_IN)
   }
   return ys
 }
@@ -123,7 +127,7 @@ export function sheetHeightWithMarkTrail(
   marks: Array<{ yIn: number; heightIn: number }>,
 ) {
   const lastMark = marks.reduce((max, mark) => Math.max(max, mark.yIn + mark.heightIn), 0)
-  return Math.max(sheetHeightIn, lastMark + MARK_TRAIL_IN)
+  return Math.max(lastMark + MARK_TRAIL_IN, sheetHeightIn)
 }
 
 function toUnits(inches: number) {
