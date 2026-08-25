@@ -50,7 +50,7 @@ function markStack(xIn: number, yIn: number): PrintMark[] {
       widthIn: size + pad * 2,
       heightIn: size + pad * 2,
       color: '#ffffff',
-      shape: 'rect',
+      shape: 'circle',
     },
     {
       xIn,

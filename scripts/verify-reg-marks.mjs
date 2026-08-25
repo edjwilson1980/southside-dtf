@@ -42,9 +42,11 @@ for (let row = 0; row < size; row++) {
 const expected = Math.PI * 10 * 10
 const checks = [
   [layout.includes('MARK_SIZE_IN = 5 / 25.4'), 'printed marks are 5 mm'],
-  [layout.includes("shape: 'circle'"), 'black marks are tagged as circles'],
+  [layout.includes("shape: 'circle'"), 'printed marks are tagged as circles'],
+  [/color: '#ffffff',\s*shape: 'circle'/.test(layout), 'white pads are circular'],
   [compose.includes('fillHardDisk'), 'export draws filled circular disks'],
   [css.includes('.cut-reg-mark') && css.includes('border-radius: 50%'), 'preview overlay is circular'],
+  [readFileSync(join(root, 'components/cut-box-overlay.tsx'), 'utf8').includes("aspectRatio: '1'"), 'overlay boxes stay 1:1 circles'],
   [preview.includes('black 5 mm circles'), 'preview copy describes circles'],
   [outsideSquare === 0, 'disk stays inside its bounding box'],
   [Math.abs(filled - expected) / expected < 0.08, `disk area is circular (${filled} px vs ${expected.toFixed(1)})`],
