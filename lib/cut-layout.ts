@@ -4,12 +4,10 @@ import { SHEET_WIDTH_IN, type PlacedSheetPiece } from '@/lib/compose-sheet'
 export const CUT_MARGIN_MM = 2
 export const CUT_MARGIN_IN = CUT_MARGIN_MM / 25.4
 export const CUT_SECTION_IN = 30
-/** Consecutive crop-mark rows are never more than 12 in apart. */
-export const MAX_MARK_GAP_Y_IN = 12
-/** Left and right crop marks are never more than 22.5 in apart. */
-export const MAX_MARK_GAP_X_IN = 22.5
-/** Each crop mark stays within 2.5 in of the artwork horizontally. */
-export const MAX_MARK_TO_ART_X_IN = 2.5
+/** Left and right crop marks are 21.5 in apart. */
+export const MARK_GAP_X_IN = 21.5
+/** Crop-mark rows are 10 in apart down the sheet. */
+export const MARK_GAP_Y_IN = 10
 /** Teneth CCD cameras lock onto filled 5 mm circles, not squares or L marks. */
 export const MARK_SIZE_IN = 5 / 25.4
 export const MARK_PAD_IN = 2 / 25.4
@@ -71,12 +69,6 @@ function markStack(xIn: number, yIn: number): PrintMark[] {
   ]
 }
 
-function evenMarkYs(firstY: number, lastY: number, setCount: number) {
-  if (setCount <= 1) return [firstY]
-  const step = (lastY - firstY) / (setCount - 1)
-  return Array.from({ length: setCount }, (_, index) => firstY + index * step)
-}
-
 function artBounds(pieces: PlacedSheetPiece[]) {
   return {
     left: Math.min(...pieces.map((piece) => piece.xIn)),
@@ -88,43 +80,21 @@ function artBounds(pieces: PlacedSheetPiece[]) {
 
 function markYs(pieces: PlacedSheetPiece[], sheetHeightIn: number) {
   if (sheetHeightIn <= 0) return []
-  const fallbackTop = MARK_INSET_IN + MARK_PAD_IN
-  const fallbackBottom = Math.max(fallbackTop, sheetHeightIn - MARK_TRAIL_IN - MARK_SIZE_IN)
-  if (pieces.length === 0) {
-    const span = fallbackBottom - fallbackTop
-    const gaps = Math.max(1, Math.ceil(span / MAX_MARK_GAP_Y_IN - 1e-12))
-    return evenMarkYs(fallbackTop, fallbackBottom, gaps + 1)
+  const first = pieces.length > 0 ? artBounds(pieces).top : MARK_INSET_IN + MARK_PAD_IN
+  const last = pieces.length > 0
+    ? Math.max(first, artBounds(pieces).bottom - MARK_SIZE_IN)
+    : Math.max(first, sheetHeightIn - MARK_TRAIL_IN - MARK_SIZE_IN)
+  const ys: number[] = []
+  const limit = Math.max(last, first + MARK_GAP_Y_IN)
+  for (let yIn = first; yIn <= limit + 1e-9; yIn += MARK_GAP_Y_IN) {
+    ys.push(yIn)
   }
-  const bounds = artBounds(pieces)
-  const first = bounds.top
-  const last = Math.max(first, bounds.bottom - MARK_SIZE_IN)
-  const span = last - first
-  if (span <= 1e-9) return [first]
-  const gaps = Math.max(1, Math.ceil(span / MAX_MARK_GAP_Y_IN - 1e-12))
-  return evenMarkYs(first, last, gaps + 1)
+  return ys
 }
 
-function markXs(pieces: PlacedSheetPiece[], sheetWidthIn: number) {
-  const minLeft = MARK_INSET_IN + MARK_PAD_IN
-  const maxRight = sheetWidthIn - MARK_INSET_IN - MARK_PAD_IN - MARK_SIZE_IN
-  let left = minLeft
-  let right = Math.min(maxRight, left + MAX_MARK_GAP_X_IN - MARK_SIZE_IN)
-  if (pieces.length > 0) {
-    const bounds = artBounds(pieces)
-    const outside = CUT_MARGIN_IN + MARK_PAD_IN
-    left = bounds.left - outside - MARK_SIZE_IN
-    right = bounds.right + outside
-    left = Math.max(left, bounds.left - MAX_MARK_TO_ART_X_IN)
-    right = Math.min(right, bounds.right + MAX_MARK_TO_ART_X_IN - MARK_SIZE_IN)
-  }
-  left = Math.min(maxRight, Math.max(minLeft, left))
-  right = Math.min(maxRight, Math.max(minLeft, right))
-  if (right - left > MAX_MARK_GAP_X_IN) {
-    const extra = (right - left - MAX_MARK_GAP_X_IN) / 2
-    left += extra
-    right -= extra
-  }
-  if (right < left) right = left
+function markXs(sheetWidthIn: number) {
+  const left = Math.max(0, (sheetWidthIn - MARK_GAP_X_IN - MARK_SIZE_IN) / 2)
+  const right = left + MARK_GAP_X_IN
   return { left, right }
 }
 
@@ -133,7 +103,7 @@ export function registrationMarkBounds(
   sheetWidthIn = SHEET_WIDTH_IN,
   pieces: PlacedSheetPiece[] = [],
 ) {
-  const { left, right } = markXs(pieces, sheetWidthIn)
+  const { left, right } = markXs(sheetWidthIn)
   return markYs(pieces, sheetHeightIn).flatMap((yIn, row) => [
     { xIn: left, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: row === 0 },
     { xIn: right, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: false },

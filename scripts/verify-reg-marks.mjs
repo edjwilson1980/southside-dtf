@@ -97,9 +97,9 @@ const checks = [
   [css.includes('border-radius: 50%'), 'preview overlay is circular'],
   [overlay.includes("aspectRatio: '1'"), 'overlay boxes stay 1:1 circles'],
   [preview.includes('black 5 mm circles'), 'preview copy describes circles'],
-  [preview.includes('never more than 12 in apart'), 'preview copy explains the 12 in vertical cap'],
-  [layout.includes('MAX_MARK_GAP_Y_IN = 12'), 'short sheets use a 12 in vertical mark cap'],
-  [layout.includes('function evenMarkYs'), 'mark rows are evenly spaced along the designs'],
+  [preview.includes('21.5 in apart'), 'preview copy explains 21.5 in horizontal spacing'],
+  [layout.includes('MARK_GAP_Y_IN = 10'), 'mark rows are 10 in apart'],
+  [layout.includes('MARK_GAP_X_IN = 21.5'), 'left and right marks are 21.5 in apart'],
   [centerBlack, `center pixel is black (${cr},${cg},${cb},${ca})`],
   [cornerOpaque === 0, `bounding-box corners are transparent, not a white square (${cornerOpaque} opaque)`],
 ]

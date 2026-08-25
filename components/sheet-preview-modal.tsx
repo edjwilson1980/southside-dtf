@@ -9,7 +9,7 @@ import { SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 
 function cropMarkPreviewCopy(markCount: number) {
   const countLabel = markCount === 4 ? 'four' : markCount === 6 ? 'six' : String(markCount)
-  return `The ${countLabel} black 5 mm circles ARE printed on the PNG for the cutter camera. Rows are never more than 12 in apart. Left and right marks are never more than 22.5 in apart, and each mark stays within 2.5 in of the artwork. Red cut boxes are the image plus 2 mm. Extra film after the last mark keeps the cutter from running past it.`
+  return `The ${countLabel} black 5 mm circles ARE printed on the PNG for the cutter camera. Left and right marks are 21.5 in apart. Rows are 10 in apart down the sheet. Red cut boxes are the image plus 2 mm. Extra film after the last mark keeps the cutter from running past it.`
 }
 
 const zoomPresets = [

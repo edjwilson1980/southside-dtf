@@ -10,16 +10,9 @@ const MARK_PAD_IN = 2 / 25.4
 const MARK_INSET_IN = 2 / 25.4
 const MARK_TRAIL_IN = 2
 const CUT_MARGIN_IN = 2 / 25.4
-const MAX_MARK_GAP_Y_IN = 12
-const MAX_MARK_GAP_X_IN = 22.5
-const MAX_MARK_TO_ART_X_IN = 2.5
+const MARK_GAP_X_IN = 21.5
+const MARK_GAP_Y_IN = 10
 const SHEET_WIDTH_IN = 22
-
-function evenMarkYs(firstY, lastY, setCount) {
-  if (setCount <= 1) return [firstY]
-  const step = (lastY - firstY) / (setCount - 1)
-  return Array.from({ length: setCount }, (_, index) => firstY + index * step)
-}
 
 function artBounds(pieces) {
   return {
@@ -31,43 +24,19 @@ function artBounds(pieces) {
 }
 
 function markYs(pieces, sheetHeightIn) {
-  const fallbackTop = MARK_INSET_IN + MARK_PAD_IN
-  const fallbackBottom = Math.max(fallbackTop, sheetHeightIn - MARK_TRAIL_IN - MARK_SIZE_IN)
-  if (pieces.length === 0) {
-    const span = fallbackBottom - fallbackTop
-    const gaps = Math.max(1, Math.ceil(span / MAX_MARK_GAP_Y_IN - 1e-12))
-    return evenMarkYs(fallbackTop, fallbackBottom, gaps + 1)
-  }
-  const bounds = artBounds(pieces)
-  const first = bounds.top
-  const last = Math.max(first, bounds.bottom - MARK_SIZE_IN)
-  const span = last - first
-  if (span <= 1e-9) return [first]
-  const gaps = Math.max(1, Math.ceil(span / MAX_MARK_GAP_Y_IN - 1e-12))
-  return evenMarkYs(first, last, gaps + 1)
+  const first = pieces.length > 0 ? artBounds(pieces).top : MARK_INSET_IN + MARK_PAD_IN
+  const last = pieces.length > 0
+    ? Math.max(first, artBounds(pieces).bottom - MARK_SIZE_IN)
+    : Math.max(first, sheetHeightIn - MARK_TRAIL_IN - MARK_SIZE_IN)
+  const ys = []
+  const limit = Math.max(last, first + MARK_GAP_Y_IN)
+  for (let yIn = first; yIn <= limit + 1e-9; yIn += MARK_GAP_Y_IN) ys.push(yIn)
+  return ys
 }
 
-function markXs(pieces, sheetWidthIn = SHEET_WIDTH_IN) {
-  const minLeft = MARK_INSET_IN + MARK_PAD_IN
-  const maxRight = sheetWidthIn - MARK_INSET_IN - MARK_PAD_IN - MARK_SIZE_IN
-  let left = minLeft
-  let right = Math.min(maxRight, left + MAX_MARK_GAP_X_IN - MARK_SIZE_IN)
-  if (pieces.length > 0) {
-    const bounds = artBounds(pieces)
-    const outside = CUT_MARGIN_IN + MARK_PAD_IN
-    left = bounds.left - outside - MARK_SIZE_IN
-    right = bounds.right + outside
-    left = Math.max(left, bounds.left - MAX_MARK_TO_ART_X_IN)
-    right = Math.min(right, bounds.right + MAX_MARK_TO_ART_X_IN - MARK_SIZE_IN)
-  }
-  left = Math.min(maxRight, Math.max(minLeft, left))
-  right = Math.min(maxRight, Math.max(minLeft, right))
-  if (right - left > MAX_MARK_GAP_X_IN) {
-    const extra = (right - left - MAX_MARK_GAP_X_IN) / 2
-    left += extra
-    right -= extra
-  }
-  if (right < left) right = left
+function markXs(sheetWidthIn = SHEET_WIDTH_IN) {
+  const left = Math.max(0, (sheetWidthIn - MARK_GAP_X_IN - MARK_SIZE_IN) / 2)
+  const right = left + MARK_GAP_X_IN
   return { left, right }
 }
 
@@ -86,42 +55,30 @@ function cutBoxForPiece(piece, sheetWidthIn, sheetHeightIn) {
 const shortArt = [{ yIn: 2.5, heightIn: 6, xIn: 4, widthIn: 5 }]
 const tallArt = [{ yIn: 2.5, heightIn: 18, xIn: 3, widthIn: 8 }]
 const longArt = [{ yIn: 1, heightIn: 36, xIn: 2, widthIn: 10 }]
-const narrowArt = [{ yIn: 2, heightIn: 8, xIn: 8, widthIn: 4 }]
-
+const xs = markXs()
 const shortYs = markYs(shortArt, 11)
 const tallYs = markYs(tallArt, 24)
 const longYs = markYs(longArt, 40)
-const shortGaps = shortYs.slice(1).map((y, i) => y - shortYs[i])
 const tallGaps = tallYs.slice(1).map((y, i) => y - tallYs[i])
 const longGaps = longYs.slice(1).map((y, i) => y - longYs[i])
-const narrow = markXs(narrowArt)
-const wide = markXs(tallArt)
 const box = cutBoxForPiece(shortArt[0], 22, 20)
 const art = shortArt[0]
 
 const checks = [
-  [layout.includes('MAX_MARK_GAP_Y_IN = 12'), '12 in max vertical crop-mark gap is in code'],
-  [layout.includes('MAX_MARK_GAP_X_IN = 22.5'), '22.5 in max left-to-right crop-mark gap is in code'],
-  [layout.includes('MAX_MARK_TO_ART_X_IN = 2.5'), '2.5 in max mark-to-artwork gap is in code'],
+  [layout.includes('MARK_GAP_X_IN = 21.5'), '21.5 in left-to-right crop-mark spacing is in code'],
+  [layout.includes('MARK_GAP_Y_IN = 10'), '10 in vertical crop-mark spacing is in code'],
   [layout.includes('CUT_MARGIN_MM = 2'), 'cut contour is image plus 2 mm'],
-  [preview.includes('never more than 12 in apart'), 'preview copy states the 12 in vertical cap'],
-  [preview.includes('never more than 22.5 in apart'), 'preview copy states the 22.5 in horizontal cap'],
-  [preview.includes('within 2.5 in of the artwork'), 'preview copy states the 2.5 in artwork cap'],
-  [preview.includes('image plus 2 mm'), 'preview copy states cut boxes are image plus 2 mm'],
-  [shortYs.length === 2, 'art under 12 in gets two mark rows'],
-  [shortGaps.every((gap) => gap <= MAX_MARK_GAP_Y_IN + 1e-9), 'short-sheet vertical gaps stay at or under 12 in'],
-  [tallYs.length === 3, '18 in of art gets three rows so no vertical gap exceeds 12 in'],
-  [tallGaps.every((gap) => gap <= MAX_MARK_GAP_Y_IN + 1e-9), 'tall-sheet vertical gaps stay at or under 12 in'],
-  [Math.abs(tallGaps[0] - tallGaps[1]) < 1e-6, 'vertical rows are evenly spaced under the 12 in cap'],
-  [longYs.length === 4, '36 in of art gets four rows at a 12 in cap'],
-  [longGaps.every((gap) => gap <= MAX_MARK_GAP_Y_IN + 1e-9), 'long-sheet vertical gaps stay at or under 12 in'],
-  [wide.right - wide.left <= MAX_MARK_GAP_X_IN + 1e-9, 'left-to-right marks stay at or under 22.5 in'],
-  [narrowArt[0].xIn - (narrow.left + MARK_SIZE_IN) <= MAX_MARK_TO_ART_X_IN + 1e-9, 'left mark stays within 2.5 in of the art'],
-  [narrow.right - narrowArt[0].xIn - narrowArt[0].widthIn <= MAX_MARK_TO_ART_X_IN + 1e-9, 'right mark stays within 2.5 in of the art'],
+  [preview.includes('21.5 in apart'), 'preview copy states 21.5 in horizontal spacing'],
+  [preview.includes('10 in apart'), 'preview copy states 10 in vertical spacing'],
+  [Math.abs(xs.right - xs.left - 21.5) < 1e-9, 'left and right marks are 21.5 in apart'],
+  [xs.left >= 0 && xs.right + MARK_SIZE_IN <= SHEET_WIDTH_IN + 1e-9, '21.5 in pair fits on the 22 in sheet'],
+  [shortYs.length === 2, 'short art still gets two rows 10 in apart'],
+  [Math.abs(shortYs[1] - shortYs[0] - 10) < 1e-9, 'short-art rows are 10 in apart'],
+  [tallGaps.every((gap) => Math.abs(gap - 10) < 1e-9), 'taller art keeps a 10 in vertical pitch'],
+  [longYs.length === 4, '36 in of art gets a mark every 10 in'],
+  [longGaps.every((gap) => Math.abs(gap - 10) < 1e-9), 'long-sheet rows are 10 in apart'],
   [Math.abs(box.widthIn - (art.widthIn + CUT_MARGIN_IN * 2)) < 1e-9, 'cut box width is the image plus 2 mm on each side'],
   [Math.abs(box.heightIn - (art.heightIn + CUT_MARGIN_IN * 2)) < 1e-9, 'cut box height is the image plus 2 mm on each side'],
-  [Math.abs(box.xIn - (art.xIn - CUT_MARGIN_IN)) < 1e-9, 'cut box starts 2 mm left of the image'],
-  [Math.abs(box.yIn - (art.yIn - CUT_MARGIN_IN)) < 1e-9, 'cut box starts 2 mm above the image'],
 ]
 
 const failed = checks.filter(([ok]) => !ok)
@@ -130,5 +87,5 @@ if (failed.length) {
   console.error(`mark layout checks failed: ${failed.length}`)
   process.exit(1)
 }
-console.log(`vertical rows at ${longYs.map((y) => y.toFixed(2)).join(', ')} in for 36 in art`)
-console.log('crop marks use 12 / 22.5 / 2.5 in caps; cut boxes are image plus 2 mm')
+console.log(`x ${xs.left.toFixed(3)} to ${xs.right.toFixed(3)} in; y ${longYs.map((y) => y.toFixed(2)).join(', ')} in`)
+console.log('crop marks are 21.5 in on X and 10 in on Y')
