@@ -82,7 +82,7 @@ function markPixelBox(mark: { xIn: number; yIn: number; widthIn: number; heightI
   return { x, y, width, height }
 }
 
-function fillHardDisk(
+function fillMarkCircle(
   context: CanvasRenderingContext2D,
   x: number,
   y: number,
@@ -90,51 +90,20 @@ function fillHardDisk(
   height: number,
 ) {
   const diameter = Math.max(2, Math.min(width, height))
-  const cx = x + width / 2
-  const cy = y + height / 2
-  const radius = diameter / 2
-  const left = Math.max(0, Math.floor(cx - radius))
-  const top = Math.max(0, Math.floor(cy - radius))
-  const right = Math.min(context.canvas.width, Math.ceil(cx + radius))
-  const bottom = Math.min(context.canvas.height, Math.ceil(cy + radius))
-  const w = Math.max(1, right - left)
-  const h = Math.max(1, bottom - top)
-  const image = context.getImageData(left, top, w, h)
-  const { data } = image
-  const style = context.fillStyle
-  const color = typeof style === 'string' && style.startsWith('#') ? style : '#000000'
-  const red = Number.parseInt(color.slice(1, 3), 16)
-  const green = Number.parseInt(color.slice(3, 5), 16)
-  const blue = Number.parseInt(color.slice(5, 7), 16)
-  const r2 = radius * radius
-  for (let row = 0; row < h; row++) {
-    const dy = top + row + 0.5 - cy
-    for (let col = 0; col < w; col++) {
-      const dx = left + col + 0.5 - cx
-      if (dx * dx + dy * dy <= r2) {
-        const index = (row * w + col) * 4
-        data[index] = red
-        data[index + 1] = green
-        data[index + 2] = blue
-        data[index + 3] = 255
-      }
-    }
-  }
-  context.putImageData(image, left, top)
+  context.beginPath()
+  context.arc(x + width / 2, y + height / 2, diameter / 2, 0, Math.PI * 2)
+  context.closePath()
+  context.fill()
 }
 
 function fillRegistrationMark(
   context: CanvasRenderingContext2D,
-  mark: { xIn: number; yIn: number; widthIn: number; heightIn: number; color?: string; shape?: 'rect' | 'circle' },
+  mark: { xIn: number; yIn: number; widthIn: number; heightIn: number; color?: string },
   pxPerIn: number,
 ) {
   const { x, y, width, height } = markPixelBox(mark, pxPerIn)
   context.fillStyle = mark.color || '#000000'
-  if (mark.shape === 'circle') {
-    fillHardDisk(context, x, y, width, height)
-    return
-  }
-  context.fillRect(x, y, width, height)
+  fillMarkCircle(context, x, y, width, height)
 }
 
 export async function composeGangSheet(opts: {
@@ -143,7 +112,7 @@ export async function composeGangSheet(opts: {
   pxPerIn: number
   label?: string
   mapCmyk?: boolean
-  marks?: Array<{ xIn: number; yIn: number; widthIn: number; heightIn: number; color?: string; shape?: 'rect' | 'circle' }>
+  marks?: Array<{ xIn: number; yIn: number; widthIn: number; heightIn: number; color?: string }>
 }) {
   const width = Math.max(1, Math.round(SHEET_WIDTH_IN * opts.pxPerIn))
   const height = Math.max(1, Math.round(opts.sheetLengthIn * opts.pxPerIn))
