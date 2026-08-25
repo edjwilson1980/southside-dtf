@@ -3,12 +3,15 @@ import { SHEET_WIDTH_IN, type PlacedSheetPiece } from '@/lib/compose-sheet'
 export const CUT_MARGIN_MM = 2
 export const CUT_MARGIN_IN = CUT_MARGIN_MM / 25.4
 export const CUT_SECTION_IN = 30
+/** Sheets shorter than this get two mark pairs (four circles) instead of three. */
+export const SHORT_SHEET_IN = 12
 /** Teneth CCD cameras lock onto filled 5 mm circles, not squares or L marks. */
 export const MARK_SIZE_IN = 5 / 25.4
 export const MARK_PAD_IN = 2 / 25.4
 export const MARK_INSET_IN = 10 / 25.4
 export const MARK_CLEARANCE_IN = MARK_INSET_IN + MARK_PAD_IN * 2 + MARK_SIZE_IN + CUT_MARGIN_IN
 const PLT_UNITS_PER_IN = 1016
+const MARK_ROW_GAP_IN = MARK_SIZE_IN + MARK_PAD_IN * 2
 
 export type CutBox = {
   xIn: number
@@ -63,6 +66,19 @@ function markStack(xIn: number, yIn: number): PrintMark[] {
   ]
 }
 
+function sectionMarkYs(sectionStart: number, sectionHeightIn: number) {
+  if (sectionHeightIn <= 0) return []
+  const top = sectionStart + MARK_INSET_IN + MARK_PAD_IN
+  const bottom = sectionStart + sectionHeightIn - MARK_INSET_IN - MARK_PAD_IN - MARK_SIZE_IN
+  if (bottom < top) {
+    return [sectionStart + Math.max(0, (sectionHeightIn - MARK_SIZE_IN) / 2)]
+  }
+  if (sectionHeightIn < SHORT_SHEET_IN) return [top, bottom]
+  const middle = sectionStart + sectionHeightIn / 2 - MARK_SIZE_IN / 2
+  if (middle - top < MARK_ROW_GAP_IN || bottom - middle < MARK_ROW_GAP_IN) return [top, bottom]
+  return [top, middle, bottom]
+}
+
 export function registrationMarkBounds(
   sheetHeightIn: number,
   sheetWidthIn = SHEET_WIDTH_IN,
@@ -73,11 +89,8 @@ export function registrationMarkBounds(
     const sectionHeightIn = Math.min(CUT_SECTION_IN, Math.max(0, sheetHeightIn - sectionStart))
     const left = MARK_INSET_IN + MARK_PAD_IN
     const right = sheetWidthIn - MARK_INSET_IN - MARK_PAD_IN - MARK_SIZE_IN
-    const top = sectionStart + MARK_INSET_IN + MARK_PAD_IN
-    const middle = sectionStart + sectionHeightIn / 2 - MARK_SIZE_IN / 2
-    const bottom = sectionStart + sectionHeightIn - MARK_INSET_IN - MARK_PAD_IN - MARK_SIZE_IN
-    return [top, middle, bottom].flatMap((yIn, row) => [
-      { xIn: left, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: row === 0 },
+    return sectionMarkYs(sectionStart, sectionHeightIn).flatMap((yIn, row) => [
+      { xIn: left, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: index === 0 && row === 0 },
       { xIn: right, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: false },
     ])
   }).flat()

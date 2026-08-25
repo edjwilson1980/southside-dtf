@@ -7,6 +7,13 @@ import { CUT_SECTION_IN, type CutBox } from '@/lib/cut-layout'
 import { readImageSize } from '@/lib/image-utils'
 import { SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 
+function cropMarkPreviewCopy(markCount: number) {
+  const perSide = Math.max(0, Math.round(markCount / 2))
+  const countLabel = markCount === 4 ? 'four' : markCount === 6 ? 'six' : String(markCount)
+  const sideLabel = perSide === 2 ? 'two' : perSide === 3 ? 'three' : String(perSide)
+  return `The ${countLabel} black 5 mm circles (${sideLabel} on each side) ARE printed on the PNG for the cutter camera. Sheets under 12 in get two pairs; up to 30 in get three pairs; over 30 in leaves a gap and repeats another set of marks.`
+}
+
 const zoomPresets = [
   { id: 'fit', label: 'Fit' },
   { id: '0.5', label: '50%' },
@@ -149,7 +156,7 @@ export function SheetPreviewModal({
             <h2 id="sheet-preview-title">{sheetLabel}</h2>
             <p>
               22 in wide · {sheetLengthIn} in long · {totalTransfers} transfers.
-              {cutOut ? ` Red boxes are 2 mm cut lines for the plotter — preview only, not printed. The six black 5 mm circles (three on each side) ARE printed on the PNG for the cutter camera. Dashed lines mark ${CUT_SECTION_IN} in cutter sections.` : ' Scroll or zoom to inspect the layout.'}
+              {cutOut ? ` Red boxes are 2 mm cut lines for the plotter — preview only, not printed. ${cropMarkPreviewCopy(cutMarks.length)} Dashed lines mark ${CUT_SECTION_IN} in cutter sections.` : ' Scroll or zoom to inspect the layout.'}
             </p>
           </div>
           <button className="size-popup-close" aria-label="Close gang sheet preview" onClick={onClose} disabled={saving}>

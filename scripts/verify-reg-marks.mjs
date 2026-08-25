@@ -97,6 +97,9 @@ const checks = [
   [css.includes('border-radius: 50%'), 'preview overlay is circular'],
   [overlay.includes("aspectRatio: '1'"), 'overlay boxes stay 1:1 circles'],
   [preview.includes('black 5 mm circles'), 'preview copy describes circles'],
+  [preview.includes('Sheets under 12 in get two pairs'), 'preview copy explains 12 in and 30 in placement'],
+  [layout.includes('SHORT_SHEET_IN = 12'), 'short sheets use a 12 in two-pair rule'],
+  [layout.includes('function sectionMarkYs'), 'mark rows follow each cutter section height'],
   [centerBlack, `center pixel is black (${cr},${cg},${cb},${ca})`],
   [cornerOpaque === 0, `bounding-box corners are transparent, not a white square (${cornerOpaque} opaque)`],
 ]
