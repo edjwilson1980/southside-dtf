@@ -76,24 +76,15 @@ export function layoutSheetRows(
   return { pieces, contentEndY: yIn }
 }
 
-function markPixelBox(mark: { xIn: number; yIn: number; widthIn: number; heightIn: number }, pxPerIn: number) {
-  const x = Math.round(mark.xIn * pxPerIn)
-  const y = Math.round(mark.yIn * pxPerIn)
-  const width = Math.max(2, Math.round(mark.widthIn * pxPerIn))
-  const height = Math.max(2, Math.round(mark.heightIn * pxPerIn))
-  return { x, y, width, height }
-}
-
 function fillMarkCircle(
   context: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
+  cx: number,
+  cy: number,
+  diameter: number,
 ) {
-  const diameter = Math.max(2, Math.min(width, height))
+  const radius = Math.max(1, diameter / 2)
   context.beginPath()
-  context.arc(x + width / 2, y + height / 2, diameter / 2, 0, Math.PI * 2)
+  context.arc(cx, cy, radius, 0, Math.PI * 2)
   context.closePath()
   context.fill()
 }
@@ -103,9 +94,15 @@ function fillRegistrationMark(
   mark: { xIn: number; yIn: number; widthIn: number; heightIn: number; color?: string },
   pxPerIn: number,
 ) {
-  const { x, y, width, height } = markPixelBox(mark, pxPerIn)
+  const diameter = Math.max(2, Math.min(mark.widthIn, mark.heightIn) * pxPerIn)
   context.fillStyle = mark.color || '#000000'
-  fillMarkCircle(context, x, y, width, height)
+  context.imageSmoothingEnabled = true
+  fillMarkCircle(
+    context,
+    (mark.xIn + mark.widthIn / 2) * pxPerIn,
+    (mark.yIn + mark.heightIn / 2) * pxPerIn,
+    diameter,
+  )
 }
 
 export async function composeGangSheet(opts: {

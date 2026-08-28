@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 const layout = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/cut-layout.ts'), 'utf8')
 const preview = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../components/sheet-preview-modal.tsx'), 'utf8')
 const overlay = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../components/cut-box-overlay.tsx'), 'utf8')
+const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../app/globals.css'), 'utf8')
 
 const MARK_SIZE_IN = 5 / 25.4
 const MARK_GAP_X_IN = 21.5
@@ -63,7 +64,8 @@ const checks = [
   [layout.includes('MARK_LEAD_IN = 10 / 25.4'), 'first mark row starts at the leading edge'],
   [layout.includes('MARK_TRAIL_IN = 0.75'), 'sheet ends 0.75 in after the last mark'],
   [layout.includes("shape: 'circle'"), 'printed marks are circles, not squares'],
-  [overlay.includes("borderRadius: '50%'"), 'preview overlay forces circular crop marks'],
+  [overlay.includes('cut-reg-mark'), 'preview overlay uses circular crop-mark markers'],
+  [css.includes('width: 16px') && css.includes('border-radius: 50%'), 'overlay crop marks are 16px circles, not tiny squares'],
   [preview.includes('21.5 in apart'), 'preview copy states 21.5 in horizontal spacing'],
   [preview.includes('Under 12 in uses two pairs'), 'preview copy states mark count follows sheet length'],
   [Math.abs(xs.right - xs.left - 21.5) < 1e-9, 'left and right marks are 21.5 in apart'],

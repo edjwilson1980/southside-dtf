@@ -44,11 +44,8 @@ export function CutBoxOverlay({
           key={`mark-${index}`}
           className={`cut-reg-mark ${mark.first ? 'first' : ''}`}
           style={{
-            left: `${(mark.xIn / sheetWidthIn) * 100}%`,
-            top: `${(mark.yIn / sheetHeightIn) * 100}%`,
-            width: `${(mark.widthIn / sheetWidthIn) * 100}%`,
-            height: `${(mark.heightIn / sheetHeightIn) * 100}%`,
-            borderRadius: '50%',
+            left: `${((mark.xIn + mark.widthIn / 2) / sheetWidthIn) * 100}%`,
+            top: `${((mark.yIn + mark.heightIn / 2) / sheetHeightIn) * 100}%`,
           }}
         />
       ))}
