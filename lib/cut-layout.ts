@@ -153,45 +153,57 @@ function rectanglePath(x1: number, y1: number, x2: number, y2: number) {
   return `U${x1},${y1} D${x1},${y1} D${x1},${y2},${x2},${y2},${x2},${y1},${x1},${y1} `
 }
 
-function markCenter(mark: CutBox) {
+function markCenterInches(mark: CutBox) {
   return {
-    x: toUnits(mark.xIn + mark.widthIn / 2),
-    y: toUnits(mark.yIn + mark.heightIn / 2),
+    xIn: mark.xIn + mark.widthIn / 2,
+    yIn: mark.yIn + mark.heightIn / 2,
+  }
+}
+
+/** CCD origin is the leading-left circle. Hunt that mark first, then left-to-right down the sheet. */
+function marksFromStart(marks: CutBox[]) {
+  return [...marks].sort((a, b) => {
+    const ac = markCenterInches(a)
+    const bc = markCenterInches(b)
+    if (Math.abs(ac.yIn - bc.yIn) > 1e-9) return ac.yIn - bc.yIn
+    return ac.xIn - bc.xIn
+  })
+}
+
+function toPlt(xIn: number, yIn: number, origin: { xIn: number; yIn: number }) {
+  return {
+    x: toUnits(xIn - origin.xIn),
+    y: toUnits(yIn - origin.yIn),
   }
 }
 
 /** Pen-up visits to each printed 5 mm circle. No knife-down — the camera locks here first. */
-function markHuntPath(marks: CutBox[]) {
+function markHuntPath(marks: CutBox[], origin: { xIn: number; yIn: number }) {
   return marks.map((mark) => {
-    const { x, y } = markCenter(mark)
+    const center = markCenterInches(mark)
+    const { x, y } = toPlt(center.xIn, center.yIn, origin)
     return `U${x},${y} `
   }).join('')
 }
 
-function markScanWindow(marks: CutBox[]) {
-  if (marks.length === 0) return { width: 0, height: 0 }
-  const right = Math.max(...marks.map((mark) => mark.xIn + mark.widthIn))
-  const bottom = Math.max(...marks.map((mark) => mark.yIn + mark.heightIn))
-  return { width: toUnits(right), height: toUnits(bottom) }
-}
-
 /**
  * Artcut/Teneth DMPL contour cut for the CCD camera.
- * TB26,0 tells the firmware this is a circular-mark job and to scan that window
- * before the knife. Origin is the leading-left of the printed sheet (same as the PNG).
- * Mark centers are visited pen-up first; cut rectangles come after the camera locks.
+ * TB26,0,w,h is the 5 mm circle-mark size, not the sheet. Coordinates are relative
+ * to the first crop-mark center so the camera origin is that circle (U0,0), the
+ * matching right mark is 21.5 in across, and cuts share the same origin.
  */
 export function buildTenethPlt(boxes: CutBox[], marks: CutBox[] = []) {
-  const hunt = markHuntPath(marks)
+  const ordered = marksFromStart(marks)
+  const firstMark = ordered[0]
+  const origin = firstMark ? markCenterInches(firstMark) : { xIn: 0, yIn: 0 }
+  const hunt = markHuntPath(ordered, origin)
   const paths = boxes.map((box) => {
-    const x1 = toUnits(box.xIn)
-    const x2 = toUnits(box.xIn + box.widthIn)
-    const y1 = toUnits(box.yIn)
-    const y2 = toUnits(box.yIn + box.heightIn)
-    return rectanglePath(x1, y1, x2, y2)
+    const start = toPlt(box.xIn, box.yIn, origin)
+    const end = toPlt(box.xIn + box.widthIn, box.yIn + box.heightIn, origin)
+    return rectanglePath(start.x, start.y, end.x, end.y)
   }).join('')
-  const scanWindow = markScanWindow(marks)
-  const scan = marks.length > 0 ? `TB26,0,${scanWindow.width},${scanWindow.height};` : ''
+  const markUnits = toUnits(MARK_SIZE_IN)
+  const scan = marks.length > 0 ? `TB26,0,${markUnits},${markUnits};` : ''
   return `${scan};:H A L0 ECN U V10 ${hunt}${paths}U @`
 }
 

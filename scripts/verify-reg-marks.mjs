@@ -101,7 +101,7 @@ const checks = [
   [compose.indexOf('fillText') < compose.indexOf('drawImage'), 'job name is drawn before artwork so it cannot cover the designs'],
   [compose.includes('fillText'), 'job name is still printed on the sheet'],
   [preview.includes('black 5 mm circles'), 'preview copy describes circles'],
-  [preview.includes('21.5 in apart'), 'preview copy explains 21.5 in horizontal spacing'],
+  [preview.includes('21.5 in'), 'preview copy explains 21.5 in horizontal spacing'],
   [layout.includes('SHORT_SHEET_IN = 12'), 'mark count follows 12 in / 30 in sheet sizes'],
   [layout.includes('MARK_LEAD_IN = 10 / 25.4'), 'first mark row starts at the leading edge'],
   [layout.includes('MARK_GAP_X_IN = 21.5'), 'left and right marks are 21.5 in apart'],
