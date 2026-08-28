@@ -18,6 +18,9 @@ const MARK_ROW_GAP_IN = MARK_SIZE_IN + MARK_PAD_IN * 2
 export const MARK_LEAD_IN = 10 / 25.4
 /** Film after the last mark — enough for the camera, not another 10 in search. */
 export const MARK_TRAIL_IN = 0.75
+/** Small printed arrow at the leading-left circle so the camera start is obvious. */
+export const START_ARROW_LENGTH_IN = 4 / 25.4
+export const START_ARROW_WIDTH_IN = 3.2 / 25.4
 const PLT_UNITS_PER_IN = 1016
 
 export type CutBox = {
@@ -119,6 +122,22 @@ export function registrationMarkRects(
   return registrationMarkBounds(sheetHeightIn, sheetWidthIn, pieces).flatMap((mark) => markStack(mark.xIn, mark.yIn))
 }
 
+export type ArrowPoint = { xIn: number; yIn: number }
+
+/** Triangle that points at the first crop mark from the leading edge. */
+export function startMarkArrowPoints(mark: CutBox): ArrowPoint[] {
+  const cx = mark.xIn + mark.widthIn / 2
+  const tipY = Math.max(0, mark.yIn - MARK_PAD_IN - 0.4 / 25.4)
+  const length = START_ARROW_LENGTH_IN
+  const half = START_ARROW_WIDTH_IN / 2
+  const baseY = Math.max(0, tipY - length)
+  return [
+    { xIn: cx, yIn: tipY },
+    { xIn: cx - half, yIn: baseY },
+    { xIn: cx + half, yIn: baseY },
+  ]
+}
+
 export function sheetHeightWithMarkTrail(
   sheetHeightIn: number,
   marks: Array<{ yIn: number; heightIn: number }>,
@@ -135,12 +154,36 @@ function rectanglePath(x1: number, y1: number, x2: number, y2: number) {
   return `U${x1},${y1} D${x1},${y1} D${x1},${y2},${x2},${y2},${x2},${y1},${x1},${y1} `
 }
 
+function markCenter(mark: CutBox) {
+  return {
+    x: toUnits(mark.xIn + mark.widthIn / 2),
+    y: toUnits(mark.yIn + mark.heightIn / 2),
+  }
+}
+
+/** Pen-up visits to each printed 5 mm circle. No knife-down — the camera locks here first. */
+function markHuntPath(marks: CutBox[]) {
+  return marks.map((mark) => {
+    const { x, y } = markCenter(mark)
+    return `U${x},${y} `
+  }).join('')
+}
+
+function markScanWindow(marks: CutBox[]) {
+  if (marks.length === 0) return { width: 0, height: 0 }
+  const right = Math.max(...marks.map((mark) => mark.xIn + mark.widthIn))
+  const bottom = Math.max(...marks.map((mark) => mark.yIn + mark.heightIn))
+  return { width: toUnits(right), height: toUnits(bottom) }
+}
+
 /**
- * Artcut/Teneth DMPL for U-disk contour cut.
- * Origin is the leading-left of the printed sheet (same as the PNG).
- * Stay in DMPL: no HPGL work-area, chord-tolerance, or page-feed commands.
+ * Artcut/Teneth DMPL contour cut for the CCD camera.
+ * TB26,0 tells the firmware this is a circular-mark job and to scan that window
+ * before the knife. Origin is the leading-left of the printed sheet (same as the PNG).
+ * Mark centers are visited pen-up first; cut rectangles come after the camera locks.
  */
-export function buildTenethPlt(boxes: CutBox[]) {
+export function buildTenethPlt(boxes: CutBox[], marks: CutBox[] = []) {
+  const hunt = markHuntPath(marks)
   const paths = boxes.map((box) => {
     const x1 = toUnits(box.xIn)
     const x2 = toUnits(box.xIn + box.widthIn)
@@ -148,7 +191,9 @@ export function buildTenethPlt(boxes: CutBox[]) {
     const y2 = toUnits(box.yIn + box.heightIn)
     return rectanglePath(x1, y1, x2, y2)
   }).join('')
-  return `;:H A L0 ECN U V10 ${paths}U @`
+  const scanWindow = markScanWindow(marks)
+  const scan = marks.length > 0 ? `TB26,0,${scanWindow.width},${scanWindow.height};` : ''
+  return `${scan};:H A L0 ECN U V10 ${hunt}${paths}U @`
 }
 
 export function cutPltSections(
@@ -157,12 +202,15 @@ export function cutPltSections(
   sheetWidthIn = SHEET_WIDTH_IN,
 ) {
   const sectionCount = Math.max(1, Math.ceil(sheetHeightIn / CUT_SECTION_IN - 1e-9))
+  const allMarks = registrationMarkBounds(sheetHeightIn, sheetWidthIn, pieces)
   return Array.from({ length: sectionCount }, (_, index) => {
     const sectionStart = index * CUT_SECTION_IN
     const sectionHeightIn = Math.min(CUT_SECTION_IN, Math.max(0, sheetHeightIn - sectionStart))
+    const inSection = (yIn: number, heightIn: number) =>
+      yIn + heightIn > sectionStart + 1e-6 && yIn < sectionStart + sectionHeightIn - 1e-6
     const boxes = pieces
       .map((piece) => cutBoxForPiece(piece, sheetWidthIn, sheetHeightIn))
-      .filter((box) => box.yIn + box.heightIn > sectionStart + 1e-6 && box.yIn < sectionStart + sectionHeightIn - 1e-6)
+      .filter((box) => inSection(box.yIn, box.heightIn))
       .map((box) => {
         const yIn = Math.max(0, box.yIn - sectionStart)
         const bottom = Math.min(sectionHeightIn, box.yIn + box.heightIn - sectionStart)
@@ -174,11 +222,14 @@ export function cutPltSections(
         }
       })
       .filter((box) => box.widthIn > 0 && box.heightIn > 0)
+    const marks = allMarks
+      .filter((mark) => inSection(mark.yIn, mark.heightIn))
+      .map((mark) => ({ ...mark, yIn: Math.max(0, mark.yIn - sectionStart) }))
     return {
       index,
       sectionCount,
       sectionHeightIn,
-      plt: boxes.length > 0 ? buildTenethPlt(boxes) : '',
+      plt: boxes.length > 0 ? buildTenethPlt(boxes, marks) : '',
     }
   }).filter((section) => section.plt)
 }

@@ -9,7 +9,7 @@ import { DesignInspector } from '@/components/design-inspector'
 import { SheetPreviewModal } from '@/components/sheet-preview-modal'
 import { composeGangSheet, layoutSheetRows, pieceHeightInches, ART_INSET_IN, CUT_ART_START_IN, SHEET_GUTTER_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
-import { CUT_MARGIN_IN, CUT_SECTION_IN, MARK_CLEARANCE_IN, cutPltSections, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, sheetHeightWithMarkTrail } from '@/lib/cut-layout'
+import { CUT_MARGIN_IN, CUT_SECTION_IN, MARK_CLEARANCE_IN, cutPltSections, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, sheetHeightWithMarkTrail, startMarkArrowPoints } from '@/lib/cut-layout'
 import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
@@ -258,6 +258,8 @@ export default function Home() {
   const packedHeight = Math.max(0, sheetLayout.contentEndY - artStart)
   const cutMarkRects = cutOut ? registrationMarkRects(sheetLayout.contentEndY, SHEET_WIDTH_IN, sheetLayout.pieces) : []
   const cutMarks = cutOut ? registrationMarkBounds(sheetLayout.contentEndY, SHEET_WIDTH_IN, sheetLayout.pieces) : []
+  const startArrow = cutMarks.find((mark) => mark.first)
+  const startArrowPoints = startArrow ? startMarkArrowPoints(startArrow) : []
   const printHeight = cutOut
     ? sheetHeightWithMarkTrail(sheetLayout.contentEndY, cutMarks)
     : sheetLayout.contentEndY + ART_INSET_IN
@@ -341,6 +343,7 @@ export default function Home() {
       label,
       mapCmyk,
       marks: cutOut ? cutMarkRects : [],
+      startArrow: cutOut ? startArrowPoints : [],
     })
   }
 

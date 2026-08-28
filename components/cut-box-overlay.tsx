@@ -1,4 +1,4 @@
-import { CUT_SECTION_IN, type CutBox } from '@/lib/cut-layout'
+import { CUT_SECTION_IN, startMarkArrowPoints, type CutBox } from '@/lib/cut-layout'
 
 type CutBoxOverlayProps = {
   boxes: CutBox[]
@@ -54,6 +54,16 @@ export function CutBoxOverlay({
                 cx={mark.xIn + mark.widthIn / 2}
                 cy={mark.yIn + mark.heightIn / 2}
                 r={radius}
+              />
+            )
+          })}
+          {marks.filter((mark) => mark.first).map((mark, index) => {
+            const points = startMarkArrowPoints(mark)
+            return (
+              <polygon
+                key={`start-arrow-${index}`}
+                className="cut-start-arrow"
+                points={points.map((point) => `${point.xIn},${point.yIn}`).join(' ')}
               />
             )
           })}

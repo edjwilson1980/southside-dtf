@@ -102,6 +102,41 @@ function fillRegistrationMark(
   fillMarkCircle(context, cx, cy, diameter)
 }
 
+function fillPolygon(
+  context: CanvasRenderingContext2D,
+  points: Array<{ xIn: number; yIn: number }>,
+  pxPerIn: number,
+) {
+  if (points.length < 3) return
+  context.beginPath()
+  points.forEach((point, index) => {
+    const x = point.xIn * pxPerIn
+    const y = point.yIn * pxPerIn
+    if (index === 0) context.moveTo(x, y)
+    else context.lineTo(x, y)
+  })
+  context.closePath()
+  context.fill()
+}
+
+function fillStartArrow(
+  context: CanvasRenderingContext2D,
+  points: Array<{ xIn: number; yIn: number }>,
+  pxPerIn: number,
+) {
+  const cx = points.reduce((sum, point) => sum + point.xIn, 0) / points.length
+  const cy = points.reduce((sum, point) => sum + point.yIn, 0) / points.length
+  const halo = points.map((point) => ({
+    xIn: cx + (point.xIn - cx) * 1.45,
+    yIn: cy + (point.yIn - cy) * 1.45,
+  }))
+  context.imageSmoothingEnabled = true
+  context.fillStyle = '#ffffff'
+  fillPolygon(context, halo, pxPerIn)
+  context.fillStyle = '#000000'
+  fillPolygon(context, points, pxPerIn)
+}
+
 export async function composeGangSheet(opts: {
   pieces: PlacedSheetPiece[]
   sheetLengthIn: number
@@ -109,6 +144,7 @@ export async function composeGangSheet(opts: {
   label?: string
   mapCmyk?: boolean
   marks?: Array<{ xIn: number; yIn: number; widthIn: number; heightIn: number; color?: string }>
+  startArrow?: Array<{ xIn: number; yIn: number }>
 }) {
   const width = Math.max(1, Math.round(SHEET_WIDTH_IN * opts.pxPerIn))
   const height = Math.max(1, Math.round(opts.sheetLengthIn * opts.pxPerIn))
@@ -154,6 +190,9 @@ export async function composeGangSheet(opts: {
   context.globalCompositeOperation = 'source-over'
   for (const mark of opts.marks ?? []) {
     fillRegistrationMark(context, mark, opts.pxPerIn)
+  }
+  if (opts.startArrow && opts.startArrow.length >= 3) {
+    fillStartArrow(context, opts.startArrow, opts.pxPerIn)
   }
 
   return canvasToPngBlob(canvas, width / SHEET_WIDTH_IN)

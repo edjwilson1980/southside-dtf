@@ -49,6 +49,12 @@ function sheetHeightWithMarkTrail(sheetHeightIn, ys) {
 
 const xs = markXs()
 const shortYs = markYs(11)
+const firstMark = { xIn: xs.left, yIn: shortYs[0], widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN }
+const arrow = [
+  { xIn: firstMark.xIn + firstMark.widthIn / 2, yIn: Math.max(0, firstMark.yIn - MARK_PAD_IN - 0.4 / 25.4) },
+]
+const arrowTipY = arrow[0].yIn
+const arrowBaseY = Math.max(0, arrowTipY - 4 / 25.4)
 const twelveYs = markYs(12)
 const midYs = markYs(24)
 const longYs = markYs(36)
@@ -65,11 +71,15 @@ const checks = [
   [layout.includes('MARK_TRAIL_IN = 0.75'), 'sheet ends 0.75 in after the last mark'],
   [layout.includes("shape: 'circle'"), 'printed marks are circles, not squares'],
   [overlay.includes('<circle'), 'preview overlay draws crop marks as SVG circles'],
+  [overlay.includes('cut-start-arrow') && overlay.includes('<polygon'), 'preview overlay draws a start arrow pointing at the first crop mark'],
+  [layout.includes('startMarkArrowPoints'), 'start-arrow geometry is defined next to the first crop mark'],
   [css.includes('cut-overlay-svg') && css.includes('stroke: #ff1a1a'), 'overlay crop marks are stroked circles, not boxes'],
   [preview.includes('21.5 in apart'), 'preview copy states 21.5 in horizontal spacing'],
+  [preview.includes('lock on before any knife path'), 'preview copy says the camera locks marks before cutting'],
   [preview.includes('Under 12 in uses two pairs'), 'preview copy states mark count follows sheet length'],
   [Math.abs(xs.right - xs.left - 21.5) < 1e-9, 'left and right marks are 21.5 in apart'],
-  [Math.abs(shortYs[0] - MARK_LEAD_IN) < 1e-9, 'first pair sits at the leading edge'],
+  [arrowTipY < firstMark.yIn && arrowBaseY < arrowTipY, 'start arrow sits on the leading edge and points at the first crop mark'],
+  [arrowBaseY >= 0, 'start arrow stays on the sheet'],
   [shortYs.length === 2, 'an 11 in sheet gets two mark pairs'],
   [twelveYs.length === 3, 'a 12 in sheet gets three mark pairs'],
   [midYs.length === 3, 'a 24 in sheet gets three mark pairs on that length'],
