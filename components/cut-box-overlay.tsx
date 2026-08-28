@@ -47,8 +47,8 @@ export function CutBoxOverlay({
             left: `${(mark.xIn / sheetWidthIn) * 100}%`,
             top: `${(mark.yIn / sheetHeightIn) * 100}%`,
             width: `${(mark.widthIn / sheetWidthIn) * 100}%`,
-            aspectRatio: '1',
-            height: 'auto',
+            height: `${(mark.heightIn / sheetHeightIn) * 100}%`,
+            borderRadius: '50%',
           }}
         />
       ))}

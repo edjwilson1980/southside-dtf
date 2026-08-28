@@ -4,37 +4,35 @@ import { fileURLToPath } from 'node:url'
 
 const layout = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/cut-layout.ts'), 'utf8')
 const preview = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../components/sheet-preview-modal.tsx'), 'utf8')
+const overlay = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../components/cut-box-overlay.tsx'), 'utf8')
 
 const MARK_SIZE_IN = 5 / 25.4
-const CUT_MARGIN_IN = 2 / 25.4
 const MARK_GAP_X_IN = 21.5
-const MARK_GAP_Y_IN = 10
 const MARK_LEAD_IN = 10 / 25.4
 const MARK_TRAIL_IN = 0.75
+const MARK_PAD_IN = 2 / 25.4
+const SHORT_SHEET_IN = 12
+const CUT_SECTION_IN = 30
+const MARK_ROW_GAP_IN = MARK_SIZE_IN + MARK_PAD_IN * 2
 const SHEET_WIDTH_IN = 22
 
-function artBounds(pieces) {
-  return {
-    left: Math.min(...pieces.map((piece) => piece.xIn)),
-    right: Math.max(...pieces.map((piece) => piece.xIn + piece.widthIn)),
-    top: Math.min(...pieces.map((piece) => piece.yIn)),
-    bottom: Math.max(...pieces.map((piece) => piece.yIn + piece.heightIn)),
-  }
+function sectionMarkYs(sectionStart, sectionHeightIn) {
+  const top = sectionStart + MARK_LEAD_IN
+  const bottom = sectionStart + Math.max(MARK_LEAD_IN, sectionHeightIn - MARK_SIZE_IN)
+  if (bottom - top < 0.25) return [top]
+  if (sectionHeightIn < SHORT_SHEET_IN) return [top, bottom]
+  const middle = sectionStart + sectionHeightIn / 2 - MARK_SIZE_IN / 2
+  if (middle - top < MARK_ROW_GAP_IN || bottom - middle < MARK_ROW_GAP_IN) return [top, bottom]
+  return [top, middle, bottom]
 }
 
-function markYs(pieces, sheetHeightIn) {
-  const first = MARK_LEAD_IN
-  const contentBottom = pieces.length > 0
-    ? artBounds(pieces).bottom + CUT_MARGIN_IN
-    : sheetHeightIn
-  const last = Math.max(first, contentBottom - MARK_SIZE_IN)
-  const ys = [first]
-  while (last - ys[ys.length - 1] > MARK_GAP_Y_IN + 1e-9) {
-    ys.push(ys[ys.length - 1] + MARK_GAP_Y_IN)
-  }
-  if (last - ys[ys.length - 1] > 0.25) ys.push(last)
-  if (ys.length < 2) ys.push(last)
-  return ys
+function markYs(sheetHeightIn) {
+  const sectionCount = Math.max(1, Math.ceil(sheetHeightIn / CUT_SECTION_IN - 1e-9))
+  return Array.from({ length: sectionCount }, (_, index) => {
+    const sectionStart = index * CUT_SECTION_IN
+    const sectionHeightIn = Math.min(CUT_SECTION_IN, Math.max(0, sheetHeightIn - sectionStart))
+    return sectionMarkYs(sectionStart, sectionHeightIn)
+  }).flat()
 }
 
 function markXs(sheetWidthIn = SHEET_WIDTH_IN) {
@@ -48,46 +46,38 @@ function sheetHeightWithMarkTrail(sheetHeightIn, ys) {
   return Math.max(lastMark + MARK_TRAIL_IN, sheetHeightIn)
 }
 
-const shortArt = [{ yIn: 1.875, heightIn: 6, xIn: 4, widthIn: 5 }]
-const midArt = [{ yIn: 1.875, heightIn: 18, xIn: 3, widthIn: 8 }]
-const longArt = [{ yIn: 1.875, heightIn: 36, xIn: 2, widthIn: 10 }]
 const xs = markXs()
-const shortYs = markYs(shortArt, 11)
-const midYs = markYs(midArt, 24)
-const longYs = markYs(longArt, 40)
-const shortEnd = artBounds(shortArt).bottom + CUT_MARGIN_IN
-const midEnd = artBounds(midArt).bottom + CUT_MARGIN_IN
-const longEnd = artBounds(longArt).bottom + CUT_MARGIN_IN
-const shortPrint = sheetHeightWithMarkTrail(shortEnd, shortYs)
-const midPrint = sheetHeightWithMarkTrail(midEnd, midYs)
+const shortYs = markYs(11)
+const twelveYs = markYs(12)
+const midYs = markYs(24)
+const longYs = markYs(36)
+const shortPrint = sheetHeightWithMarkTrail(11, shortYs)
 const lastShort = shortYs[shortYs.length - 1] + MARK_SIZE_IN
+const lastTwelve = twelveYs[twelveYs.length - 1] + MARK_SIZE_IN
 const lastMid = midYs[midYs.length - 1] + MARK_SIZE_IN
 const lastLong = longYs[longYs.length - 1] + MARK_SIZE_IN
-const shortGaps = shortYs.slice(1).map((y, i) => y - shortYs[i])
-const midGaps = midYs.slice(1).map((y, i) => y - midYs[i])
-const longGaps = longYs.slice(1).map((y, i) => y - longYs[i])
 
 const checks = [
+  [layout.includes('SHORT_SHEET_IN = 12'), '12 in short-sheet threshold is in code'],
   [layout.includes('MARK_GAP_X_IN = 21.5'), '21.5 in left-to-right crop-mark spacing is in code'],
-  [layout.includes('MARK_GAP_Y_IN = 10'), '10 in max vertical crop-mark spacing is in code'],
   [layout.includes('MARK_LEAD_IN = 10 / 25.4'), 'first mark row starts at the leading edge'],
   [layout.includes('MARK_TRAIL_IN = 0.75'), 'sheet ends 0.75 in after the last mark'],
+  [layout.includes("shape: 'circle'"), 'printed marks are circles, not squares'],
+  [overlay.includes("borderRadius: '50%'"), 'preview overlay forces circular crop marks'],
   [preview.includes('21.5 in apart'), 'preview copy states 21.5 in horizontal spacing'],
-  [preview.includes('no more than 10 in apart'), 'preview copy states 10 in is the maximum row spacing'],
-  [preview.includes('last pair at the end of the designs'), 'preview copy states the last pair ends the job'],
+  [preview.includes('Under 12 in uses two pairs'), 'preview copy states mark count follows sheet length'],
   [Math.abs(xs.right - xs.left - 21.5) < 1e-9, 'left and right marks are 21.5 in apart'],
-  [Math.abs(shortYs[0] - MARK_LEAD_IN) < 1e-9, 'first pair sits at the leading edge, not down on the art'],
-  [shortYs.length === 2, 'short art still gets two mark rows'],
-  [shortGaps.every((gap) => gap <= MARK_GAP_Y_IN + 1e-9), 'short-art rows stay within 10 in'],
-  [lastShort + 1e-9 >= shortEnd, 'last short-art mark sits on the bottom of the designs'],
-  [shortPrint - lastShort <= MARK_TRAIL_IN + 1e-9, 'no long unmarked footer after the last short-art mark'],
-  [shortYs[1] + MARK_SIZE_IN <= shortEnd + MARK_TRAIL_IN, 'short art does not print a 10 in pair past the job'],
-  [midGaps.every((gap) => gap <= MARK_GAP_Y_IN + 1e-9), '18 in of art keeps rows within 10 in'],
-  [lastMid + 1e-9 >= midEnd, 'last mid-sheet mark sits on the bottom of the designs'],
-  [midPrint - lastMid <= MARK_TRAIL_IN + 1e-9, 'no long unmarked footer after the last mid-sheet mark'],
-  [longYs.length === 5, '36 in of art gets a leading pair, 10 in intermediates, and a pair at the end'],
-  [longGaps.every((gap) => gap <= MARK_GAP_Y_IN + 1e-9), 'long-sheet rows stay within 10 in'],
-  [lastLong + 1e-9 >= longEnd, 'last long-sheet mark sits on the bottom of the designs'],
+  [Math.abs(shortYs[0] - MARK_LEAD_IN) < 1e-9, 'first pair sits at the leading edge'],
+  [shortYs.length === 2, 'an 11 in sheet gets two mark pairs'],
+  [twelveYs.length === 3, 'a 12 in sheet gets three mark pairs'],
+  [midYs.length === 3, 'a 24 in sheet gets three mark pairs on that length'],
+  [longYs.length === 5, 'a 36 in sheet gets three pairs in the first 30 in and two on the leftover'],
+  [lastShort + 1e-9 >= 11 - MARK_SIZE_IN, 'short-sheet last pair sits at the end of that sheet'],
+  [shortPrint - lastShort <= MARK_TRAIL_IN + 1e-9, 'no long unmarked footer after the last short-sheet mark'],
+  [Math.abs(midYs[1] - (24 / 2 - MARK_SIZE_IN / 2)) < 1e-9, 'mid pair on a 24 in sheet is centered on that length'],
+  [lastMid + 1e-9 >= 24 - MARK_SIZE_IN, '24 in last pair sits at the end of that sheet'],
+  [lastTwelve + 1e-9 >= 12 - MARK_SIZE_IN, '12 in last pair sits at the end of that sheet'],
+  [lastLong + 1e-9 >= 36 - MARK_SIZE_IN, '36 in last pair sits at the end of that sheet'],
 ]
 
 const failed = checks.filter(([ok]) => !ok)
@@ -96,5 +86,5 @@ if (failed.length) {
   console.error(`mark layout checks failed: ${failed.length}`)
   process.exit(1)
 }
-console.log(`x ${xs.left.toFixed(3)} to ${xs.right.toFixed(3)} in; y ${longYs.map((y) => y.toFixed(2)).join(', ')} in`)
-console.log('crop marks start at the film edge, stay within 10 in, and end on the last design')
+console.log(`x ${xs.left.toFixed(3)} to ${xs.right.toFixed(3)} in; 11 in ${shortYs.length} rows; 12 in ${twelveYs.length} rows; 36 in y ${longYs.map((y) => y.toFixed(2)).join(', ')}`)
+console.log('crop mark count follows sheet length; marks stay circular')

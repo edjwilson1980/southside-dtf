@@ -4,15 +4,16 @@ import { SHEET_WIDTH_IN, type PlacedSheetPiece } from '@/lib/compose-sheet'
 export const CUT_MARGIN_MM = 2
 export const CUT_MARGIN_IN = CUT_MARGIN_MM / 25.4
 export const CUT_SECTION_IN = 30
+/** Sheets shorter than this get two mark pairs; 12–30 in sheets get three. */
+export const SHORT_SHEET_IN = 12
 /** Left and right crop marks are 21.5 in apart. */
 export const MARK_GAP_X_IN = 21.5
-/** Max distance between crop-mark rows. The last pair sits on the job, not 10 in past it. */
-export const MARK_GAP_Y_IN = 10
 /** Teneth CCD cameras lock onto filled 5 mm circles, not squares or L marks. */
 export const MARK_SIZE_IN = 5 / 25.4
 export const MARK_PAD_IN = 2 / 25.4
 export const MARK_INSET_IN = 2 / 25.4
 export const MARK_CLEARANCE_IN = MARK_INSET_IN + MARK_PAD_IN * 2 + MARK_SIZE_IN + CUT_MARGIN_IN
+const MARK_ROW_GAP_IN = MARK_SIZE_IN + MARK_PAD_IN * 2
 /** First crop-mark row, measured from the leading edge of the film. */
 export const MARK_LEAD_IN = 10 / 25.4
 /** Film after the last mark — enough for the camera, not another 10 in search. */
@@ -71,29 +72,25 @@ function markStack(xIn: number, yIn: number): PrintMark[] {
   ]
 }
 
-function artBounds(pieces: PlacedSheetPiece[]) {
-  return {
-    left: Math.min(...pieces.map((piece) => piece.xIn)),
-    right: Math.max(...pieces.map((piece) => piece.xIn + piece.widthIn)),
-    top: Math.min(...pieces.map((piece) => piece.yIn)),
-    bottom: Math.max(...pieces.map((piece) => piece.yIn + piece.heightIn)),
-  }
+function sectionMarkYs(sectionStart: number, sectionHeightIn: number) {
+  if (sectionHeightIn <= 0) return []
+  const top = sectionStart + MARK_LEAD_IN
+  const bottom = sectionStart + Math.max(MARK_LEAD_IN, sectionHeightIn - MARK_SIZE_IN)
+  if (bottom - top < 0.25) return [top]
+  if (sectionHeightIn < SHORT_SHEET_IN) return [top, bottom]
+  const middle = sectionStart + sectionHeightIn / 2 - MARK_SIZE_IN / 2
+  if (middle - top < MARK_ROW_GAP_IN || bottom - middle < MARK_ROW_GAP_IN) return [top, bottom]
+  return [top, middle, bottom]
 }
 
-function markYs(pieces: PlacedSheetPiece[], sheetHeightIn: number) {
+function markYs(sheetHeightIn: number) {
   if (sheetHeightIn <= 0) return []
-  const first = MARK_LEAD_IN
-  const contentBottom = pieces.length > 0
-    ? artBounds(pieces).bottom + CUT_MARGIN_IN
-    : sheetHeightIn
-  const last = Math.max(first, contentBottom - MARK_SIZE_IN)
-  const ys: number[] = [first]
-  while (last - ys[ys.length - 1] > MARK_GAP_Y_IN + 1e-9) {
-    ys.push(ys[ys.length - 1] + MARK_GAP_Y_IN)
-  }
-  if (last - ys[ys.length - 1] > 0.25) ys.push(last)
-  if (ys.length < 2) ys.push(last)
-  return ys
+  const sectionCount = Math.max(1, Math.ceil(sheetHeightIn / CUT_SECTION_IN - 1e-9))
+  return Array.from({ length: sectionCount }, (_, index) => {
+    const sectionStart = index * CUT_SECTION_IN
+    const sectionHeightIn = Math.min(CUT_SECTION_IN, Math.max(0, sheetHeightIn - sectionStart))
+    return sectionMarkYs(sectionStart, sectionHeightIn)
+  }).flat()
 }
 
 function markXs(sheetWidthIn: number) {
@@ -108,7 +105,7 @@ export function registrationMarkBounds(
   pieces: PlacedSheetPiece[] = [],
 ) {
   const { left, right } = markXs(sheetWidthIn)
-  return markYs(pieces, sheetHeightIn).flatMap((yIn, row) => [
+  return markYs(sheetHeightIn).flatMap((yIn, row) => [
     { xIn: left, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: row === 0 },
     { xIn: right, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: false },
   ])
