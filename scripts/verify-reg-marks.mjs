@@ -98,7 +98,7 @@ const checks = [
   [overlay.includes("aspectRatio: '1'"), 'overlay boxes stay 1:1 circles'],
   [preview.includes('black 5 mm circles'), 'preview copy describes circles'],
   [preview.includes('21.5 in apart'), 'preview copy explains 21.5 in horizontal spacing'],
-  [layout.includes('MARK_GAP_Y_IN = 10'), 'mark rows are 10 in apart'],
+  [layout.includes('MARK_GAP_Y_IN = 10'), 'mark rows stay within 10 in'],
   [layout.includes('MARK_LEAD_IN = 10 / 25.4'), 'first mark row starts at the leading edge'],
   [layout.includes('MARK_GAP_X_IN = 21.5'), 'left and right marks are 21.5 in apart'],
   [centerBlack, `center pixel is black (${cr},${cg},${cb},${ca})`],

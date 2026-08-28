@@ -6,7 +6,7 @@ export const CUT_MARGIN_IN = CUT_MARGIN_MM / 25.4
 export const CUT_SECTION_IN = 30
 /** Left and right crop marks are 21.5 in apart. */
 export const MARK_GAP_X_IN = 21.5
-/** Crop-mark rows are 10 in apart down the sheet. */
+/** Max distance between crop-mark rows. The last pair sits on the job, not 10 in past it. */
 export const MARK_GAP_Y_IN = 10
 /** Teneth CCD cameras lock onto filled 5 mm circles, not squares or L marks. */
 export const MARK_SIZE_IN = 5 / 25.4
@@ -86,13 +86,13 @@ function markYs(pieces: PlacedSheetPiece[], sheetHeightIn: number) {
   const contentBottom = pieces.length > 0
     ? artBounds(pieces).bottom + CUT_MARGIN_IN
     : sheetHeightIn
+  const last = Math.max(first, contentBottom - MARK_SIZE_IN)
   const ys: number[] = [first]
-  while (
-    ys[ys.length - 1] + MARK_SIZE_IN < contentBottom - 1e-9
-    || ys.length < 2
-  ) {
+  while (last - ys[ys.length - 1] > MARK_GAP_Y_IN + 1e-9) {
     ys.push(ys[ys.length - 1] + MARK_GAP_Y_IN)
   }
+  if (last - ys[ys.length - 1] > 0.25) ys.push(last)
+  if (ys.length < 2) ys.push(last)
   return ys
 }
 
@@ -135,24 +135,23 @@ function toUnits(inches: number) {
 }
 
 function rectanglePath(x1: number, y1: number, x2: number, y2: number) {
-  return `U${x2},${y2};D${x2},${y2};D${x2},${y1};D${x1},${y1};D${x1},${y2};D${x2},${y2};`
+  return `U${x1},${y1} D${x1},${y1} D${x1},${y2},${x2},${y2},${x2},${y1},${x1},${y1} `
 }
 
-export function buildTenethPlt(
-  boxes: CutBox[],
-  sectionWidthIn: number,
-  sectionHeightIn: number,
-) {
-  const width = toUnits(sectionWidthIn)
-  const height = toUnits(sectionHeightIn)
+/**
+ * Artcut/Teneth DMPL for U-disk contour cut.
+ * Origin is the leading-left of the printed sheet (same as the PNG).
+ * Stay in DMPL: no HPGL work-area, chord-tolerance, or page-feed commands.
+ */
+export function buildTenethPlt(boxes: CutBox[]) {
   const paths = boxes.map((box) => {
     const x1 = toUnits(box.xIn)
     const x2 = toUnits(box.xIn + box.widthIn)
-    const yTop = toUnits(sectionHeightIn - box.yIn)
-    const yBottom = toUnits(sectionHeightIn - (box.yIn + box.heightIn))
-    return rectanglePath(x1, yBottom, x2, yTop)
+    const y1 = toUnits(box.yIn)
+    const y2 = toUnits(box.yIn + box.heightIn)
+    return rectanglePath(x1, y1, x2, y2)
   }).join('')
-  return `TB26,0,${width},${height};CT1;;:H A L0 ECN U SP1;;${paths}U${width},0;PG;`
+  return `;:H A L0 ECN U V10 ${paths}U @`
 }
 
 export function cutPltSections(
@@ -182,7 +181,7 @@ export function cutPltSections(
       index,
       sectionCount,
       sectionHeightIn,
-      plt: boxes.length > 0 ? buildTenethPlt(boxes, sheetWidthIn, sectionHeightIn) : '',
+      plt: boxes.length > 0 ? buildTenethPlt(boxes) : '',
     }
   }).filter((section) => section.plt)
 }

@@ -9,7 +9,7 @@ import { SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 
 function cropMarkPreviewCopy(markCount: number) {
   const countLabel = markCount === 4 ? 'four' : markCount === 6 ? 'six' : String(markCount)
-  return `The ${countLabel} black 5 mm circles ARE printed on the PNG for the cutter camera. Left and right marks are 21.5 in apart. The first pair is at the start of the film, then every 10 in through the last design, so the cutter does not have to search past the artwork. Red cut boxes are the image plus 2 mm.`
+  return `The ${countLabel} black 5 mm circles ARE printed on the PNG for the cutter camera. Left and right marks are 21.5 in apart. The first pair is at the start of the film, then no more than 10 in apart, with the last pair at the end of the designs. The PLT is Artcut DMPL, so the cutter stops after that last pair. Red cut boxes are the image plus 2 mm.`
 }
 
 const zoomPresets = [
