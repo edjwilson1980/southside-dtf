@@ -9,7 +9,7 @@ import { DesignInspector } from '@/components/design-inspector'
 import { SheetPreviewModal } from '@/components/sheet-preview-modal'
 import { composeGangSheet, layoutSheetRows, pieceHeightInches, ART_INSET_IN, CUT_ART_START_IN, SHEET_GUTTER_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
-import { CUT_MARGIN_IN, CUT_SECTION_IN, MARK_CLEARANCE_IN, cutPltSections, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, sheetHeightWithMarkTrail, startMarkArrowPoints } from '@/lib/cut-layout'
+import { CUT_MARGIN_IN, CUT_SECTION_IN, MARK_CLEARANCE_IN, cutPltSections, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, startMarkArrowPoints } from '@/lib/cut-layout'
 import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
@@ -256,13 +256,13 @@ export default function Home() {
       }
     : undefined)
   const packedHeight = Math.max(0, sheetLayout.contentEndY - artStart)
-  const cutMarkRects = cutOut ? registrationMarkRects(sheetLayout.contentEndY, SHEET_WIDTH_IN, sheetLayout.pieces) : []
-  const cutMarks = cutOut ? registrationMarkBounds(sheetLayout.contentEndY, SHEET_WIDTH_IN, sheetLayout.pieces) : []
+  const printHeight = cutOut
+    ? sheetLayout.contentEndY + CUT_ART_START_IN
+    : sheetLayout.contentEndY + ART_INSET_IN
+  const cutMarkRects = cutOut ? registrationMarkRects(printHeight, SHEET_WIDTH_IN, sheetLayout.pieces) : []
+  const cutMarks = cutOut ? registrationMarkBounds(printHeight, SHEET_WIDTH_IN, sheetLayout.pieces) : []
   const startArrow = cutMarks.find((mark) => mark.first)
   const startArrowPoints = startArrow ? startMarkArrowPoints(startArrow) : []
-  const printHeight = cutOut
-    ? sheetHeightWithMarkTrail(sheetLayout.contentEndY, cutMarks)
-    : sheetLayout.contentEndY + ART_INSET_IN
   const billedLength = billedSheetLength(packedHeight)
   const cutBoxes = cutOut ? cutPreviewBoxes(sheetLayout.pieces, SHEET_WIDTH_IN, printHeight) : []
   const cutTooTall = cutOut && sheetLayout.pieces.some((piece) => piece.heightIn + CUT_MARGIN_IN * 2 > CUT_SECTION_IN)

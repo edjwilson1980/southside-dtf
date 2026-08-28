@@ -56,8 +56,7 @@ export function layoutSheetRows(
 
   for (const row of rows) {
     const rowHeight = Math.max(...row.map((piece) => piece.heightIn), 0)
-    const rowWidth = row.reduce((sum, piece, index) => sum + piece.widthIn + (index > 0 ? SHEET_GUTTER_IN : 0), 0)
-    const rowInset = rowWidth > SHEET_WIDTH_IN - sideInsetIn * 2 ? 0 : sideInsetIn
+    const rowInset = sideInsetIn
     if (sectionLengthIn && sectionLengthIn > 0) {
       const section = Math.floor(Math.max(0, yIn - boxMarginIn) / sectionLengthIn)
       const sectionEnd = (section + 1) * sectionLengthIn
@@ -127,8 +126,8 @@ function fillStartArrow(
   const cx = points.reduce((sum, point) => sum + point.xIn, 0) / points.length
   const cy = points.reduce((sum, point) => sum + point.yIn, 0) / points.length
   const halo = points.map((point) => ({
-    xIn: cx + (point.xIn - cx) * 1.45,
-    yIn: cy + (point.yIn - cy) * 1.45,
+    xIn: cx + (point.xIn - cx) * 1.9,
+    yIn: cy + (point.yIn - cy) * 1.9,
   }))
   context.imageSmoothingEnabled = true
   context.fillStyle = '#ffffff'
@@ -156,18 +155,6 @@ export async function composeGangSheet(opts: {
 
   context.clearRect(0, 0, width, height)
 
-  for (const piece of opts.pieces) {
-    if (!piece.previewUrl) continue
-    const image = await loadImage(piece.previewUrl)
-    context.drawImage(
-      image,
-      piece.xIn * opts.pxPerIn,
-      piece.yIn * opts.pxPerIn,
-      piece.widthIn * opts.pxPerIn,
-      piece.heightIn * opts.pxPerIn,
-    )
-  }
-
   if (opts.label) {
     const fontPx = Math.max(1, (LABEL_PT * opts.pxPerIn) / 72)
     context.font = `700 ${fontPx}px Arial, Helvetica, sans-serif`
@@ -178,6 +165,18 @@ export async function composeGangSheet(opts: {
     const labelY = (LABEL_MARGIN_IN + LABEL_HEIGHT_IN / 2) * opts.pxPerIn
     context.fillText(opts.label, x, labelY)
     context.fillText(opts.label, x, height - labelY)
+  }
+
+  for (const piece of opts.pieces) {
+    if (!piece.previewUrl) continue
+    const image = await loadImage(piece.previewUrl)
+    context.drawImage(
+      image,
+      piece.xIn * opts.pxPerIn,
+      piece.yIn * opts.pxPerIn,
+      piece.widthIn * opts.pxPerIn,
+      piece.heightIn * opts.pxPerIn,
+    )
   }
 
   if (opts.mapCmyk) {

@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const layout = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/cut-layout.ts'), 'utf8')
+const compose = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/compose-sheet.ts'), 'utf8')
 const preview = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../components/sheet-preview-modal.tsx'), 'utf8')
 const overlay = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../components/cut-box-overlay.tsx'), 'utf8')
 const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../app/globals.css'), 'utf8')
@@ -19,7 +20,7 @@ const SHEET_WIDTH_IN = 22
 
 function sectionMarkYs(sectionStart, sectionHeightIn) {
   const top = sectionStart + MARK_LEAD_IN
-  const bottom = sectionStart + Math.max(MARK_LEAD_IN, sectionHeightIn - MARK_SIZE_IN)
+  const bottom = sectionStart + Math.max(MARK_LEAD_IN, sectionHeightIn - MARK_TRAIL_IN - MARK_SIZE_IN)
   if (bottom - top < 0.25) return [top]
   if (sectionHeightIn < SHORT_SHEET_IN) return [top, bottom]
   const middle = sectionStart + sectionHeightIn / 2 - MARK_SIZE_IN / 2
@@ -50,11 +51,12 @@ function sheetHeightWithMarkTrail(sheetHeightIn, ys) {
 const xs = markXs()
 const shortYs = markYs(11)
 const firstMark = { xIn: xs.left, yIn: shortYs[0], widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN }
-const arrow = [
-  { xIn: firstMark.xIn + firstMark.widthIn / 2, yIn: Math.max(0, firstMark.yIn - MARK_PAD_IN - 0.4 / 25.4) },
-]
-const arrowTipY = arrow[0].yIn
-const arrowBaseY = Math.max(0, arrowTipY - 4 / 25.4)
+const arrowTipX = firstMark.xIn + firstMark.widthIn + MARK_PAD_IN + 0.6 / 25.4
+const artStart = 0.125 + 1 + 0.75
+const contentEnd = 8
+const printHeight = contentEnd + artStart
+const printYs = markYs(printHeight)
+const lastPrintMark = printYs[printYs.length - 1]
 const twelveYs = markYs(12)
 const midYs = markYs(24)
 const longYs = markYs(36)
@@ -75,21 +77,23 @@ const checks = [
   [layout.includes('startMarkArrowPoints'), 'start-arrow geometry is defined next to the first crop mark'],
   [css.includes('cut-overlay-svg') && css.includes('stroke: #ff1a1a'), 'overlay crop marks are stroked circles, not boxes'],
   [preview.includes('21.5 in apart'), 'preview copy states 21.5 in horizontal spacing'],
-  [preview.includes('lock on before any knife path'), 'preview copy says the camera locks marks before cutting'],
+  [preview.includes('in the margins'), 'preview copy says crop marks stay off the designs'],
   [preview.includes('Under 12 in uses two pairs'), 'preview copy states mark count follows sheet length'],
   [Math.abs(xs.right - xs.left - 21.5) < 1e-9, 'left and right marks are 21.5 in apart'],
-  [arrowTipY < firstMark.yIn && arrowBaseY < arrowTipY, 'start arrow sits on the leading edge and points at the first crop mark'],
-  [arrowBaseY >= 0, 'start arrow stays on the sheet'],
+  [arrowTipX > firstMark.xIn + firstMark.widthIn, 'start arrow sits to the right of the first crop mark and points at it'],
+  [firstMark.yIn + MARK_SIZE_IN < artStart, 'first crop-mark row stays in the header, above the artwork'],
+  [lastPrintMark >= contentEnd, 'last crop-mark row stays in the footer, below the artwork'],
+  [compose.includes('const rowInset = sideInsetIn'), 'cut sheets keep side gutters so marks do not land on designs'],
   [shortYs.length === 2, 'an 11 in sheet gets two mark pairs'],
   [twelveYs.length === 3, 'a 12 in sheet gets three mark pairs'],
   [midYs.length === 3, 'a 24 in sheet gets three mark pairs on that length'],
   [longYs.length === 5, 'a 36 in sheet gets three pairs in the first 30 in and two on the leftover'],
-  [lastShort + 1e-9 >= 11 - MARK_SIZE_IN, 'short-sheet last pair sits at the end of that sheet'],
+  [Math.abs(11 - lastShort - MARK_TRAIL_IN) < 1e-6, 'short-sheet last pair leaves 0.75 in after the mark'],
   [shortPrint - lastShort <= MARK_TRAIL_IN + 1e-9, 'no long unmarked footer after the last short-sheet mark'],
   [Math.abs(midYs[1] - (24 / 2 - MARK_SIZE_IN / 2)) < 1e-9, 'mid pair on a 24 in sheet is centered on that length'],
-  [lastMid + 1e-9 >= 24 - MARK_SIZE_IN, '24 in last pair sits at the end of that sheet'],
-  [lastTwelve + 1e-9 >= 12 - MARK_SIZE_IN, '12 in last pair sits at the end of that sheet'],
-  [lastLong + 1e-9 >= 36 - MARK_SIZE_IN, '36 in last pair sits at the end of that sheet'],
+  [Math.abs(24 - lastMid - MARK_TRAIL_IN) < 1e-6, '24 in last pair leaves 0.75 in after the mark'],
+  [Math.abs(12 - lastTwelve - MARK_TRAIL_IN) < 1e-6, '12 in last pair leaves 0.75 in after the mark'],
+  [Math.abs(36 - lastLong - MARK_TRAIL_IN) < 1e-6, '36 in last pair leaves 0.75 in after the mark'],
 ]
 
 const failed = checks.filter(([ok]) => !ok)

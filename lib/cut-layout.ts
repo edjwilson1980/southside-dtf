@@ -19,8 +19,8 @@ export const MARK_LEAD_IN = 10 / 25.4
 /** Film after the last mark — enough for the camera, not another 10 in search. */
 export const MARK_TRAIL_IN = 0.75
 /** Small printed arrow at the leading-left circle so the camera start is obvious. */
-export const START_ARROW_LENGTH_IN = 4 / 25.4
-export const START_ARROW_WIDTH_IN = 3.2 / 25.4
+export const START_ARROW_LENGTH_IN = 8 / 25.4
+export const START_ARROW_WIDTH_IN = 6 / 25.4
 const PLT_UNITS_PER_IN = 1016
 
 export type CutBox = {
@@ -78,7 +78,7 @@ function markStack(xIn: number, yIn: number): PrintMark[] {
 function sectionMarkYs(sectionStart: number, sectionHeightIn: number) {
   if (sectionHeightIn <= 0) return []
   const top = sectionStart + MARK_LEAD_IN
-  const bottom = sectionStart + Math.max(MARK_LEAD_IN, sectionHeightIn - MARK_SIZE_IN)
+  const bottom = sectionStart + Math.max(MARK_LEAD_IN, sectionHeightIn - MARK_TRAIL_IN - MARK_SIZE_IN)
   if (bottom - top < 0.25) return [top]
   if (sectionHeightIn < SHORT_SHEET_IN) return [top, bottom]
   const middle = sectionStart + sectionHeightIn / 2 - MARK_SIZE_IN / 2
@@ -124,17 +124,16 @@ export function registrationMarkRects(
 
 export type ArrowPoint = { xIn: number; yIn: number }
 
-/** Triangle that points at the first crop mark from the leading edge. */
+/** Triangle to the right of the first crop mark, pointing at it. Stays in the header, off the artwork. */
 export function startMarkArrowPoints(mark: CutBox): ArrowPoint[] {
-  const cx = mark.xIn + mark.widthIn / 2
-  const tipY = Math.max(0, mark.yIn - MARK_PAD_IN - 0.4 / 25.4)
+  const cy = mark.yIn + mark.heightIn / 2
+  const tipX = mark.xIn + mark.widthIn + MARK_PAD_IN + 0.6 / 25.4
   const length = START_ARROW_LENGTH_IN
   const half = START_ARROW_WIDTH_IN / 2
-  const baseY = Math.max(0, tipY - length)
   return [
-    { xIn: cx, yIn: tipY },
-    { xIn: cx - half, yIn: baseY },
-    { xIn: cx + half, yIn: baseY },
+    { xIn: tipX, yIn: cy },
+    { xIn: tipX + length, yIn: cy - half },
+    { xIn: tipX + length, yIn: cy + half },
   ]
 }
 
