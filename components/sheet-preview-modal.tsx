@@ -9,7 +9,7 @@ import { SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 
 function cropMarkPreviewCopy(markCount: number) {
   const countLabel = markCount === 4 ? 'four' : markCount === 6 ? 'six' : String(markCount)
-  return `The ${countLabel} black 5 mm circles ARE printed on the PNG for the cutter camera. Left and right marks are 21.5 in apart. Under 12 in uses two pairs; 12–30 in uses three, spaced on that sheet length. Longer jobs repeat that pattern every 30 in. Red cut boxes are the image plus 2 mm.`
+  return `The ${countLabel} black 5 mm circles ARE printed on the PNG for the cutter camera. Overlay crop marks are red circles. Left and right marks are 21.5 in apart. Under 12 in uses two pairs; 12–30 in uses three, spaced on that sheet length. Longer jobs repeat that pattern every 30 in. Red rectangles are the image plus 2 mm cut lines.`
 }
 
 const zoomPresets = [

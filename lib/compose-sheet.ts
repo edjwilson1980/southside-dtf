@@ -94,15 +94,12 @@ function fillRegistrationMark(
   mark: { xIn: number; yIn: number; widthIn: number; heightIn: number; color?: string },
   pxPerIn: number,
 ) {
+  const cx = (mark.xIn + mark.widthIn / 2) * pxPerIn
+  const cy = (mark.yIn + mark.heightIn / 2) * pxPerIn
   const diameter = Math.max(2, Math.min(mark.widthIn, mark.heightIn) * pxPerIn)
-  context.fillStyle = mark.color || '#000000'
   context.imageSmoothingEnabled = true
-  fillMarkCircle(
-    context,
-    (mark.xIn + mark.widthIn / 2) * pxPerIn,
-    (mark.yIn + mark.heightIn / 2) * pxPerIn,
-    diameter,
-  )
+  context.fillStyle = mark.color || '#000000'
+  fillMarkCircle(context, cx, cy, diameter)
 }
 
 export async function composeGangSheet(opts: {

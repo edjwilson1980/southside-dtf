@@ -39,16 +39,26 @@ export function CutBoxOverlay({
           }}
         />
       ))}
-      {marks.map((mark, index) => (
-        <div
-          key={`mark-${index}`}
-          className={`cut-reg-mark ${mark.first ? 'first' : ''}`}
-          style={{
-            left: `${((mark.xIn + mark.widthIn / 2) / sheetWidthIn) * 100}%`,
-            top: `${((mark.yIn + mark.heightIn / 2) / sheetHeightIn) * 100}%`,
-          }}
-        />
-      ))}
+      {marks.length > 0 && (
+        <svg
+          className="cut-overlay-svg"
+          viewBox={`0 0 ${sheetWidthIn} ${sheetHeightIn}`}
+          preserveAspectRatio="none"
+        >
+          {marks.map((mark, index) => {
+            const radius = Math.min(mark.widthIn, mark.heightIn) / 2
+            return (
+              <circle
+                key={`mark-${index}`}
+                className={`cut-reg-mark ${mark.first ? 'first' : ''}`}
+                cx={mark.xIn + mark.widthIn / 2}
+                cy={mark.yIn + mark.heightIn / 2}
+                r={radius}
+              />
+            )
+          })}
+        </svg>
+      )}
     </div>
   )
 }

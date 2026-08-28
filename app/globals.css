@@ -260,18 +260,10 @@ button.thumb:disabled { cursor: default; }
 .precut-rates tr.current td { background: #e8f8ee; color: #087c40; }
 .price-breakdown { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .cut-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.cut-overlay-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .cut-preview-box { position: absolute; box-sizing: border-box; border: 2px solid #ff1a1a; background: transparent; }
-.cut-reg-mark {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  box-sizing: border-box;
-  border: 2px solid #ff1a1a;
-  border-radius: 50%;
-  background: transparent;
-  transform: translate(-50%, -50%);
-}
-.cut-reg-mark.first { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #ff1a1a; }
+.cut-reg-mark { fill: none; stroke: #ff1a1a; stroke-width: 0.05; }
+.cut-reg-mark.first { stroke: #ff1a1a; }
 .cut-section-line { position: absolute; left: 0; right: 0; border-top: 2px dashed #ff1a1a; opacity: .75; }
 .sheet-preview-popup {
   display: flex;
