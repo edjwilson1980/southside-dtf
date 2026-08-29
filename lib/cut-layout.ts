@@ -150,7 +150,7 @@ function toUnits(inches: number) {
 }
 
 function rectanglePath(x1: number, y1: number, x2: number, y2: number) {
-  return `U${x1},${y1} D${x1},${y1} D${x1},${y2},${x2},${y2},${x2},${y1},${x1},${y1} `
+  return `U${x1},${y1};D${x1},${y1};D${x1},${y2};D${x2},${y2};D${x2},${y1};D${x1},${y1};U${x1},${y1};`
 }
 
 function markCenterInches(mark: CutBox) {
@@ -160,7 +160,7 @@ function markCenterInches(mark: CutBox) {
   }
 }
 
-/** CCD origin is the leading-left circle. List that mark first, then left-to-right down the sheet. */
+/** CCD origin is the leading-left circle. Far-corner span uses this first, then left-to-right down the sheet. */
 function marksFromStart(marks: CutBox[]) {
   return [...marks].sort((a, b) => {
     const ac = markCenterInches(a)
@@ -178,26 +178,29 @@ function toPlt(xIn: number, yIn: number, origin: { xIn: number; yIn: number }) {
 }
 
 /**
- * TB26,0,w,h,x,y,... is the 5 mm circle size, then every other mark center.
- * The parked start circle is origin — do not send 0,0 as the size (that is a
- * zero window) and do not send only the size (the camera then never looks elsewhere).
+ * CutterPro_5.2.gms exports the page as HPGL, then ToCutter.exe wraps it.
+ * TB26,0,width,height is the far corner of the mark window from the parked
+ * start circle — not mark size and not a list of points. CT1 enables contour.
  */
 function markScanCommand(marks: CutBox[], origin: { xIn: number; yIn: number }) {
   if (marks.length === 0) return ''
-  const markUnits = toUnits(MARK_SIZE_IN)
-  const others = marks.slice(1).flatMap((mark) => {
+  let width = 0
+  let height = 0
+  for (const mark of marks) {
     const center = markCenterInches(mark)
-    const { x, y } = toPlt(center.xIn, center.yIn, origin)
-    return [x, y]
-  })
-  const coords = [markUnits, markUnits, ...others]
-  return `TB26,0,${coords.join(',')};`
+    const point = toPlt(center.xIn, center.yIn, origin)
+    width = Math.max(width, point.x)
+    height = Math.max(height, point.y)
+  }
+  return { command: `TB26,0,${width},${height};CT1;`, width, height }
 }
 
+/** Tiny origin tick from the working Corel plugin file, then cuts, then return to the window width. */
+const ORIGIN_TICK = 'U-7,8;D-7,8;D-7,0;U-7,0;'
+
 /**
- * Artcut/Teneth DMPL contour cut for the CCD camera.
- * Header first. TB26 names a 5 mm circle, then the matching right mark at 21.5 in,
- * then each remaining pair. Cuts use the same first-mark origin. No U0,0 hunt.
+ * Match the working Corel Teneth plugin PLT:
+ * TB26,0,spanX,spanY;CT1;;:H A L0 ECN U  <tick> <semicolon U/D cuts> UspanX,0;PG;@
  */
 export function buildTenethPlt(boxes: CutBox[], marks: CutBox[] = []) {
   const ordered = marksFromStart(marks)
@@ -209,7 +212,8 @@ export function buildTenethPlt(boxes: CutBox[], marks: CutBox[] = []) {
     const end = toPlt(box.xIn + box.widthIn, box.yIn + box.heightIn, origin)
     return rectanglePath(start.x, start.y, end.x, end.y)
   }).join('')
-  return `;:H A L0 ECN U V10 ${scan}${paths}U @`
+  if (!scan) return `;:H A L0 ECN U ${paths}U @`
+  return `${scan.command};:H A L0 ECN U ${ORIGIN_TICK}${paths}U${scan.width},0;PG;${'@'.repeat(21)}`
 }
 
 export function cutPltSections(

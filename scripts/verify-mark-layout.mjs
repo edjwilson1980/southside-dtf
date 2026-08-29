@@ -77,7 +77,7 @@ const checks = [
   [layout.includes('startMarkArrowPoints'), 'start-arrow geometry is defined next to the first crop mark'],
   [css.includes('cut-overlay-svg') && css.includes('stroke: #ff1a1a'), 'overlay crop marks are stroked circles, not boxes'],
   [preview.includes('21.5 in'), 'preview copy states 21.5 in horizontal spacing'],
-  [preview.includes('where every other circle is'), 'preview copy says the camera is told every other mark location'],
+  [preview.includes('circular-mark window'), 'preview copy says the cut file uses a Corel-style mark window'],
   [preview.includes('in the margins'), 'preview copy says crop marks stay off the designs'],
   [preview.includes('Under 12 in uses two pairs'), 'preview copy states mark count follows sheet length'],
   [Math.abs(xs.right - xs.left - 21.5) < 1e-9, 'left and right marks are 21.5 in apart'],
