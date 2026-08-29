@@ -3,10 +3,8 @@ import { SHEET_WIDTH_IN, type PlacedSheetPiece } from '@/lib/compose-sheet'
 /** Cut contour is the printed image plus 2 mm on every side. */
 export const CUT_MARGIN_MM = 2
 export const CUT_MARGIN_IN = CUT_MARGIN_MM / 25.4
-/** A fresh mark pair every 30 in so the camera re-registers down a long roll. */
-export const MARK_SECTION_IN = 30
-/** Sheets shorter than this get two mark pairs; 12–30 in sheets get three. */
-export const SHORT_SHEET_IN = 12
+/** Longest the camera ever has to travel between mark rows. */
+export const MARK_SECTION_IN = 36
 /** Left and right crop marks are 21.5 in apart. */
 export const MARK_GAP_X_IN = 21.5
 /** Teneth CCD cameras lock onto filled 5 mm circles, not squares or L marks. */
@@ -83,25 +81,20 @@ function markStack(xIn: number, yIn: number): PrintMark[] {
   ]
 }
 
-function sectionMarkYs(sectionStart: number, sectionHeightIn: number) {
-  if (sectionHeightIn <= 0) return []
-  const top = sectionStart + MARK_LEAD_IN
-  const bottom = sectionStart + Math.max(MARK_LEAD_IN, sectionHeightIn - MARK_TRAIL_IN - MARK_SIZE_IN)
-  if (bottom - top < 0.25) return [top]
-  if (sectionHeightIn < SHORT_SHEET_IN) return [top, bottom]
-  const middle = sectionStart + sectionHeightIn / 2 - MARK_SIZE_IN / 2
-  if (middle - top < MARK_ROW_GAP_IN || bottom - middle < MARK_ROW_GAP_IN) return [top, bottom]
-  return [top, middle, bottom]
-}
-
+/**
+ * Mark rows are evenly spaced from the start mark to the far end of the
+ * sheet. The camera advances the same distance to every row, so it cannot
+ * overshoot the way it did when the middle row sat closer than the last.
+ */
 function markYs(sheetHeightIn: number) {
   if (sheetHeightIn <= 0) return []
-  const sectionCount = Math.max(1, Math.ceil(sheetHeightIn / MARK_SECTION_IN - 1e-9))
-  return Array.from({ length: sectionCount }, (_, index) => {
-    const sectionStart = index * MARK_SECTION_IN
-    const sectionHeightIn = Math.min(MARK_SECTION_IN, Math.max(0, sheetHeightIn - sectionStart))
-    return sectionMarkYs(sectionStart, sectionHeightIn)
-  }).flat()
+  const first = MARK_LEAD_IN
+  const last = sheetHeightIn - MARK_TRAIL_IN - MARK_SIZE_IN
+  const span = last - first
+  if (span < MARK_ROW_GAP_IN) return [first]
+  const steps = Math.max(1, Math.ceil(span / MARK_SECTION_IN - 1e-9))
+  const pitch = span / steps
+  return Array.from({ length: steps + 1 }, (_, index) => first + index * pitch)
 }
 
 function markXs(sheetWidthIn: number) {
@@ -116,9 +109,13 @@ export function registrationMarkBounds(
   pieces: PlacedSheetPiece[] = [],
 ) {
   const { left, right } = markXs(sheetWidthIn)
-  return markYs(sheetHeightIn).flatMap((yIn, row) => [
-    { xIn: left, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: row === 0 },
-    { xIn: right, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: false },
+  const ys = markYs(sheetHeightIn)
+  // Roll-fed: the bottom of the sheet leaves the roller first, so the camera
+  // parks on the bottom-right circle and works up the film.
+  const startRow = ys.length - 1
+  return ys.flatMap((yIn, row) => [
+    { xIn: left, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: false },
+    { xIn: right, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: row === startRow },
   ])
 }
 
@@ -132,16 +129,20 @@ export function registrationMarkRects(
 
 export type ArrowPoint = { xIn: number; yIn: number }
 
-/** Triangle to the right of the first crop mark, pointing at it. Stays in the header, off the artwork. */
+/**
+ * Triangle inboard of the start crop mark, pointing out at it. The start
+ * mark is now the bottom-right circle, so the arrow sits to its left where
+ * there is room, in the footer below the artwork.
+ */
 export function startMarkArrowPoints(mark: CutBox): ArrowPoint[] {
   const cy = mark.yIn + mark.heightIn / 2
-  const tipX = mark.xIn + mark.widthIn + MARK_PAD_IN + 0.6 / 25.4
+  const tipX = mark.xIn - MARK_PAD_IN - 0.6 / 25.4
   const length = START_ARROW_LENGTH_IN
   const half = START_ARROW_WIDTH_IN / 2
   return [
     { xIn: tipX, yIn: cy },
-    { xIn: tipX + length, yIn: cy - half },
-    { xIn: tipX + length, yIn: cy + half },
+    { xIn: tipX - length, yIn: cy - half },
+    { xIn: tipX - length, yIn: cy + half },
   ]
 }
 
@@ -168,40 +169,52 @@ function markCenterInches(mark: CutBox) {
   }
 }
 
-/** CCD origin is the leading-left circle: first row down the sheet, then left to right. */
+/** Roll-fed CCD origin is the bottom-right circle: last row first, then right to left. */
 function marksFromStart(marks: CutBox[]) {
   return [...marks].sort((a, b) => {
     const ac = markCenterInches(a)
     const bc = markCenterInches(b)
-    if (Math.abs(ac.yIn - bc.yIn) > 1e-9) return ac.yIn - bc.yIn
-    return ac.xIn - bc.xIn
+    if (Math.abs(ac.yIn - bc.yIn) > 1e-9) return bc.yIn - ac.yIn
+    return bc.xIn - ac.xIn
   })
+}
+
+/** Marks grouped into rows, starting at the parked bottom row and working up. */
+function markRowsFromStart(marks: CutBox[]) {
+  const rows: CutBox[][] = []
+  for (const mark of marksFromStart(marks)) {
+    const row = rows[rows.length - 1]
+    if (row && Math.abs(markCenterInches(row[0]).yIn - markCenterInches(mark).yIn) < 0.05) row.push(mark)
+    else rows.push([mark])
+  }
+  return rows
 }
 
 /**
  * The plotter frame is not the PNG frame. On a roll cutter, HPGL X is the
- * feed direction (down the media) and Y is the carriage (across the media).
- * The PNG has X across and Y down, so the two axes are transposed here.
- * Sending 21.5 in as X told the cutter to feed 21.5 in of film and run past
- * every mark.
+ * feed direction and Y is the carriage across the media, so the two axes are
+ * transposed. Both run away from the bottom-right start circle: +X up the
+ * film as it feeds off the roller, +Y across to the left.
  */
 function toPlt(xIn: number, yIn: number, origin: { xIn: number; yIn: number }) {
   return {
-    x: toUnits(yIn - origin.yIn),
-    y: toUnits(xIn - origin.xIn),
+    x: toUnits(origin.yIn - yIn),
+    y: toUnits(origin.xIn - xIn),
   }
 }
 
 /**
- * CutterPro/ToCutter: TB26,0,feed,carriage is the far corner of the mark
- * window from the parked start circle. In the working Corel file the feed
- * value equals the furthest cut X exactly.
+ * TB26,0,feed,carriage is the four-point window the camera reads: the parked
+ * circle, its pair across the film, and the next row up. Sizing it to the
+ * furthest row instead made the camera run past the nearer rows.
  */
 function markScanCommand(marks: CutBox[], origin: { xIn: number; yIn: number }) {
-  if (marks.length === 0) return ''
+  const rows = markRowsFromStart(marks)
+  const frame = [...(rows[0] ?? []), ...(rows[1] ?? [])]
+  if (frame.length === 0) return ''
   let feed = 0
   let carriage = 0
-  for (const mark of marks) {
+  for (const mark of frame) {
     const center = markCenterInches(mark)
     const point = toPlt(center.xIn, center.yIn, origin)
     feed = Math.max(feed, point.x)
@@ -223,9 +236,9 @@ export function buildTenethPlt(boxes: CutBox[], marks: CutBox[] = []) {
   const origin = firstMark ? markCenterInches(firstMark) : { xIn: 0, yIn: 0 }
   const scan = markScanCommand(ordered, origin)
   const paths = boxes.map((box) => {
-    const start = toPlt(box.xIn, box.yIn, origin)
-    const end = toPlt(box.xIn + box.widthIn, box.yIn + box.heightIn, origin)
-    return rectanglePath(start.x, start.y, end.x, end.y)
+    const a = toPlt(box.xIn, box.yIn, origin)
+    const b = toPlt(box.xIn + box.widthIn, box.yIn + box.heightIn, origin)
+    return rectanglePath(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y))
   }).join('')
   if (!scan) return `;:H A L0 ECN U ${paths}U @`
   return `${scan.command};:H A L0 ECN U ${ORIGIN_TICK}${paths}U${scan.feed},0;PG;${'@'.repeat(21)}`
