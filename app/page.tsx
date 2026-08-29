@@ -50,6 +50,7 @@ const sheetOptions = [
   { length: 12, label: '22 × 12 in', price: 8 },
   { length: 24, label: '22 × 24 in', price: 15 },
   { length: 36, label: '22 × 36 in', price: 24 },
+  { length: 48, label: '22 × 48 in', price: 30 },
   { length: 60, label: '22 × 60 in', price: 40 },
   { length: 72, label: '22 × 72 in', price: 48 },
   { length: 100, label: '22 × 100 in', price: 60 },
