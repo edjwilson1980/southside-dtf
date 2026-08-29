@@ -160,7 +160,7 @@ function markCenterInches(mark: CutBox) {
   }
 }
 
-/** CCD origin is the leading-left circle. Far-corner span uses this first, then left-to-right down the sheet. */
+/** CCD origin is the leading-left circle: first row down the sheet, then left to right. */
 function marksFromStart(marks: CutBox[]) {
   return [...marks].sort((a, b) => {
     const ac = markCenterInches(a)
@@ -170,47 +170,36 @@ function marksFromStart(marks: CutBox[]) {
   })
 }
 
+/**
+ * The plotter frame is not the PNG frame. On a roll cutter, HPGL X is the
+ * feed direction (down the media) and Y is the carriage (across the media).
+ * The PNG has X across and Y down, so the two axes are transposed here.
+ * Sending 21.5 in as X told the cutter to feed 21.5 in of film and run past
+ * every mark.
+ */
 function toPlt(xIn: number, yIn: number, origin: { xIn: number; yIn: number }) {
   return {
-    x: toUnits(xIn - origin.xIn),
-    y: toUnits(yIn - origin.yIn),
+    x: toUnits(yIn - origin.yIn),
+    y: toUnits(xIn - origin.xIn),
   }
-}
-
-function sameMarkRow(a: CutBox, b: CutBox) {
-  return Math.abs(markCenterInches(a).yIn - markCenterInches(b).yIn) < 0.05
-}
-
-/** Cluster marks into rows from the leading edge down the sheet. */
-function markRowsFromStart(marks: CutBox[]) {
-  const rows: CutBox[][] = []
-  for (const mark of marksFromStart(marks)) {
-    const row = rows[rows.length - 1]
-    if (row && sameMarkRow(row[0], mark)) row.push(mark)
-    else rows.push([mark])
-  }
-  return rows
 }
 
 /**
- * CutterPro/ToCutter: TB26,0,width,height is the far corner of a 4-point
- * window — the parked start circle, the matching right mark, and the next
- * pair down the sheet. Using the last pair on a 3-pair sheet makes the
- * camera pass the second pair and run too far.
+ * CutterPro/ToCutter: TB26,0,feed,carriage is the far corner of the mark
+ * window from the parked start circle. In the working Corel file the feed
+ * value equals the furthest cut X exactly.
  */
 function markScanCommand(marks: CutBox[], origin: { xIn: number; yIn: number }) {
-  const rows = markRowsFromStart(marks)
-  const frame = [...(rows[0] ?? []), ...(rows[1] ?? [])]
-  if (frame.length === 0) return ''
-  let width = 0
-  let height = 0
-  for (const mark of frame) {
+  if (marks.length === 0) return ''
+  let feed = 0
+  let carriage = 0
+  for (const mark of marks) {
     const center = markCenterInches(mark)
     const point = toPlt(center.xIn, center.yIn, origin)
-    width = Math.max(width, point.x)
-    height = Math.max(height, point.y)
+    feed = Math.max(feed, point.x)
+    carriage = Math.max(carriage, point.y)
   }
-  return { command: `TB26,0,${width},${height};CT1;`, width, height }
+  return { command: `TB26,0,${feed},${carriage};CT1;`, feed, carriage }
 }
 
 /** Tiny origin tick from the working Corel plugin file, then cuts, then return to the window width. */
@@ -218,8 +207,7 @@ const ORIGIN_TICK = 'U-7,8;D-7,8;D-7,0;U-7,0;'
 
 /**
  * Match the working Corel Teneth plugin PLT:
- * TB26,0,spanX,spanY;CT1;;:H A L0 ECN U  <tick> <semicolon U/D cuts> UspanX,0;PG;@
- * spanY is the next mark row, not the last row of a longer sheet.
+ * TB26,0,feed,carriage;CT1;;:H A L0 ECN U  <tick> <semicolon U/D cuts> Ufeed,0;PG;@
  */
 export function buildTenethPlt(boxes: CutBox[], marks: CutBox[] = []) {
   const ordered = marksFromStart(marks)
@@ -232,7 +220,7 @@ export function buildTenethPlt(boxes: CutBox[], marks: CutBox[] = []) {
     return rectanglePath(start.x, start.y, end.x, end.y)
   }).join('')
   if (!scan) return `;:H A L0 ECN U ${paths}U @`
-  return `${scan.command};:H A L0 ECN U ${ORIGIN_TICK}${paths}U${scan.width},0;PG;${'@'.repeat(21)}`
+  return `${scan.command};:H A L0 ECN U ${ORIGIN_TICK}${paths}U${scan.feed},0;PG;${'@'.repeat(21)}`
 }
 
 export function cutPltSections(
