@@ -160,7 +160,7 @@ function markCenterInches(mark: CutBox) {
   }
 }
 
-/** CCD origin is the leading-left circle. Hunt that mark first, then left-to-right down the sheet. */
+/** CCD origin is the leading-left circle. List that mark first, then left-to-right down the sheet. */
 function marksFromStart(marks: CutBox[]) {
   return [...marks].sort((a, b) => {
     const ac = markCenterInches(a)
@@ -177,34 +177,37 @@ function toPlt(xIn: number, yIn: number, origin: { xIn: number; yIn: number }) {
   }
 }
 
-/** Pen-up visits to each printed 5 mm circle. No knife-down — the camera locks here first. */
-function markHuntPath(marks: CutBox[], origin: { xIn: number; yIn: number }) {
-  return marks.map((mark) => {
+/**
+ * TB26,0,x,y,... is the list of circular-mark centers, not a size or a page window.
+ * Two numbers would be one point — the camera would keep reading that first circle.
+ */
+function markScanCommand(marks: CutBox[], origin: { xIn: number; yIn: number }) {
+  if (marks.length === 0) return ''
+  const coords = marks.flatMap((mark) => {
     const center = markCenterInches(mark)
     const { x, y } = toPlt(center.xIn, center.yIn, origin)
-    return `U${x},${y} `
-  }).join('')
+    return [x, y]
+  })
+  return `TB26,0,${coords.join(',')};`
 }
 
 /**
  * Artcut/Teneth DMPL contour cut for the CCD camera.
- * TB26,0,w,h is the 5 mm circle-mark size, not the sheet. Coordinates are relative
- * to the first crop-mark center so the camera origin is that circle (U0,0), the
- * matching right mark is 21.5 in across, and cuts share the same origin.
+ * TB26 lists every 5 mm circle from the first-mark origin (0,0 then 21.5 in across,
+ * then each remaining pair). Knife paths use that same origin. Do not pen-up hunt
+ * U0,0 — that re-reads the starting circle instead of moving on.
  */
 export function buildTenethPlt(boxes: CutBox[], marks: CutBox[] = []) {
   const ordered = marksFromStart(marks)
   const firstMark = ordered[0]
   const origin = firstMark ? markCenterInches(firstMark) : { xIn: 0, yIn: 0 }
-  const hunt = markHuntPath(ordered, origin)
+  const scan = markScanCommand(ordered, origin)
   const paths = boxes.map((box) => {
     const start = toPlt(box.xIn, box.yIn, origin)
     const end = toPlt(box.xIn + box.widthIn, box.yIn + box.heightIn, origin)
     return rectanglePath(start.x, start.y, end.x, end.y)
   }).join('')
-  const markUnits = toUnits(MARK_SIZE_IN)
-  const scan = marks.length > 0 ? `TB26,0,${markUnits},${markUnits};` : ''
-  return `${scan};:H A L0 ECN U V10 ${hunt}${paths}U @`
+  return `${scan};:H A L0 ECN U V10 ${paths}U @`
 }
 
 export function cutPltSections(

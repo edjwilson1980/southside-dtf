@@ -9,7 +9,7 @@ import { SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 
 function cropMarkPreviewCopy(markCount: number) {
   const countLabel = markCount === 4 ? 'four' : markCount === 6 ? 'six' : String(markCount)
-  return `The ${countLabel} black 5 mm circles ARE printed on the PNG for the cutter camera, in the margins — not on the designs. A small black arrow points at the starting crop mark. Park the camera on that circle: the cut file origin is that mark, the camera looks for the 5 mm circle (not the whole page), and the matching right mark is 21.5 in across. Overlay crop marks are red circles. Under 12 in uses two pairs; 12–30 in uses three, spaced on that sheet length. Longer jobs repeat that pattern every 30 in. Red rectangles are the image plus 2 mm cut lines.`
+  return `The ${countLabel} black 5 mm circles ARE printed on the PNG for the cutter camera, in the margins — not on the designs. A small black arrow points at the starting crop mark. Park the camera on that circle. The cut file lists every circle from there: first the matching right mark 21.5 in across, then each remaining pair down the sheet. Overlay crop marks are red circles. Under 12 in uses two pairs; 12–30 in uses three, spaced on that sheet length. Longer jobs repeat that pattern every 30 in. Red rectangles are the image plus 2 mm cut lines.`
 }
 
 const zoomPresets = [
