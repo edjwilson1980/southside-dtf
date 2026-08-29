@@ -70,16 +70,35 @@ function markScanCommand(marks, origin) {
   return { command: `TB26,0,${feed},${carriage};CT1;`, feed, carriage }
 }
 
+const BAND_TOLERANCE = toUnits(0.5)
+
+function boxesFromStart(boxes, origin) {
+  return boxes
+    .map((box) => {
+      const a = toPlt(box.xIn, box.yIn, origin)
+      const b = toPlt(box.xIn + box.widthIn, box.yIn + box.heightIn, origin)
+      return {
+        x1: Math.min(a.x, b.x),
+        y1: Math.min(a.y, b.y),
+        x2: Math.max(a.x, b.x),
+        y2: Math.max(a.y, b.y),
+      }
+    })
+    .sort((a, b) => {
+      if (Math.abs(a.x1 - b.x1) > BAND_TOLERANCE) return a.x1 - b.x1
+      if (Math.abs(a.y1 - b.y1) > 1) return a.y1 - b.y1
+      return a.x1 - b.x1
+    })
+}
+
 function buildTenethPlt(boxes, marks = []) {
   const ordered = marksFromStart(marks)
   const firstMark = ordered[0]
   const origin = firstMark ? markCenterInches(firstMark) : { xIn: 0, yIn: 0 }
   const scan = markScanCommand(ordered, origin)
-  const paths = boxes.map((box) => {
-    const a = toPlt(box.xIn, box.yIn, origin)
-    const b = toPlt(box.xIn + box.widthIn, box.yIn + box.heightIn, origin)
-    return rectanglePath(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y))
-  }).join('')
+  const paths = boxesFromStart(boxes, origin)
+    .map((box) => rectanglePath(box.x1, box.y1, box.x2, box.y2))
+    .join('')
   if (!scan) return `;:H A L0 ECN U ${paths}U @`
   return `${scan.command};:H A L0 ECN U ${ORIGIN_TICK}${paths}U${scan.feed},0;PG;${'@'.repeat(21)}`
 }
@@ -127,6 +146,18 @@ const uploadedStuck = 'TB26,0,0,0,'
 const tb26Match = plt.match(/^TB26,0,([^;]+);/)
 const tb26Nums = tb26Match ? tb26Match[1].split(',').map(Number) : []
 const allCoords = [...plt.matchAll(/[UD](-?\d+),(-?\d+)/g)].map(([, x, y]) => [Number(x), Number(y)])
+// Where each cut path opens, in emitted order, skipping the origin tick.
+const penUps = [...plt.matchAll(/U(\d+),(\d+);D/g)].map(([, x, y]) => ({ x: Number(x), y: Number(y) }))
+const cutStarts = penUps.filter((point) => !(point.x === 0 && point.y === 0))
+const orderedBoxes = boxesFromStart([near, far], origin)
+const nearestBox = [near, far]
+  .map((box) => {
+    const a = toPlt(box.xIn, box.yIn, origin)
+    const b = toPlt(box.xIn + box.widthIn, box.yIn + box.heightIn, origin)
+    return { x1: Math.min(a.x, b.x), y1: Math.min(a.y, b.y) }
+  })
+  .reduce((best, box) => (Math.hypot(box.x1, box.y1) < Math.hypot(best.x1, best.y1) ? box : best))
+const feedOrder = cutStarts.map((point) => point.x)
 const firstCut = plt.indexOf(`U${nearRel.x},${nearRel.y};D`)
 
 const checks = [
@@ -162,6 +193,19 @@ const checks = [
   [!plt.includes('U0,0'), 'PLT does not hunt U0,0 and reread the parked start mark'],
   [!plt.includes(`U${leadRel.x},0;D`), 'window corners are not cut or hunted as geometry'],
   [firstCut > plt.indexOf(ORIGIN_TICK), 'knife paths start after the origin tick'],
+  [layout.includes('function boxesFromStart'), 'cuts are ordered outward from the start mark'],
+  [
+    cutStarts.length > 0 && cutStarts[0].x === orderedBoxes[0].x1 && cutStarts[0].y === orderedBoxes[0].y1,
+    'the first cut is the design nearest the start mark',
+  ],
+  [
+    cutStarts.length > 0 && cutStarts[0].x === Math.min(...orderedBoxes.map((box) => box.x1)),
+    `the first cut opens at ${nearestBox.x1},${nearestBox.y1}, the least feed from the start mark`,
+  ],
+  [
+    feedOrder.every((x, index) => index === 0 || x >= feedOrder[index - 1] - BAND_TOLERANCE),
+    'the knife works up the film and never jumps back toward the start mark',
+  ],
   [plt.includes(`U${nearRel.x},${nearRel.y};D${nearRel.x},${nearRel.y};`), 'each cut starts at its corner nearest the start mark'],
   [nearRel.x > farRel.x, 'designs nearer the start mark have a smaller feed X'],
   [plt.includes(`U${farRel.x},${farRel.y};`), 'the far cut uses the same bottom-right origin'],

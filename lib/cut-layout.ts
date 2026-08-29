@@ -230,6 +230,36 @@ function markScanCommand(marks: CutBox[], origin: { xIn: number; yIn: number }) 
 const ORIGIN_TICK = 'U-7,8;D-7,8;D-7,0;U-7,0;'
 
 /**
+ * Cut order runs outward from the parked start mark: the nearest design
+ * first, then across that band, then on up the film. Designs were being cut
+ * in packing order, which starts wherever the tallest one landed, so the
+ * knife could open somewhere out in the middle of the sheet.
+ */
+function boxesFromStart(boxes: CutBox[], origin: { xIn: number; yIn: number }) {
+  return boxes
+    .map((box) => {
+      const a = toPlt(box.xIn, box.yIn, origin)
+      const b = toPlt(box.xIn + box.widthIn, box.yIn + box.heightIn, origin)
+      return {
+        x1: Math.min(a.x, b.x),
+        y1: Math.min(a.y, b.y),
+        x2: Math.max(a.x, b.x),
+        y2: Math.max(a.y, b.y),
+      }
+    })
+    .sort((a, b) => {
+      // A band tolerance keeps designs sitting side by side in one sweep
+      // instead of zig-zagging up and down the film.
+      if (Math.abs(a.x1 - b.x1) > BAND_TOLERANCE) return a.x1 - b.x1
+      if (Math.abs(a.y1 - b.y1) > 1) return a.y1 - b.y1
+      return a.x1 - b.x1
+    })
+}
+
+/** Designs whose near edges are within this much feed are cut as one band. */
+const BAND_TOLERANCE = toUnits(0.5)
+
+/**
  * Match the working Corel Teneth plugin PLT:
  * TB26,0,feed,carriage;CT1;;:H A L0 ECN U  <tick> <semicolon U/D cuts> Ufeed,0;PG;@
  */
@@ -238,11 +268,9 @@ export function buildTenethPlt(boxes: CutBox[], marks: CutBox[] = []) {
   const firstMark = ordered[0]
   const origin = firstMark ? markCenterInches(firstMark) : { xIn: 0, yIn: 0 }
   const scan = markScanCommand(ordered, origin)
-  const paths = boxes.map((box) => {
-    const a = toPlt(box.xIn, box.yIn, origin)
-    const b = toPlt(box.xIn + box.widthIn, box.yIn + box.heightIn, origin)
-    return rectanglePath(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y))
-  }).join('')
+  const paths = boxesFromStart(boxes, origin)
+    .map((box) => rectanglePath(box.x1, box.y1, box.x2, box.y2))
+    .join('')
   if (!scan) return `;:H A L0 ECN U ${paths}U @`
   return `${scan.command};:H A L0 ECN U ${ORIGIN_TICK}${paths}U${scan.feed},0;PG;${'@'.repeat(21)}`
 }
