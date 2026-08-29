@@ -12,8 +12,15 @@ export const MARK_GAP_X_IN = 21.5
 /** Teneth CCD cameras lock onto filled 5 mm circles, not squares or L marks. */
 export const MARK_SIZE_IN = 5 / 25.4
 export const MARK_PAD_IN = 2 / 25.4
-export const MARK_INSET_IN = 2 / 25.4
-export const MARK_CLEARANCE_IN = MARK_INSET_IN + MARK_PAD_IN * 2 + MARK_SIZE_IN + CUT_MARGIN_IN
+/** Marks are centred on the sheet, so the first one starts this far in. */
+export const MARK_EDGE_IN = Math.max(0, (SHEET_WIDTH_IN - MARK_GAP_X_IN - MARK_SIZE_IN) / 2)
+/**
+ * How far artwork sits in from the film edge: far enough that its 2 mm cut
+ * box clears the printed circle. Reserving the white halo as well cost
+ * another 2 mm a side, which was just enough to stop two 10.5 in designs
+ * fitting across a 22 in sheet.
+ */
+export const MARK_CLEARANCE_IN = MARK_EDGE_IN + MARK_SIZE_IN + CUT_MARGIN_IN
 const MARK_ROW_GAP_IN = MARK_SIZE_IN + MARK_PAD_IN * 2
 /** First crop-mark row, measured from the leading edge of the film. */
 export const MARK_LEAD_IN = 10 / 25.4

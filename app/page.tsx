@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { DesignInspector } from '@/components/design-inspector'
 import { SheetPreviewModal } from '@/components/sheet-preview-modal'
-import { composeGangSheet, packSheetPieces, pieceHeightInches, ART_INSET_IN, CUT_ART_START_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
+import { composeGangSheet, packSheetBestGutter, pieceHeightInches, ART_INSET_IN, CUT_ART_START_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
 import { MARK_CLEARANCE_IN, cutPlt, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, startMarkArrowPoints } from '@/lib/cut-layout'
 import { trimEmptySpace } from '@/lib/crop-image'
@@ -233,7 +233,7 @@ export default function Home() {
   })
   const artStart = cutOut ? CUT_ART_START_IN : ART_INSET_IN
   const packWidth = cutOut ? SHEET_WIDTH_IN - MARK_CLEARANCE_IN * 2 : SHEET_WIDTH_IN
-  const sheetLayout = packSheetPieces(
+  const sheetLayout = packSheetBestGutter(
     previewPieces.map((design) => ({
       previewUrl: design.previewUrl,
       widthIn: getDesignWidth(design),

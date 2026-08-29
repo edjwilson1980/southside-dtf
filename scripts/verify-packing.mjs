@@ -11,9 +11,12 @@ const SHEET_WIDTH_IN = 22
 const CUT_SECTION_IN = 30
 const MARK_SIZE_IN = 5 / 25.4
 const MARK_PAD_IN = 2 / 25.4
-const MARK_INSET_IN = 2 / 25.4
 const CUT_MARGIN_IN = 2 / 25.4
-const MARK_CLEARANCE_IN = MARK_INSET_IN + MARK_PAD_IN * 2 + MARK_SIZE_IN + CUT_MARGIN_IN
+const MARK_GAP_X_IN = 21.5
+const MARK_EDGE_IN = Math.max(0, (SHEET_WIDTH_IN - MARK_GAP_X_IN - MARK_SIZE_IN) / 2)
+const MARK_CLEARANCE_IN = MARK_EDGE_IN + MARK_SIZE_IN + CUT_MARGIN_IN
+const PREFERRED_GUTTER_IN = 0.25
+const GUTTER_CHOICES = [PREFERRED_GUTTER_IN, 0.1875, SHEET_GUTTER_IN]
 const LABEL_HEIGHT_IN = 1
 const LABEL_PAD_IN = 0.125
 const LABEL_MARGIN_IN = 0.75
@@ -135,8 +138,17 @@ function packSheetPieces(items, opts) {
     free = pruneFreeRects(free.flatMap((rect) => splitFreeRect(rect, used)))
   }
 
-  const contentEndY = placed.reduce((max, piece) => Math.max(max, piece.yIn + piece.heightIn + gutterIn), startYIn)
-  return { pieces: placed, contentEndY }
+  const contentBottom = placed.reduce((max, piece) => Math.max(max, piece.yIn + piece.heightIn), startYIn)
+  return { pieces: placed, contentBottom, contentEndY: contentBottom + gutterIn, gutterIn }
+}
+
+function packSheetBestGutter(items, opts) {
+  let best = packSheetPieces(items, { ...opts, gutterIn: GUTTER_CHOICES[0] })
+  for (const gutterIn of GUTTER_CHOICES.slice(1)) {
+    const candidate = packSheetPieces(items, { ...opts, gutterIn })
+    if (candidate.contentBottom < best.contentBottom - EPS) best = candidate
+  }
+  return best
 }
 
 function packOptions(cutOut, packWidthIn) {
@@ -184,10 +196,21 @@ for (const scenario of scenarios) {
   for (const cutOut of [false, true]) {
     const packWidth = cutOut ? SHEET_WIDTH_IN - MARK_CLEARANCE_IN * 2 : SHEET_WIDTH_IN
     const before = lengthNextFit(scenario.items, packWidth, cutOut)
-    const packed = packSheetPieces(scenario.items, packOptions(cutOut, packWidth))
+    const packed = packSheetBestGutter(scenario.items, packOptions(cutOut, packWidth))
     const after = packed.contentEndY - CUT_ART_START_IN
+    const gutter = packed.gutterIn
     const label = `${scenario.name}${cutOut ? ' (pre-cut)' : ''}`
-    rows.push({ label, before, after, pct: before > 0 ? ((before - after) / before) * 100 : 0 })
+    rows.push({ label, before, after, gutter, pct: before > 0 ? ((before - after) / before) * 100 : 0 })
+
+    const tooTight = packed.pieces.some((a) =>
+      packed.pieces.some((b) =>
+        a !== b &&
+        a.yIn < b.yIn + b.heightIn - EPS && b.yIn < a.yIn + a.heightIn - EPS &&
+        a.xIn + a.widthIn <= b.xIn + EPS &&
+        b.xIn - (a.xIn + a.widthIn) < SHEET_GUTTER_IN - EPS,
+      ),
+    )
+    checks.push([!tooTight, `${label} never puts designs closer than ${SHEET_GUTTER_IN} in`])
 
     checks.push([after <= before + EPS, `${label} is never longer than before (${before.toFixed(1)} -> ${after.toFixed(1)} in)`])
     checks.push([packed.pieces.length === scenario.items.length, `${label} keeps every design (${packed.pieces.length}/${scenario.items.length})`])
@@ -217,27 +240,52 @@ for (const scenario of scenarios) {
   }
 }
 
-const gutterCase = packSheetPieces(repeat(4, 4, 2), packOptions(false, SHEET_WIDTH_IN))
+const gutterCase = packSheetBestGutter(repeat(4, 4, 2), packOptions(false, SHEET_WIDTH_IN))
 const [first, second] = [...gutterCase.pieces].sort((a, b) => a.xIn - b.xIn)
 checks.push([
-  Math.abs(second.xIn - (first.xIn + first.widthIn) - SHEET_GUTTER_IN) < 1e-6,
-  'neighbouring designs keep exactly one gutter between them',
+  Math.abs(second.xIn - (first.xIn + first.widthIn) - PREFERRED_GUTTER_IN) < 1e-6,
+  `designs with room to spare sit ${PREFERRED_GUTTER_IN} in apart`,
 ])
 
-const oversize = packSheetPieces([{ widthIn: 30, heightIn: 5 }, { widthIn: 4, heightIn: 4 }], packOptions(false, SHEET_WIDTH_IN))
+const oversize = packSheetBestGutter([{ widthIn: 30, heightIn: 5 }, { widthIn: 4, heightIn: 4 }], packOptions(false, SHEET_WIDTH_IN))
 checks.push([oversize.pieces.length === 2, 'a design wider than the sheet is still placed rather than dropped'])
 
+// The reported case: two 10.5 x 12 designs must sit side by side on a pre-cut sheet.
+const cutWidth = SHEET_WIDTH_IN - MARK_CLEARANCE_IN * 2
+const twoUp = packSheetBestGutter(repeat(10.5, 12, 2), packOptions(true, cutWidth))
+const twoUpRow = twoUp.pieces.every((piece) => Math.abs(piece.yIn - twoUp.pieces[0].yIn) < EPS)
+const twoUpGap = Math.abs(twoUp.pieces[1].xIn - twoUp.pieces[0].xIn) - 10.5
+const markLeftEdge = MARK_EDGE_IN
+const markRightEdge = SHEET_WIDTH_IN - MARK_EDGE_IN
+const cutBoxes = twoUp.pieces.map((piece) => ({
+  left: piece.xIn - CUT_MARGIN_IN,
+  right: piece.xIn + piece.widthIn + CUT_MARGIN_IN,
+}))
+checks.push([twoUpRow, 'two 10.5 x 12 designs sit side by side on a pre-cut sheet'])
+checks.push([twoUp.contentEndY - CUT_ART_START_IN < 13, `two 10.5 x 12 designs need one 12 in row, not two (${(twoUp.contentEndY - CUT_ART_START_IN).toFixed(1)} in)`])
+checks.push([
+  cutBoxes.every((box) => box.left >= markLeftEdge + MARK_SIZE_IN - EPS && box.right <= markRightEdge - MARK_SIZE_IN + EPS),
+  'their 2 mm cut boxes still clear the printed crop marks',
+])
+checks.push([twoUpGap >= SHEET_GUTTER_IN - EPS, `they keep ${twoUpGap.toFixed(3)} in between them`])
+
+const usable = SHEET_WIDTH_IN - MARK_CLEARANCE_IN * 2
+checks.push([usable > 21, `pre-cut usable width is ${usable.toFixed(3)} in, enough for two 10.5 in designs`])
+const preferredTwoUp = (usable - PREFERRED_GUTTER_IN) / 2
+checks.push([preferredTwoUp > 10.4, `at the preferred ${PREFERRED_GUTTER_IN} in gap a pair can be ${preferredTwoUp.toFixed(3)} in wide`])
+
 checks.push([compose.includes('export function packSheetPieces'), 'packSheetPieces is exported from compose-sheet'])
-checks.push([page.includes('packSheetPieces('), 'the builder uses packSheetPieces'])
+checks.push([page.includes('packSheetBestGutter('), 'the builder uses packSheetBestGutter'])
 checks.push([!page.includes('rows.push([design])'), 'the old upload-order packer is gone'])
 
-console.log('scenario'.padEnd(44), 'before'.padStart(9), 'after'.padStart(9), 'saved'.padStart(7))
+console.log('scenario'.padEnd(44), 'before'.padStart(9), 'after'.padStart(9), 'saved'.padStart(7), 'gutter'.padStart(8))
 for (const row of rows) {
   console.log(
     row.label.padEnd(44),
     `${row.before.toFixed(1)}in`.padStart(9),
     `${row.after.toFixed(1)}in`.padStart(9),
     `${row.pct.toFixed(0)}%`.padStart(7),
+    `${row.gutter}in`.padStart(8),
   )
 }
 console.log()

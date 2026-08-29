@@ -13,6 +13,9 @@ export type PlacedSheetPiece = SheetPiece & {
 }
 
 export const SHEET_GUTTER_IN = 0.125
+/** Preferred space between designs; tightened toward SHEET_GUTTER_IN only when it would cost film. */
+export const PREFERRED_GUTTER_IN = 0.25
+const GUTTER_CHOICES = [PREFERRED_GUTTER_IN, 0.1875, SHEET_GUTTER_IN]
 export const SHEET_WIDTH_IN = 22
 export const LABEL_PT = 72
 export const PRINT_MARGIN_IN = 1.5
@@ -121,7 +124,12 @@ function pruneFreeRects(rects: FreeRect[]) {
 export function packSheetPieces<T extends PackItem>(
   items: T[],
   opts: PackSheetOptions,
-): { pieces: Array<T & { xIn: number; yIn: number }>; contentEndY: number } {
+): {
+  pieces: Array<T & { xIn: number; yIn: number }>
+  contentBottom: number
+  contentEndY: number
+  gutterIn: number
+} {
   const gutterIn = opts.gutterIn ?? SHEET_GUTTER_IN
   const startYIn = opts.startYIn ?? ART_INSET_IN
   const sideInsetIn = opts.sideInsetIn ?? 0
@@ -175,8 +183,27 @@ export function packSheetPieces<T extends PackItem>(
     free = pruneFreeRects(free.flatMap((rect) => splitFreeRect(rect, used)))
   }
 
-  const contentEndY = placed.reduce((max, piece) => Math.max(max, piece.yIn + piece.heightIn + gutterIn), startYIn)
-  return { pieces: placed, contentEndY }
+  const contentBottom = placed.reduce((max, piece) => Math.max(max, piece.yIn + piece.heightIn), startYIn)
+  return { pieces: placed, contentBottom, contentEndY: contentBottom + gutterIn, gutterIn }
+}
+
+/**
+ * Space designs generously, but never at the cost of a longer sheet. Two
+ * 10.5 in designs only clear the crop marks with about 0.15 in between them,
+ * so a fixed 0.25 in gutter would drop one of them to the next row.
+ * Compared on content bottom rather than sheet end, since a wider gutter
+ * always adds its own trailing space.
+ */
+export function packSheetBestGutter<T extends PackItem>(
+  items: T[],
+  opts: Omit<PackSheetOptions, 'gutterIn'>,
+) {
+  let best = packSheetPieces(items, { ...opts, gutterIn: GUTTER_CHOICES[0] })
+  for (const gutterIn of GUTTER_CHOICES.slice(1)) {
+    const candidate = packSheetPieces(items, { ...opts, gutterIn })
+    if (candidate.contentBottom < best.contentBottom - EPS) best = candidate
+  }
+  return best
 }
 
 function fillMarkCircle(
