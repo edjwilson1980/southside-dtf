@@ -39,30 +39,28 @@ function toPlt(xIn, yIn, origin) {
   }
 }
 
-function markScanCommand() {
+function markScanCommand(marks, origin) {
+  if (marks.length === 0) return ''
   const markUnits = toUnits(MARK_SIZE_IN)
-  return `TB26,0,${markUnits},${markUnits};`
-}
-
-function markHuntPath(marks, origin) {
-  return marks.slice(1).map((mark) => {
+  const others = marks.slice(1).flatMap((mark) => {
     const center = markCenterInches(mark)
     const { x, y } = toPlt(center.xIn, center.yIn, origin)
-    return `U${x},${y} `
-  }).join('')
+    return [x, y]
+  })
+  const coords = [markUnits, markUnits, ...others]
+  return `TB26,0,${coords.join(',')};`
 }
 
 function buildTenethPlt(boxes, marks = []) {
   const ordered = marksFromStart(marks)
   const origin = ordered.length > 0 ? markCenterInches(ordered[0]) : { xIn: 0, yIn: 0 }
-  const scan = ordered.length > 0 ? markScanCommand() : ''
-  const hunt = markHuntPath(ordered, origin)
+  const scan = markScanCommand(ordered, origin)
   const paths = boxes.map((box) => {
     const start = toPlt(box.xIn, box.yIn, origin)
     const end = toPlt(box.xIn + box.widthIn, box.yIn + box.heightIn, origin)
     return rectanglePath(start.x, start.y, end.x, end.y)
   }).join('')
-  return `;:H A L0 ECN U V10 ${scan}${hunt}${paths}U @`
+  return `;:H A L0 ECN U V10 ${scan}${paths}U @`
 }
 
 function circle(xIn, yIn) {
@@ -95,37 +93,35 @@ const trailRel = toPlt(trailingLeft.xIn + MARK_SIZE_IN / 2, trailingLeft.yIn + M
 const nearRel = toPlt(near.xIn, near.yIn, origin)
 const farRel = toPlt(far.xIn, far.yIn, origin)
 const header = ';:H A L0 ECN U V10 '
-const scan = `TB26,0,${markUnits},${markUnits};`
-const rightHunt = `U${gapX},0 `
-const trailLeftHunt = `U0,${trailRel.y} `
-const trailRightHunt = `U${gapX},${trailRel.y} `
-const headerEnd = plt.indexOf('V10 ')
-const scanAt = plt.indexOf(scan)
-const firstCut = plt.indexOf(`U${nearRel.x},${nearRel.y} D`)
-const rightHuntAt = plt.indexOf(rightHunt)
+const expectedScan = `TB26,0,${markUnits},${markUnits},${gapX},0,0,${trailRel.y},${gapX},${trailRel.y};`
+const sizeOnly = `TB26,0,${markUnits},${markUnits};`
 const uploadedStuck = 'TB26,0,0,0,'
+const tb26Match = plt.match(/TB26,0,([^;]+);/)
+const tb26Nums = tb26Match ? tb26Match[1].split(',').map(Number) : []
+const headerEnd = plt.indexOf('V10 ')
+const firstCut = plt.indexOf(`U${nearRel.x},${nearRel.y} D`)
 
 const checks = [
   [layout.includes('TB26,0,'), 'PLT includes TB26 circle-mark scan'],
-  [layout.includes('toUnits(MARK_SIZE_IN)'), 'TB26 is the 5 mm mark size, not mark positions'],
-  [layout.includes('marks.slice(1)'), 'camera hunts every mark after the parked start circle'],
-  [layout.includes('markHuntPath'), 'PLT pen-up visits remaining crop marks before cutting'],
-  [!layout.includes('coords.join'), 'TB26 no longer lists mark X/Y pairs as if they were the scan window'],
+  [layout.includes('toUnits(MARK_SIZE_IN)'), 'TB26 starts with the 5 mm mark size'],
+  [layout.includes('marks.slice(1)'), 'TB26 then lists every crop mark after the parked start'],
+  [!layout.includes('markHuntPath'), 'PLT does not pen-up hunt marks as ordinary U moves'],
   [layout.includes('U @'), 'PLT ends with DMPL halt instead of a page feed'],
   [!layout.includes('CT1'), 'PLT no longer emits HPGL CT1'],
   [!layout.includes('PG;'), 'PLT no longer emits HPGL page-feed PG'],
   [!layout.includes('sectionHeightIn - box.yIn'), 'PLT Y is not flipped from the trailing edge'],
   [plt.startsWith(header), 'generated file starts with the Artcut DMPL header, not TB26'],
-  [scanAt > headerEnd, '5 mm TB26 scan comes after init so Home does not cancel it'],
-  [markUnits === 200, '5 mm mark is 200 DMPL units (40 per mm)'],
-  [!plt.includes(uploadedStuck), 'TB26 is not a zero-size 0,0 window that leaves the head stuck'],
-  [plt.includes(scan), 'TB26 asks the camera for a 5 mm circle'],
+  [plt.includes(expectedScan), 'TB26 is 5 mm size plus the other three mark centers'],
+  [tb26Nums[0] === 200 && tb26Nums[1] === 200, 'first TB26 pair is the 5 mm circle size'],
+  [tb26Nums[2] === gapX && tb26Nums[3] === 0, 'next TB26 point is the right mark 21.5 in across'],
+  [tb26Nums[4] === 0 && tb26Nums[5] === trailRel.y, 'next TB26 point is the following left mark down the sheet'],
+  [tb26Nums[6] === gapX && tb26Nums[7] === trailRel.y, 'last TB26 point is the matching right mark'],
+  [tb26Nums.length === 2 + (allMarks.length - 1) * 2, 'TB26 has size plus one X,Y pair per remaining mark'],
+  [!plt.includes(uploadedStuck), 'TB26 is not a zero-size 0,0 window'],
+  [!plt.includes(`${sizeOnly}U`), 'TB26 is not size-only followed by U hunts the camera will ignore'],
   [plt.trimEnd().endsWith('U @'), 'generated file ends with pen-up halt'],
   [!plt.includes('PG'), 'generated file has no page feed'],
   [!plt.includes('U0,0 '), 'PLT does not hunt U0,0 and reread the parked start mark'],
-  [rightHuntAt > scanAt && rightHuntAt < firstCut, 'camera moves 21.5 in to the right mark before any cut'],
-  [plt.includes(trailLeftHunt) && plt.indexOf(trailLeftHunt) < firstCut, 'camera hunts the next left mark down the sheet before cutting'],
-  [plt.includes(trailRightHunt) && plt.indexOf(trailRightHunt) < firstCut, 'camera hunts the matching right mark on that row before cutting'],
   [firstCut > headerEnd, 'knife paths start after the DMPL header'],
   [plt.includes(`U${nearRel.x},${nearRel.y} D`), 'first cut is relative to the first crop mark'],
   [nearRel.y < farRel.y, 'later designs have larger Y, matching the PNG feed direction'],
@@ -141,4 +137,4 @@ if (failed.length) {
   process.exit(1)
 }
 console.log(plt)
-console.log('Teneth PLT uses a 5 mm TB26 window then hunts the remaining crop marks')
+console.log('Teneth PLT names the 5 mm circle then every other crop-mark center')
