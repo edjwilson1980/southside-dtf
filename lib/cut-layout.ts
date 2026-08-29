@@ -178,36 +178,41 @@ function toPlt(xIn: number, yIn: number, origin: { xIn: number; yIn: number }) {
 }
 
 /**
- * TB26,0,x,y,... is the list of circular-mark centers, not a size or a page window.
- * Two numbers would be one point — the camera would keep reading that first circle.
+ * TB26,0,w,h is the 5 mm circle size the CCD looks for — not mark positions.
+ * Sending 0,0 here (first-mark origin) is a zero-size window and the head sits still.
  */
-function markScanCommand(marks: CutBox[], origin: { xIn: number; yIn: number }) {
-  if (marks.length === 0) return ''
-  const coords = marks.flatMap((mark) => {
+function markScanCommand() {
+  const markUnits = toUnits(MARK_SIZE_IN)
+  return `TB26,0,${markUnits},${markUnits};`
+}
+
+/** Pen-up to every circle after the parked start mark. Do not hunt U0,0 — that rereads the first circle. */
+function markHuntPath(marks: CutBox[], origin: { xIn: number; yIn: number }) {
+  return marks.slice(1).map((mark) => {
     const center = markCenterInches(mark)
     const { x, y } = toPlt(center.xIn, center.yIn, origin)
-    return [x, y]
-  })
-  return `TB26,0,${coords.join(',')};`
+    return `U${x},${y} `
+  }).join('')
 }
 
 /**
  * Artcut/Teneth DMPL contour cut for the CCD camera.
- * TB26 lists every 5 mm circle from the first-mark origin (0,0 then 21.5 in across,
- * then each remaining pair). Knife paths use that same origin. Do not pen-up hunt
- * U0,0 — that re-reads the starting circle instead of moving on.
+ * Header first so Home does not cancel the scan. TB26 is the 5 mm mark size.
+ * Then pen-up to the right-hand circle (21.5 in) and each remaining pair.
+ * Knife paths share the first-mark origin.
  */
 export function buildTenethPlt(boxes: CutBox[], marks: CutBox[] = []) {
   const ordered = marksFromStart(marks)
   const firstMark = ordered[0]
   const origin = firstMark ? markCenterInches(firstMark) : { xIn: 0, yIn: 0 }
-  const scan = markScanCommand(ordered, origin)
+  const scan = ordered.length > 0 ? markScanCommand() : ''
+  const hunt = markHuntPath(ordered, origin)
   const paths = boxes.map((box) => {
     const start = toPlt(box.xIn, box.yIn, origin)
     const end = toPlt(box.xIn + box.widthIn, box.yIn + box.heightIn, origin)
     return rectanglePath(start.x, start.y, end.x, end.y)
   }).join('')
-  return `${scan};:H A L0 ECN U V10 ${paths}U @`
+  return `;:H A L0 ECN U V10 ${scan}${hunt}${paths}U @`
 }
 
 export function cutPltSections(
