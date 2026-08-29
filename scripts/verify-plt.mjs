@@ -41,11 +41,27 @@ function toPlt(xIn, yIn, origin) {
   }
 }
 
+function sameMarkRow(a, b) {
+  return Math.abs(markCenterInches(a).yIn - markCenterInches(b).yIn) < 0.05
+}
+
+function markRowsFromStart(marks) {
+  const rows = []
+  for (const mark of marksFromStart(marks)) {
+    const row = rows[rows.length - 1]
+    if (row && sameMarkRow(row[0], mark)) row.push(mark)
+    else rows.push([mark])
+  }
+  return rows
+}
+
 function markScanCommand(marks, origin) {
-  if (marks.length === 0) return ''
+  const rows = markRowsFromStart(marks)
+  const frame = [...(rows[0] ?? []), ...(rows[1] ?? [])]
+  if (frame.length === 0) return ''
   let width = 0
   let height = 0
-  for (const mark of marks) {
+  for (const mark of frame) {
     const center = markCenterInches(mark)
     const point = toPlt(center.xIn, center.yIn, origin)
     width = Math.max(width, point.x)
@@ -86,17 +102,24 @@ const far = {
 }
 const leftMark = circle(0.15, 10 / 25.4)
 const rightMark = circle(0.15 + MARK_GAP_X_IN, 10 / 25.4)
+const midLeft = circle(0.15, 10)
+const midRight = circle(0.15 + MARK_GAP_X_IN, 10)
 const trailingLeft = circle(0.15, 20)
 const trailingRight = circle(0.15 + MARK_GAP_X_IN, 20)
-const allMarks = [rightMark, trailingRight, leftMark, trailingLeft]
+const twoRows = [rightMark, trailingRight, leftMark, trailingLeft]
+const threeRows = [rightMark, midRight, trailingRight, leftMark, midLeft, trailingLeft]
 
 const origin = markCenterInches(leftMark)
-const plt = buildTenethPlt([near, far], allMarks)
+const plt = buildTenethPlt([near, far], twoRows)
+const threePlt = buildTenethPlt([near, far], threeRows)
 const gapX = toUnits(MARK_GAP_X_IN)
 const trailRel = toPlt(trailingLeft.xIn + MARK_SIZE_IN / 2, trailingLeft.yIn + MARK_SIZE_IN / 2, origin)
+const midRel = toPlt(midLeft.xIn + MARK_SIZE_IN / 2, midLeft.yIn + MARK_SIZE_IN / 2, origin)
 const nearRel = toPlt(near.xIn, near.yIn, origin)
 const farRel = toPlt(far.xIn, far.yIn, origin)
 const expectedScan = `TB26,0,${gapX},${trailRel.y};CT1;`
+const nextPairScan = `TB26,0,${gapX},${midRel.y};CT1;`
+const lastPairScan = `TB26,0,${gapX},${trailRel.y};`
 const sizeOnly = `TB26,0,200,200;`
 const uploadedStuck = 'TB26,0,0,0,'
 const tb26Match = plt.match(/^TB26,0,([^;]+);/)
@@ -114,7 +137,10 @@ const checks = [
   [!layout.includes('marks.slice(1)'), 'TB26 is not a list of other mark coordinates'],
   [!layout.includes('markHuntPath'), 'PLT does not pen-up hunt marks as ordinary U moves'],
   [!layout.includes('sectionHeightIn - box.yIn'), 'PLT Y is not flipped from the trailing edge'],
-  [plt.startsWith(expectedScan), 'generated file starts with TB26 far-corner window then CT1'],
+  [layout.includes('rows[1]'), 'TB26 window uses the next mark pair, not every pair down the sheet'],
+  [plt.startsWith(expectedScan), 'two-pair file uses the second pair as the far corner'],
+  [threePlt.startsWith(nextPairScan), 'three-pair file stops the window at the next pair'],
+  [!threePlt.includes(lastPairScan), 'three-pair file does not send the camera to the last pair'],
   [plt.includes(`;:H A L0 ECN U ${ORIGIN_TICK}`), 'DMPL header and origin tick follow the scan'],
   [tb26Nums.length === 2, 'TB26 has only the far-corner span, not a mark list'],
   [tb26Nums[0] === gapX && tb26Nums[1] === trailRel.y, 'TB26 span is the far mark from the parked start circle'],

@@ -177,16 +177,34 @@ function toPlt(xIn: number, yIn: number, origin: { xIn: number; yIn: number }) {
   }
 }
 
+function sameMarkRow(a: CutBox, b: CutBox) {
+  return Math.abs(markCenterInches(a).yIn - markCenterInches(b).yIn) < 0.05
+}
+
+/** Cluster marks into rows from the leading edge down the sheet. */
+function markRowsFromStart(marks: CutBox[]) {
+  const rows: CutBox[][] = []
+  for (const mark of marksFromStart(marks)) {
+    const row = rows[rows.length - 1]
+    if (row && sameMarkRow(row[0], mark)) row.push(mark)
+    else rows.push([mark])
+  }
+  return rows
+}
+
 /**
- * CutterPro_5.2.gms exports the page as HPGL, then ToCutter.exe wraps it.
- * TB26,0,width,height is the far corner of the mark window from the parked
- * start circle — not mark size and not a list of points. CT1 enables contour.
+ * CutterPro/ToCutter: TB26,0,width,height is the far corner of a 4-point
+ * window — the parked start circle, the matching right mark, and the next
+ * pair down the sheet. Using the last pair on a 3-pair sheet makes the
+ * camera pass the second pair and run too far.
  */
 function markScanCommand(marks: CutBox[], origin: { xIn: number; yIn: number }) {
-  if (marks.length === 0) return ''
+  const rows = markRowsFromStart(marks)
+  const frame = [...(rows[0] ?? []), ...(rows[1] ?? [])]
+  if (frame.length === 0) return ''
   let width = 0
   let height = 0
-  for (const mark of marks) {
+  for (const mark of frame) {
     const center = markCenterInches(mark)
     const point = toPlt(center.xIn, center.yIn, origin)
     width = Math.max(width, point.x)
@@ -201,6 +219,7 @@ const ORIGIN_TICK = 'U-7,8;D-7,8;D-7,0;U-7,0;'
 /**
  * Match the working Corel Teneth plugin PLT:
  * TB26,0,spanX,spanY;CT1;;:H A L0 ECN U  <tick> <semicolon U/D cuts> UspanX,0;PG;@
+ * spanY is the next mark row, not the last row of a longer sheet.
  */
 export function buildTenethPlt(boxes: CutBox[], marks: CutBox[] = []) {
   const ordered = marksFromStart(marks)
