@@ -44,35 +44,158 @@ export function pieceHeightInches(piece: {
   return piece.widthIn
 }
 
-export function layoutSheetRows(
-  rows: SheetPiece[][],
-  opts?: { sectionLengthIn?: number; boxMarginIn?: number; sideInsetIn?: number; startYIn?: number },
-) {
-  const sectionLengthIn = opts?.sectionLengthIn
-  const boxMarginIn = opts?.boxMarginIn ?? 0
-  const sideInsetIn = opts?.sideInsetIn ?? 0
-  let yIn = opts?.startYIn ?? ART_INSET_IN
-  const pieces: PlacedSheetPiece[] = []
+export type PackItem = { widthIn: number; heightIn: number }
 
-  for (const row of rows) {
-    const rowHeight = Math.max(...row.map((piece) => piece.heightIn), 0)
-    const rowInset = sideInsetIn
-    if (sectionLengthIn && sectionLengthIn > 0) {
-      const section = Math.floor(Math.max(0, yIn - boxMarginIn) / sectionLengthIn)
-      const sectionEnd = (section + 1) * sectionLengthIn
-      if (yIn + rowHeight + boxMarginIn > sectionEnd) {
-        yIn = sectionEnd + boxMarginIn
+type FreeRect = { xIn: number; yIn: number; widthIn: number; heightIn: number }
+
+const EPS = 1e-6
+
+export type PackSheetOptions = {
+  packWidthIn: number
+  gutterIn?: number
+  startYIn?: number
+  sideInsetIn?: number
+  /** Designs may not straddle a cutter section boundary. */
+  sectionLengthIn?: number
+  sectionMarginIn?: number
+}
+
+function straddlesSection(yIn: number, heightIn: number, sectionLengthIn: number, marginIn: number) {
+  const top = Math.floor((yIn - marginIn + EPS) / sectionLengthIn)
+  const bottom = Math.floor((yIn + heightIn + marginIn - EPS) / sectionLengthIn)
+  return top !== bottom
+}
+
+function splitFreeRect(free: FreeRect, used: FreeRect): FreeRect[] {
+  const noOverlap =
+    used.xIn >= free.xIn + free.widthIn - EPS ||
+    used.xIn + used.widthIn <= free.xIn + EPS ||
+    used.yIn >= free.yIn + free.heightIn - EPS ||
+    used.yIn + used.heightIn <= free.yIn + EPS
+  if (noOverlap) return [free]
+
+  const parts: FreeRect[] = []
+  if (used.yIn > free.yIn + EPS) {
+    parts.push({ xIn: free.xIn, yIn: free.yIn, widthIn: free.widthIn, heightIn: used.yIn - free.yIn })
+  }
+  const usedBottom = used.yIn + used.heightIn
+  if (usedBottom < free.yIn + free.heightIn - EPS) {
+    parts.push({ xIn: free.xIn, yIn: usedBottom, widthIn: free.widthIn, heightIn: free.yIn + free.heightIn - usedBottom })
+  }
+  if (used.xIn > free.xIn + EPS) {
+    parts.push({ xIn: free.xIn, yIn: free.yIn, widthIn: used.xIn - free.xIn, heightIn: free.heightIn })
+  }
+  const usedRight = used.xIn + used.widthIn
+  if (usedRight < free.xIn + free.widthIn - EPS) {
+    parts.push({ xIn: usedRight, yIn: free.yIn, widthIn: free.xIn + free.widthIn - usedRight, heightIn: free.heightIn })
+  }
+  return parts
+}
+
+function contains(outer: FreeRect, inner: FreeRect) {
+  return (
+    inner.xIn >= outer.xIn - EPS &&
+    inner.yIn >= outer.yIn - EPS &&
+    inner.xIn + inner.widthIn <= outer.xIn + outer.widthIn + EPS &&
+    inner.yIn + inner.heightIn <= outer.yIn + outer.heightIn + EPS
+  )
+}
+
+function pruneFreeRects(rects: FreeRect[]) {
+  const kept: FreeRect[] = []
+  for (let i = 0; i < rects.length; i += 1) {
+    const rect = rects[i]
+    if (rect.widthIn <= EPS || rect.heightIn <= EPS) continue
+    let covered = false
+    for (let j = 0; j < rects.length; j += 1) {
+      if (i === j) continue
+      if (contains(rects[j], rect) && !(contains(rect, rects[j]) && j > i)) {
+        covered = true
+        break
       }
     }
-    let xIn = rowInset
-    for (const piece of row) {
-      pieces.push({ ...piece, xIn, yIn })
-      xIn += piece.widthIn + SHEET_GUTTER_IN
+    if (!covered) kept.push(rect)
+  }
+  return kept
+}
+
+/**
+ * Bottom-left MaxRects packing for a fixed-width, open-ended roll.
+ *
+ * Designs used to be placed in upload order, one row at a time, so a single
+ * tall design set a tall row and every short design after it wasted that
+ * height. That is what turned a 72 in job into a 200 in sheet. Packing in
+ * two dimensions lets short designs stack in the space beside a tall one.
+ */
+export function packSheetPieces<T extends PackItem>(
+  items: T[],
+  opts: PackSheetOptions,
+): { pieces: Array<T & { xIn: number; yIn: number }>; contentEndY: number } {
+  const gutterIn = opts.gutterIn ?? SHEET_GUTTER_IN
+  const startYIn = opts.startYIn ?? ART_INSET_IN
+  const sideInsetIn = opts.sideInsetIn ?? 0
+  const sectionMarginIn = opts.sectionMarginIn ?? 0
+  const sectionLengthIn = opts.sectionLengthIn ?? 0
+  // Each design reserves a gutter on its right and below, so the strip is
+  // one gutter wider than the usable width.
+  const stripWidth = opts.packWidthIn + gutterIn
+  const totalHeight = items.reduce((sum, item) => sum + item.heightIn + gutterIn, 0)
+  const openHeight = totalHeight + startYIn + sectionLengthIn + 1
+
+  let free: FreeRect[] = [{ xIn: 0, yIn: startYIn, widthIn: stripWidth, heightIn: openHeight }]
+  const placed: Array<T & { xIn: number; yIn: number }> = []
+
+  const ordered = items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      const heightDiff = b.item.heightIn - a.item.heightIn
+      if (Math.abs(heightDiff) > EPS) return heightDiff
+      const widthDiff = b.item.widthIn - a.item.widthIn
+      if (Math.abs(widthDiff) > EPS) return widthDiff
+      return a.index - b.index
+    })
+
+  for (const { item } of ordered) {
+    const boxWidth = Math.min(item.widthIn, opts.packWidthIn) + gutterIn
+    const boxHeight = item.heightIn + gutterIn
+
+    let bestRect: FreeRect | undefined
+    let bestY = Infinity
+    let bestX = Infinity
+    let bestFit = Infinity
+
+    for (const rect of free) {
+      if (rect.widthIn + EPS < boxWidth) continue
+      let yIn = rect.yIn
+      if (sectionLengthIn > 0 && straddlesSection(yIn, item.heightIn, sectionLengthIn, sectionMarginIn)) {
+        const boundary = Math.ceil((yIn - sectionMarginIn + EPS) / sectionLengthIn) * sectionLengthIn
+        yIn = boundary + sectionMarginIn
+        if (straddlesSection(yIn, item.heightIn, sectionLengthIn, sectionMarginIn)) continue
+      }
+      const available = rect.yIn + rect.heightIn - yIn
+      if (available + EPS < boxHeight) continue
+      const fit = Math.min(rect.widthIn - boxWidth, available - boxHeight)
+      if (
+        yIn < bestY - EPS ||
+        (Math.abs(yIn - bestY) <= EPS && fit < bestFit - EPS) ||
+        (Math.abs(yIn - bestY) <= EPS && Math.abs(fit - bestFit) <= EPS && rect.xIn < bestX - EPS)
+      ) {
+        bestRect = rect
+        bestY = yIn
+        bestX = rect.xIn
+        bestFit = fit
+      }
     }
-    yIn += rowHeight + SHEET_GUTTER_IN
+
+    if (!bestRect) continue
+
+    const used: FreeRect = { xIn: bestX, yIn: bestY, widthIn: boxWidth, heightIn: boxHeight }
+    placed.push({ ...item, xIn: bestX + sideInsetIn, yIn: bestY })
+    free = pruneFreeRects(free.flatMap((rect) => splitFreeRect(rect, used)))
   }
 
-  return { pieces, contentEndY: yIn }
+  const contentEndY = placed.reduce((max, piece) => Math.max(max, piece.yIn + piece.heightIn + gutterIn), startYIn)
+  return { pieces: placed, contentEndY }
 }
 
 function fillMarkCircle(

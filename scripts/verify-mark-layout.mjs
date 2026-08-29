@@ -84,7 +84,7 @@ const checks = [
   [arrowTipX > firstMark.xIn + firstMark.widthIn, 'start arrow sits to the right of the first crop mark and points at it'],
   [firstMark.yIn + MARK_SIZE_IN < artStart, 'first crop-mark row stays in the header, above the artwork'],
   [lastPrintMark >= contentEnd, 'last crop-mark row stays in the footer, below the artwork'],
-  [compose.includes('const rowInset = sideInsetIn'), 'cut sheets keep side gutters so marks do not land on designs'],
+  [compose.includes('xIn: bestX + sideInsetIn'), 'cut sheets inset designs so marks do not land on them'],
   [shortYs.length === 2, 'an 11 in sheet gets two mark pairs'],
   [twelveYs.length === 3, 'a 12 in sheet gets three mark pairs'],
   [midYs.length === 3, 'a 24 in sheet gets three mark pairs on that length'],

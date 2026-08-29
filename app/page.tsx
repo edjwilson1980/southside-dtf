@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { DesignInspector } from '@/components/design-inspector'
 import { SheetPreviewModal } from '@/components/sheet-preview-modal'
-import { composeGangSheet, layoutSheetRows, pieceHeightInches, ART_INSET_IN, CUT_ART_START_IN, SHEET_GUTTER_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
+import { composeGangSheet, packSheetPieces, pieceHeightInches, ART_INSET_IN, CUT_ART_START_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
 import { CUT_MARGIN_IN, CUT_SECTION_IN, MARK_CLEARANCE_IN, cutPltSections, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, startMarkArrowPoints } from '@/lib/cut-layout'
 import { trimEmptySpace } from '@/lib/crop-image'
@@ -233,28 +233,22 @@ export default function Home() {
   })
   const artStart = cutOut ? CUT_ART_START_IN : ART_INSET_IN
   const packWidth = cutOut ? SHEET_WIDTH_IN - MARK_CLEARANCE_IN * 2 : SHEET_WIDTH_IN
-  const packedRows = previewPieces.reduce<Design[][]>((rows, design) => {
-    const current = rows[rows.length - 1]
-    const currentWidth = current?.reduce((sum, item) => sum + getDesignWidth(item), 0) ?? 0
-    const gutters = current ? current.length * SHEET_GUTTER_IN : 0
-    const designWidth = getDesignWidth(design)
-    if (!current || currentWidth + gutters + designWidth > packWidth) rows.push([design])
-    else current.push(design)
-    return rows
-  }, [])
-  const sheetRows = packedRows.map((row) => row.map((design) => ({
-    previewUrl: design.previewUrl,
-    widthIn: getDesignWidth(design),
-    heightIn: getDesignHeight(design),
-  })))
-  const sheetLayout = layoutSheetRows(sheetRows, cutOut
-    ? {
-        sectionLengthIn: CUT_SECTION_IN,
-        boxMarginIn: MARK_CLEARANCE_IN,
-        sideInsetIn: MARK_CLEARANCE_IN,
-        startYIn: CUT_ART_START_IN,
-      }
-    : undefined)
+  const sheetLayout = packSheetPieces(
+    previewPieces.map((design) => ({
+      previewUrl: design.previewUrl,
+      widthIn: getDesignWidth(design),
+      heightIn: getDesignHeight(design),
+    })),
+    cutOut
+      ? {
+          packWidthIn: packWidth,
+          startYIn: CUT_ART_START_IN,
+          sideInsetIn: MARK_CLEARANCE_IN,
+          sectionLengthIn: CUT_SECTION_IN,
+          sectionMarginIn: MARK_CLEARANCE_IN,
+        }
+      : { packWidthIn: packWidth, startYIn: ART_INSET_IN },
+  )
   const packedHeight = Math.max(0, sheetLayout.contentEndY - artStart)
   const printHeight = cutOut
     ? sheetLayout.contentEndY + CUT_ART_START_IN
@@ -335,7 +329,7 @@ export default function Home() {
   }
 
   async function composeCurrentSheet(pxPerIn: number, label: string, mapCmyk = false) {
-    if (sheetRows.length === 0) throw new Error('Add a design before previewing the gang sheet.')
+    if (sheetLayout.pieces.length === 0) throw new Error('Add a design before previewing the gang sheet.')
     return composeGangSheet({
       pieces: sheetLayout.pieces,
       sheetLengthIn: printHeight,
