@@ -101,7 +101,7 @@ const checks = [
   [compose.indexOf('fillText') < compose.indexOf('drawImage'), 'job name is drawn before artwork so it cannot cover the designs'],
   [compose.includes('fillText'), 'job name is still printed on the sheet'],
   [preview.includes('black 5 mm circles'), 'preview copy describes circles'],
-  [preview.includes('BOTTOM-LEFT'), 'preview copy names the bottom-left start circle'],
+  [preview.includes('BOTTOM-RIGHT'), 'preview copy names the bottom-right start circle'],
   [layout.includes('MARK_SECTION_IN = 36'), 'mark rows sit no more than 36 in apart'],
   [layout.includes('const pitch = span / steps'), 'mark rows are evenly spaced down the sheet'],
   [layout.includes('MARK_LEAD_IN = 10 / 25.4'), 'the far mark row sits at the film edge'],

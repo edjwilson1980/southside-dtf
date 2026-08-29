@@ -67,21 +67,21 @@ const spacingChecks = heights.flatMap((h) => {
   ]
 })
 
-// Roll-fed: the start mark is the bottom-left circle, with the arrow to its right.
+// Roll-fed: the start mark is the bottom-right circle, with the arrow to its left.
 const startY = printYs[printYs.length - 1]
-const startMark = { xIn: xs.left, yIn: startY, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN }
-const arrowTipX = startMark.xIn + startMark.widthIn + MARK_PAD_IN + 0.6 / 25.4
-const arrowBaseX = arrowTipX + START_ARROW_LENGTH_IN
+const startMark = { xIn: xs.right, yIn: startY, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN }
+const arrowTipX = startMark.xIn - MARK_PAD_IN - 0.6 / 25.4
+const arrowBaseX = arrowTipX - START_ARROW_LENGTH_IN
 
 const checks = [
   [layout.includes('MARK_SECTION_IN = 36'), 'the camera never travels more than 36 in between mark rows'],
   [!layout.includes('SHORT_SHEET_IN'), 'the old under-12-in / 12-to-30-in mark rules are gone'],
   [layout.includes('const startRow = ys.length - 1'), 'the start mark is on the last row down the sheet'],
-  [layout.includes('{ xIn: left, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: row === startRow }'), 'the left circle on that row is the start mark'],
+  [layout.includes('first: row === startRow'), 'the right-hand circle on that row is the start mark'],
   [layout.includes('return bc.yIn - ac.yIn'), 'the PLT orders marks from the bottom of the sheet up'],
-  [layout.includes('return ac.xIn - bc.xIn'), 'the PLT orders each row from the left'],
-  [layout.includes('x: toUnits(origin.yIn - yIn)'), 'feed runs up the film from the bottom start mark'],
-  [layout.includes('y: toUnits(xIn - origin.xIn)'), 'the carriage still runs right, because unwinding a roll does not mirror it'],
+  [layout.includes('return bc.xIn - ac.xIn'), 'the PLT orders each row from the right'],
+  [layout.includes('x: toUnits(origin.yIn - yIn)'), 'feed runs up the film from the bottom-right start mark'],
+  [layout.includes('y: toUnits(origin.xIn - xIn)'), 'the carriage runs left from the bottom-right start mark'],
   [layout.includes('MARK_LEAD_IN = 10 / 25.4'), 'the far mark row still sits at the film edge'],
   [layout.includes('MARK_TRAIL_IN = 0.75'), 'the sheet ends 0.75 in after the start mark row'],
   [layout.includes('MARK_GAP_X_IN = 21.5'), '21.5 in left-to-right crop-mark spacing is in code'],
@@ -90,13 +90,15 @@ const checks = [
   [overlay.includes('cut-start-arrow') && overlay.includes('<polygon'), 'preview overlay draws a start arrow pointing at the start crop mark'],
   [layout.includes('startMarkArrowPoints'), 'start-arrow geometry is defined next to the start crop mark'],
   [css.includes('cut-overlay-svg') && css.includes('stroke: #ff1a1a'), 'overlay crop marks are stroked circles, not boxes'],
-  [preview.includes('BOTTOM-LEFT'), 'preview copy tells the operator to park on the bottom-left circle'],
+  [preview.includes('BOTTOM-RIGHT'), 'preview copy tells the operator to park on the bottom-right circle'],
+  [preview.includes('UPSIDE DOWN'), 'preview copy tells the operator to lay the sheet on the bed upside down'],
+  [preview.includes('cut mirrored'), 'preview copy warns that loading it the right way up cuts mirrored'],
   [preview.includes('evenly spaced'), 'preview copy says mark rows are evenly spaced'],
   [preview.includes('in the margins'), 'preview copy says crop marks stay off the designs'],
   [compose.includes('xIn: bestX + sideInsetIn'), 'cut sheets inset designs so marks do not land on them'],
   [Math.abs(xs.right - xs.left - 21.5) < 1e-9, 'left and right marks are 21.5 in apart'],
-  [arrowTipX > startMark.xIn + startMark.widthIn, 'start arrow sits to the right of the start crop mark and points at it'],
-  [arrowBaseX < SHEET_WIDTH_IN, 'the whole start arrow stays on the sheet'],
+  [arrowTipX < startMark.xIn, 'start arrow sits to the left of the start crop mark and points at it'],
+  [arrowBaseX > 0, 'the whole start arrow stays on the sheet'],
   [startY > contentEnd, 'the start crop-mark row sits in the footer, below the artwork'],
   [printYs[0] + MARK_SIZE_IN < artStart, 'the far crop-mark row stays in the header, above the artwork'],
   ...spacingChecks,
