@@ -3,7 +3,8 @@ import { SHEET_WIDTH_IN, type PlacedSheetPiece } from '@/lib/compose-sheet'
 /** Cut contour is the printed image plus 2 mm on every side. */
 export const CUT_MARGIN_MM = 2
 export const CUT_MARGIN_IN = CUT_MARGIN_MM / 25.4
-export const CUT_SECTION_IN = 30
+/** A fresh mark pair every 30 in so the camera re-registers down a long roll. */
+export const MARK_SECTION_IN = 30
 /** Sheets shorter than this get two mark pairs; 12–30 in sheets get three. */
 export const SHORT_SHEET_IN = 12
 /** Left and right crop marks are 21.5 in apart. */
@@ -88,10 +89,10 @@ function sectionMarkYs(sectionStart: number, sectionHeightIn: number) {
 
 function markYs(sheetHeightIn: number) {
   if (sheetHeightIn <= 0) return []
-  const sectionCount = Math.max(1, Math.ceil(sheetHeightIn / CUT_SECTION_IN - 1e-9))
+  const sectionCount = Math.max(1, Math.ceil(sheetHeightIn / MARK_SECTION_IN - 1e-9))
   return Array.from({ length: sectionCount }, (_, index) => {
-    const sectionStart = index * CUT_SECTION_IN
-    const sectionHeightIn = Math.min(CUT_SECTION_IN, Math.max(0, sheetHeightIn - sectionStart))
+    const sectionStart = index * MARK_SECTION_IN
+    const sectionHeightIn = Math.min(MARK_SECTION_IN, Math.max(0, sheetHeightIn - sectionStart))
     return sectionMarkYs(sectionStart, sectionHeightIn)
   }).flat()
 }
@@ -223,40 +224,19 @@ export function buildTenethPlt(boxes: CutBox[], marks: CutBox[] = []) {
   return `${scan.command};:H A L0 ECN U ${ORIGIN_TICK}${paths}U${scan.feed},0;PG;${'@'.repeat(21)}`
 }
 
-export function cutPltSections(
+/**
+ * One cut file per job, however long the sheet is. The belt bed feeds the
+ * whole roll and re-registers on each mark pair down the sheet, so there is
+ * no reason to split the job into separate files.
+ */
+export function cutPlt(
   pieces: PlacedSheetPiece[],
   sheetHeightIn: number,
   sheetWidthIn = SHEET_WIDTH_IN,
 ) {
-  const sectionCount = Math.max(1, Math.ceil(sheetHeightIn / CUT_SECTION_IN - 1e-9))
-  const allMarks = registrationMarkBounds(sheetHeightIn, sheetWidthIn, pieces)
-  return Array.from({ length: sectionCount }, (_, index) => {
-    const sectionStart = index * CUT_SECTION_IN
-    const sectionHeightIn = Math.min(CUT_SECTION_IN, Math.max(0, sheetHeightIn - sectionStart))
-    const inSection = (yIn: number, heightIn: number) =>
-      yIn + heightIn > sectionStart + 1e-6 && yIn < sectionStart + sectionHeightIn - 1e-6
-    const boxes = pieces
-      .map((piece) => cutBoxForPiece(piece, sheetWidthIn, sheetHeightIn))
-      .filter((box) => inSection(box.yIn, box.heightIn))
-      .map((box) => {
-        const yIn = Math.max(0, box.yIn - sectionStart)
-        const bottom = Math.min(sectionHeightIn, box.yIn + box.heightIn - sectionStart)
-        return {
-          xIn: box.xIn,
-          yIn,
-          widthIn: box.widthIn,
-          heightIn: Math.max(0, bottom - yIn),
-        }
-      })
-      .filter((box) => box.widthIn > 0 && box.heightIn > 0)
-    const marks = allMarks
-      .filter((mark) => inSection(mark.yIn, mark.heightIn))
-      .map((mark) => ({ ...mark, yIn: Math.max(0, mark.yIn - sectionStart) }))
-    return {
-      index,
-      sectionCount,
-      sectionHeightIn,
-      plt: boxes.length > 0 ? buildTenethPlt(boxes, marks) : '',
-    }
-  }).filter((section) => section.plt)
+  const boxes = pieces
+    .map((piece) => cutBoxForPiece(piece, sheetWidthIn, sheetHeightIn))
+    .filter((box) => box.widthIn > 0 && box.heightIn > 0)
+  if (boxes.length === 0) return ''
+  return buildTenethPlt(boxes, registrationMarkBounds(sheetHeightIn, sheetWidthIn, pieces))
 }

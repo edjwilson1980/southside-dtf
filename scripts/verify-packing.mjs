@@ -44,12 +44,6 @@ function lengthNextFit(items, packWidthIn, cutOut) {
 }
 
 /** Mirrors packSheetPieces in lib/compose-sheet.ts. */
-function straddlesSection(yIn, heightIn, sectionLengthIn, marginIn) {
-  const top = Math.floor((yIn - marginIn + EPS) / sectionLengthIn)
-  const bottom = Math.floor((yIn + heightIn + marginIn - EPS) / sectionLengthIn)
-  return top !== bottom
-}
-
 function splitFreeRect(free, used) {
   const noOverlap =
     used.xIn >= free.xIn + free.widthIn - EPS ||
@@ -98,11 +92,9 @@ function packSheetPieces(items, opts) {
   const gutterIn = opts.gutterIn ?? SHEET_GUTTER_IN
   const startYIn = opts.startYIn ?? CUT_ART_START_IN
   const sideInsetIn = opts.sideInsetIn ?? 0
-  const sectionMarginIn = opts.sectionMarginIn ?? 0
-  const sectionLengthIn = opts.sectionLengthIn ?? 0
   const stripWidth = opts.packWidthIn + gutterIn
   const totalHeight = items.reduce((sum, item) => sum + item.heightIn + gutterIn, 0)
-  const openHeight = totalHeight + startYIn + sectionLengthIn + 1
+  const openHeight = totalHeight + startYIn + 1
 
   let free = [{ xIn: 0, yIn: startYIn, widthIn: stripWidth, heightIn: openHeight }]
   const placed = []
@@ -124,23 +116,15 @@ function packSheetPieces(items, opts) {
     let bestX = Infinity
     let bestFit = Infinity
     for (const rect of free) {
-      if (rect.widthIn + EPS < boxWidth) continue
-      let yIn = rect.yIn
-      if (sectionLengthIn > 0 && straddlesSection(yIn, item.heightIn, sectionLengthIn, sectionMarginIn)) {
-        const boundary = Math.ceil((yIn - sectionMarginIn + EPS) / sectionLengthIn) * sectionLengthIn
-        yIn = boundary + sectionMarginIn
-        if (straddlesSection(yIn, item.heightIn, sectionLengthIn, sectionMarginIn)) continue
-      }
-      const available = rect.yIn + rect.heightIn - yIn
-      if (available + EPS < boxHeight) continue
-      const fit = Math.min(rect.widthIn - boxWidth, available - boxHeight)
+      if (rect.widthIn + EPS < boxWidth || rect.heightIn + EPS < boxHeight) continue
+      const fit = Math.min(rect.widthIn - boxWidth, rect.heightIn - boxHeight)
       if (
-        yIn < bestY - EPS ||
-        (Math.abs(yIn - bestY) <= EPS && fit < bestFit - EPS) ||
-        (Math.abs(yIn - bestY) <= EPS && Math.abs(fit - bestFit) <= EPS && rect.xIn < bestX - EPS)
+        rect.yIn < bestY - EPS ||
+        (Math.abs(rect.yIn - bestY) <= EPS && fit < bestFit - EPS) ||
+        (Math.abs(rect.yIn - bestY) <= EPS && Math.abs(fit - bestFit) <= EPS && rect.xIn < bestX - EPS)
       ) {
         bestRect = rect
-        bestY = yIn
+        bestY = rect.yIn
         bestX = rect.xIn
         bestFit = fit
       }
@@ -157,13 +141,7 @@ function packSheetPieces(items, opts) {
 
 function packOptions(cutOut, packWidthIn) {
   return cutOut
-    ? {
-        packWidthIn,
-        startYIn: CUT_ART_START_IN,
-        sideInsetIn: MARK_CLEARANCE_IN,
-        sectionLengthIn: CUT_SECTION_IN,
-        sectionMarginIn: MARK_CLEARANCE_IN,
-      }
+    ? { packWidthIn, startYIn: CUT_ART_START_IN, sideInsetIn: MARK_CLEARANCE_IN }
     : { packWidthIn, startYIn: CUT_ART_START_IN }
 }
 
@@ -233,10 +211,6 @@ for (const scenario of scenarios) {
     checks.push([overlaps.length === 0, `${label} places no design on top of another (${overlaps.length} overlaps)`])
 
     if (cutOut) {
-      const straddling = packed.pieces.filter((piece) =>
-        straddlesSection(piece.yIn, piece.heightIn, CUT_SECTION_IN, MARK_CLEARANCE_IN),
-      )
-      checks.push([straddling.length === 0, `${label} keeps every design inside one 30 in cutter section`])
       const tooFarLeft = packed.pieces.filter((piece) => piece.xIn < MARK_CLEARANCE_IN - EPS)
       checks.push([tooFarLeft.length === 0, `${label} keeps designs clear of the crop marks`])
     }

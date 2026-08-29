@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Minus, Plus } from 'lucide-react'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
-import { CUT_SECTION_IN, type CutBox } from '@/lib/cut-layout'
+import { type CutBox } from '@/lib/cut-layout'
 import { readImageSize } from '@/lib/image-utils'
 import { SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 
@@ -154,7 +154,7 @@ export function SheetPreviewModal({
             <h2 id="sheet-preview-title">{sheetLabel}</h2>
             <p>
               22 in wide · {sheetLengthIn} in long · {totalTransfers} transfers.
-              {cutOut ? ` Red boxes are 2 mm cut lines for the plotter — preview only, not printed. ${cropMarkPreviewCopy(cutMarks.length)} Dashed lines mark ${CUT_SECTION_IN} in cutter sections.` : ' Scroll or zoom to inspect the layout.'}
+              {cutOut ? ` Red boxes are 2 mm cut lines for the plotter — preview only, not printed. ${cropMarkPreviewCopy(cutMarks.length)} The whole job downloads as one cut file, however long it is.` : ' Scroll or zoom to inspect the layout.'}
             </p>
           </div>
           <button className="size-popup-close" aria-label="Close gang sheet preview" onClick={onClose} disabled={saving}>

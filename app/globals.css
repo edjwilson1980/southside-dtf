@@ -265,7 +265,6 @@ button.thumb:disabled { cursor: default; }
 .cut-reg-mark { fill: none; stroke: #ff1a1a; stroke-width: 0.05; }
 .cut-reg-mark.first { stroke: #ff1a1a; }
 .cut-start-arrow { fill: #ff1a1a; stroke: none; }
-.cut-section-line { position: absolute; left: 0; right: 0; border-top: 2px dashed #ff1a1a; opacity: .75; }
 .sheet-preview-popup {
   display: flex;
   flex-direction: column;

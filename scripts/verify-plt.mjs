@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const layout = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/cut-layout.ts'), 'utf8')
+const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+const layout = readFileSync(join(root, 'lib/cut-layout.ts'), 'utf8')
+const names = readFileSync(join(root, 'lib/sheet-name.ts'), 'utf8')
+const page = readFileSync(join(root, 'app/page.tsx'), 'utf8')
 
 const PLT_UNITS_PER_IN = 1016
 const MARK_SIZE_IN = 5 / 25.4
@@ -144,6 +147,13 @@ const checks = [
   [toUnits(1) === 1016, 'DMPL units are 1016 per inch (40 per mm)'],
   [WORKING_HEAD.startsWith('TB26,0,'), 'working Corel file uses the same TB26 prefix'],
   [WORKING_HEAD.includes(';CT1;;:H A L0 ECN U U-7,8;'), 'working Corel file is TB26, CT1, header, origin tick'],
+  [layout.includes('export function cutPlt('), 'the whole job builds one cut file'],
+  [!layout.includes('cutPltSections'), 'the job is no longer split into cut sections'],
+  [!names.includes('sectionCount'), 'cut file names carry no section number'],
+  [names.includes('cut.plt`'), 'the cut file is named "<job> cut.plt"'],
+  [!page.includes('for (const section of'), 'the builder downloads a single cut file'],
+  [!page.includes('cutTooTall'), 'the 30 in per-design section limit is gone'],
+  [layout.includes('MARK_SECTION_IN = 30'), 'crop marks still repeat every 30 in for re-registration'],
 ]
 
 const failed = checks.filter(([ok]) => !ok)

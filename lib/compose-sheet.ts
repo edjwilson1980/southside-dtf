@@ -55,15 +55,6 @@ export type PackSheetOptions = {
   gutterIn?: number
   startYIn?: number
   sideInsetIn?: number
-  /** Designs may not straddle a cutter section boundary. */
-  sectionLengthIn?: number
-  sectionMarginIn?: number
-}
-
-function straddlesSection(yIn: number, heightIn: number, sectionLengthIn: number, marginIn: number) {
-  const top = Math.floor((yIn - marginIn + EPS) / sectionLengthIn)
-  const bottom = Math.floor((yIn + heightIn + marginIn - EPS) / sectionLengthIn)
-  return top !== bottom
 }
 
 function splitFreeRect(free: FreeRect, used: FreeRect): FreeRect[] {
@@ -134,13 +125,11 @@ export function packSheetPieces<T extends PackItem>(
   const gutterIn = opts.gutterIn ?? SHEET_GUTTER_IN
   const startYIn = opts.startYIn ?? ART_INSET_IN
   const sideInsetIn = opts.sideInsetIn ?? 0
-  const sectionMarginIn = opts.sectionMarginIn ?? 0
-  const sectionLengthIn = opts.sectionLengthIn ?? 0
   // Each design reserves a gutter on its right and below, so the strip is
   // one gutter wider than the usable width.
   const stripWidth = opts.packWidthIn + gutterIn
   const totalHeight = items.reduce((sum, item) => sum + item.heightIn + gutterIn, 0)
-  const openHeight = totalHeight + startYIn + sectionLengthIn + 1
+  const openHeight = totalHeight + startYIn + 1
 
   let free: FreeRect[] = [{ xIn: 0, yIn: startYIn, widthIn: stripWidth, heightIn: openHeight }]
   const placed: Array<T & { xIn: number; yIn: number }> = []
@@ -165,23 +154,15 @@ export function packSheetPieces<T extends PackItem>(
     let bestFit = Infinity
 
     for (const rect of free) {
-      if (rect.widthIn + EPS < boxWidth) continue
-      let yIn = rect.yIn
-      if (sectionLengthIn > 0 && straddlesSection(yIn, item.heightIn, sectionLengthIn, sectionMarginIn)) {
-        const boundary = Math.ceil((yIn - sectionMarginIn + EPS) / sectionLengthIn) * sectionLengthIn
-        yIn = boundary + sectionMarginIn
-        if (straddlesSection(yIn, item.heightIn, sectionLengthIn, sectionMarginIn)) continue
-      }
-      const available = rect.yIn + rect.heightIn - yIn
-      if (available + EPS < boxHeight) continue
-      const fit = Math.min(rect.widthIn - boxWidth, available - boxHeight)
+      if (rect.widthIn + EPS < boxWidth || rect.heightIn + EPS < boxHeight) continue
+      const fit = Math.min(rect.widthIn - boxWidth, rect.heightIn - boxHeight)
       if (
-        yIn < bestY - EPS ||
-        (Math.abs(yIn - bestY) <= EPS && fit < bestFit - EPS) ||
-        (Math.abs(yIn - bestY) <= EPS && Math.abs(fit - bestFit) <= EPS && rect.xIn < bestX - EPS)
+        rect.yIn < bestY - EPS ||
+        (Math.abs(rect.yIn - bestY) <= EPS && fit < bestFit - EPS) ||
+        (Math.abs(rect.yIn - bestY) <= EPS && Math.abs(fit - bestFit) <= EPS && rect.xIn < bestX - EPS)
       ) {
         bestRect = rect
-        bestY = yIn
+        bestY = rect.yIn
         bestX = rect.xIn
         bestFit = fit
       }

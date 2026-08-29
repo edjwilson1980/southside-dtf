@@ -40,13 +40,10 @@ export function sheetCutFileName(
   customerName: string,
   billedLengthIn: number,
   stamp = sheetStamp(),
-  section = 1,
-  sectionCount = 1,
 ) {
   const name = sheetJobName(customerName, billedLengthIn, stamp)
     .replace(/[\\/:*?"<>|]+/g, '-')
     .replace(/\s+/g, ' ')
     .trim()
-  if (sectionCount <= 1) return `${name} cut.plt`
-  return `${name} cut ${section} of ${sectionCount}.plt`
+  return `${name} cut.plt`
 }
