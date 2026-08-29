@@ -34,7 +34,7 @@ function marksFromStart(marks) {
     const ac = markCenterInches(a)
     const bc = markCenterInches(b)
     if (Math.abs(ac.yIn - bc.yIn) > 1e-9) return bc.yIn - ac.yIn
-    return bc.xIn - ac.xIn
+    return ac.xIn - bc.xIn
   })
 }
 
@@ -51,7 +51,7 @@ function markRowsFromStart(marks) {
 function toPlt(xIn, yIn, origin) {
   return {
     x: toUnits(origin.yIn - yIn),
-    y: toUnits(origin.xIn - xIn),
+    y: toUnits(xIn - origin.xIn),
   }
 }
 
@@ -109,15 +109,16 @@ const trailingRight = circle(0.15 + MARK_GAP_X_IN, 20)
 const twoRows = [rightMark, trailingRight, leftMark, trailingLeft]
 const threeRows = [rightMark, midRight, trailingRight, leftMark, midLeft, trailingLeft]
 
-// Roll-fed: the camera parks on the bottom-right circle, so that is the origin.
-const origin = markCenterInches(trailingRight)
+// Roll-fed: the camera parks on the bottom-left circle, so that is the origin.
+const origin = markCenterInches(trailingLeft)
 const plt = buildTenethPlt([near, far], twoRows)
 const threePlt = buildTenethPlt([near, far], threeRows)
 const carriage = toUnits(MARK_GAP_X_IN)
 const leadRel = toPlt(leftMark.xIn + MARK_SIZE_IN / 2, leftMark.yIn + MARK_SIZE_IN / 2, origin)
 const midRel = toPlt(midLeft.xIn + MARK_SIZE_IN / 2, midLeft.yIn + MARK_SIZE_IN / 2, origin)
-const nearRel = toPlt(near.xIn + near.widthIn, near.yIn + near.heightIn, origin)
-const farRel = toPlt(far.xIn + far.widthIn, far.yIn + far.heightIn, origin)
+const nearRel = toPlt(near.xIn, near.yIn + near.heightIn, origin)
+const farRel = toPlt(far.xIn, far.yIn + far.heightIn, origin)
+const startRowRightRel = toPlt(trailingRight.xIn + MARK_SIZE_IN / 2, trailingRight.yIn + MARK_SIZE_IN / 2, origin)
 const expectedScan = `TB26,0,${leadRel.x},${carriage};CT1;`
 const threeRowScan = `TB26,0,${midRel.x},${carriage};CT1;`
 const swappedScan = `TB26,0,${carriage},`
@@ -140,9 +141,13 @@ const checks = [
   [!layout.includes('marks.slice(1)'), 'TB26 is not a list of other mark coordinates'],
   [!layout.includes('markHuntPath'), 'PLT does not pen-up hunt marks as ordinary U moves'],
   [!layout.includes('sectionHeightIn - box.yIn'), 'PLT Y is not flipped from the trailing edge'],
-  [layout.includes('x: toUnits(origin.yIn - yIn)'), 'feed runs up the film from the bottom-right start mark'],
-  [layout.includes('y: toUnits(origin.xIn - xIn)'), 'the carriage runs left from the bottom-right start mark'],
+  [layout.includes('x: toUnits(origin.yIn - yIn)'), 'feed runs up the film from the bottom start mark'],
+  [layout.includes('y: toUnits(xIn - origin.xIn)'), 'the carriage still runs right, because unwinding a roll does not mirror it'],
+  [!layout.includes('y: toUnits(origin.xIn - xIn)'), 'the carriage axis is not flipped as well as the feed axis'],
   [layout.includes('return bc.yIn - ac.yIn'), 'marks are ordered from the bottom of the sheet up'],
+  [layout.includes('return ac.xIn - bc.xIn'), 'each row is ordered from the left, so the origin is the bottom-left circle'],
+  [startRowRightRel.y === carriage, 'the mark across the start row is 21.5 in at positive carriage, so the origin is on the left'],
+  [startRowRightRel.x === 0, 'that mark shares the start row, at zero feed'],
   [layout.includes('rows[1]'), 'TB26 is the four-point window to the next row, not the furthest row'],
   [plt.startsWith(expectedScan), 'TB26 is one row of feed, then 21.5 in across the carriage'],
   [threePlt.startsWith(threeRowScan), 'a three-row sheet scans only as far as the next row'],
@@ -151,6 +156,10 @@ const checks = [
   [!threePlt.startsWith(swappedScan), 'three-row file does not command 21.5 in of feed either'],
   [feedIn < MARK_GAP_X_IN, `feed span (${feedIn.toFixed(2)} in) is along the sheet, not the 21.5 in width`],
   [allCoords.every(([x, y]) => x >= -10 && y >= -10), 'every cut coordinate runs forward from the start mark'],
+  [
+    allCoords.every(([x, y]) => x <= tb26Nums[0] + toUnits(40) && y <= toUnits(SHEET_WIDTH_IN)),
+    'no cut coordinate runs off the far side of the film',
+  ],
   [plt.includes(`;:H A L0 ECN U ${ORIGIN_TICK}`), 'DMPL header and origin tick follow the scan'],
   [tb26Nums.length === 2, 'TB26 has only the window corner, not a mark list'],
   [tb26Nums[0] === leadRel.x && tb26Nums[1] === carriage, 'TB26 corner is the next mark row across the film'],

@@ -111,11 +111,13 @@ export function registrationMarkBounds(
   const { left, right } = markXs(sheetWidthIn)
   const ys = markYs(sheetHeightIn)
   // Roll-fed: the bottom of the sheet leaves the roller first, so the camera
-  // parks on the bottom-right circle and works up the film.
+  // parks on the bottom row and works up the film. Unwinding a roll reverses
+  // the feed order but does not mirror the film, so left stays left and the
+  // start mark is the bottom-left circle.
   const startRow = ys.length - 1
   return ys.flatMap((yIn, row) => [
-    { xIn: left, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: false },
-    { xIn: right, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: row === startRow },
+    { xIn: left, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: row === startRow },
+    { xIn: right, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN, first: false },
   ])
 }
 
@@ -131,18 +133,18 @@ export type ArrowPoint = { xIn: number; yIn: number }
 
 /**
  * Triangle inboard of the start crop mark, pointing out at it. The start
- * mark is now the bottom-right circle, so the arrow sits to its left where
- * there is room, in the footer below the artwork.
+ * mark is the bottom-left circle, so the arrow sits to its right where there
+ * is room, in the footer below the artwork.
  */
 export function startMarkArrowPoints(mark: CutBox): ArrowPoint[] {
   const cy = mark.yIn + mark.heightIn / 2
-  const tipX = mark.xIn - MARK_PAD_IN - 0.6 / 25.4
+  const tipX = mark.xIn + mark.widthIn + MARK_PAD_IN + 0.6 / 25.4
   const length = START_ARROW_LENGTH_IN
   const half = START_ARROW_WIDTH_IN / 2
   return [
     { xIn: tipX, yIn: cy },
-    { xIn: tipX - length, yIn: cy - half },
-    { xIn: tipX - length, yIn: cy + half },
+    { xIn: tipX + length, yIn: cy - half },
+    { xIn: tipX + length, yIn: cy + half },
   ]
 }
 
@@ -169,13 +171,13 @@ function markCenterInches(mark: CutBox) {
   }
 }
 
-/** Roll-fed CCD origin is the bottom-right circle: last row first, then right to left. */
+/** Roll-fed CCD origin is the bottom-left circle: last row first, then left to right. */
 function marksFromStart(marks: CutBox[]) {
   return [...marks].sort((a, b) => {
     const ac = markCenterInches(a)
     const bc = markCenterInches(b)
     if (Math.abs(ac.yIn - bc.yIn) > 1e-9) return bc.yIn - ac.yIn
-    return bc.xIn - ac.xIn
+    return ac.xIn - bc.xIn
   })
 }
 
@@ -193,13 +195,17 @@ function markRowsFromStart(marks: CutBox[]) {
 /**
  * The plotter frame is not the PNG frame. On a roll cutter, HPGL X is the
  * feed direction and Y is the carriage across the media, so the two axes are
- * transposed. Both run away from the bottom-right start circle: +X up the
- * film as it feeds off the roller, +Y across to the left.
+ * transposed.
+ *
+ * Feeding from the bottom of the sheet reverses the feed axis but not the
+ * carriage: a roll unwinds, it is not turned around, so the film's left edge
+ * is still on the same side of the machine. Flipping both axes rotated every
+ * cut 180 degrees, which is why the marks read but the job cut mirrored.
  */
 function toPlt(xIn: number, yIn: number, origin: { xIn: number; yIn: number }) {
   return {
     x: toUnits(origin.yIn - yIn),
-    y: toUnits(origin.xIn - xIn),
+    y: toUnits(xIn - origin.xIn),
   }
 }
 

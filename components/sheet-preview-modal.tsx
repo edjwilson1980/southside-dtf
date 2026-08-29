@@ -9,7 +9,7 @@ import { SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 
 function cropMarkPreviewCopy(markCount: number) {
   const countLabel = markCount === 4 ? 'four' : markCount === 6 ? 'six' : String(markCount)
-  return `The ${countLabel} black 5 mm circles ARE printed on the PNG for the cutter camera, in the margins — not on the designs. This is roll-fed, so park the camera on the BOTTOM-RIGHT circle: the arrow beside it points the way. The cut file then works up the film. Mark rows are evenly spaced, never more than ${MARK_SECTION_IN} in apart, so the camera advances the same distance every time. Overlay crop marks are red circles. Red rectangles are the image plus 2 mm cut lines.`
+  return `The ${countLabel} black 5 mm circles ARE printed on the PNG for the cutter camera, in the margins — not on the designs. This is roll-fed, so park the camera on the BOTTOM-LEFT circle: the arrow beside it points the way. The cut file then works up the film. Mark rows are evenly spaced, never more than ${MARK_SECTION_IN} in apart, so the camera advances the same distance every time. Overlay crop marks are red circles. Red rectangles are the image plus 2 mm cut lines.`
 }
 
 const zoomPresets = [
