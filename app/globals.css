@@ -292,3 +292,19 @@ button.thumb:disabled { cursor: default; }
   .sheet-preview-popup { width: calc(100vw - 16px); height: calc(100vh - 16px); padding: 14px; }
   .sheet-preview-actions { grid-template-columns: 1fr; }
 }
+.cutter-test { max-width: 860px; margin: 0 auto; padding: 32px 20px 64px; color: var(--ink); }
+.cutter-test h1 { font-size: 30px; letter-spacing: -.02em; margin: 0 0 6px; }
+.cutter-test .lede { color: #576275; margin: 0 0 20px; }
+.cutter-test .steps { background: #fbfefd; border: 1px solid #cfe8d8; border-radius: 12px; padding: 16px 16px 16px 34px; line-height: 1.6; }
+.cutter-test button { border: 1px solid #0793bd; background: #0793bd; color: #fff; border-radius: 9px; padding: 10px 16px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.cutter-test button:disabled { opacity: .55; cursor: default; }
+.cutter-test .primary { margin: 18px 0 8px; }
+.cutter-test .error { color: #b00020; }
+.cutter-test .variants { margin-top: 28px; display: grid; gap: 18px; }
+.cutter-test .variants section { border: 1px solid #e2e6eb; border-radius: 12px; padding: 16px 18px; background: var(--card); }
+.cutter-test .variants h2 { font-size: 19px; margin: 0 0 8px; letter-spacing: -.01em; }
+.cutter-test .variants p { margin: 0 0 10px; color: #576275; line-height: 1.55; }
+.cutter-test .watch { color: #1c2a3a !important; }
+.cutter-test details { margin-top: 12px; }
+.cutter-test summary { cursor: pointer; color: #576275; font-size: 14px; }
+.cutter-test code { display: block; margin-top: 8px; padding: 10px; background: #f5f7fa; border-radius: 8px; font-size: 12px; word-break: break-all; line-height: 1.5; }

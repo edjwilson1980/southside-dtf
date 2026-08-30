@@ -45,7 +45,7 @@ export const MARK_TRAIL_IN = 0.75
 /** Small printed arrow at the leading-left circle so the camera start is obvious. */
 export const START_ARROW_LENGTH_IN = 8 / 25.4
 export const START_ARROW_WIDTH_IN = 6 / 25.4
-const PLT_UNITS_PER_IN = 1016
+export const PLT_UNITS_PER_IN = 1016
 
 export type CutBox = {
   xIn: number
