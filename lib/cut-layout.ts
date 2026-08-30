@@ -1,10 +1,15 @@
 import { SHEET_WIDTH_IN, type PlacedSheetPiece } from '@/lib/compose-sheet'
 
-/** Cut contour is the printed image plus 2 mm on every side. */
-export const CUT_MARGIN_MM = 2
-export const CUT_MARGIN_IN = CUT_MARGIN_MM / 25.4
-/** Longest the camera ever has to travel between mark rows. */
-export const MARK_SECTION_IN = 36
+/** Cut contour is the printed image plus this much on every side. */
+export const CUT_MARGIN_IN = 0.3
+/** Neighbouring designs need this much between them or their cut boxes overlap. */
+export const CUT_GUTTER_IN = CUT_MARGIN_IN * 2
+/**
+ * How much the cutter can take in one pass before it has to stop, advance the
+ * belt and pick up the next pair of marks. Mark rows are never further apart
+ * than this, so it always reaches the next registration before the stop.
+ */
+export const MARK_SECTION_IN = 30
 /** Left and right crop marks are 21.5 in apart. */
 export const MARK_GAP_X_IN = 21.5
 /** Teneth CCD cameras lock onto filled 5 mm circles, not squares or L marks. */

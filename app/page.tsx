@@ -9,7 +9,7 @@ import { DesignInspector } from '@/components/design-inspector'
 import { SheetPreviewModal } from '@/components/sheet-preview-modal'
 import { composeGangSheet, packSheetBestGutter, pieceHeightInches, ART_INSET_IN, CUT_ART_START_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
-import { MARK_CLEARANCE_IN, cutPlt, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, startMarkArrowPoints } from '@/lib/cut-layout'
+import { CUT_GUTTER_IN, CUT_MARGIN_IN, MARK_CLEARANCE_IN, MARK_SECTION_IN, cutPlt, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, startMarkArrowPoints } from '@/lib/cut-layout'
 import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
@@ -241,7 +241,12 @@ export default function Home() {
       heightIn: getDesignHeight(design),
     })),
     cutOut
-      ? { packWidthIn: packWidth, startYIn: CUT_ART_START_IN, sideInsetIn: MARK_CLEARANCE_IN }
+      ? {
+          packWidthIn: packWidth,
+          startYIn: CUT_ART_START_IN,
+          sideInsetIn: MARK_CLEARANCE_IN,
+          minGutterIn: CUT_GUTTER_IN,
+        }
       : { packWidthIn: packWidth, startYIn: ART_INSET_IN },
   )
   const packedHeight = Math.max(0, sheetLayout.contentEndY - artStart)
@@ -254,6 +259,7 @@ export default function Home() {
   const startArrowPoints = startArrow ? startMarkArrowPoints(startArrow) : []
   const billedLength = billedSheetLength(packedHeight)
   const cutBoxes = cutOut ? cutPreviewBoxes(sheetLayout.pieces, SHEET_WIDTH_IN, printHeight) : []
+  const cutTooTall = cutOut && sheetLayout.pieces.some((piece) => piece.heightIn + CUT_MARGIN_IN * 2 > MARK_SECTION_IN)
   const layoutKey = designs.map((design) => [
     design.id, design.quantity, design.size, design.placement,
     design.customWidth, design.customHeight, design.previewUrl,
@@ -499,6 +505,9 @@ export default function Home() {
               </tbody>
             </table>
           </div>
+        )}
+        {cutTooTall && (
+          <p className="save-error">A design is taller than {MARK_SECTION_IN} in with its cut box, so the cutter cannot finish it in one pass. Shorten it or turn Pre-cut DTFs off.</p>
         )}
         <div className="metrics">
           <Metric label="Designs" value={designs.length} icon={<ImageIcon size={24} />} />

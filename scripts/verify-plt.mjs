@@ -257,8 +257,11 @@ const checks = [
   [!names.includes('sectionCount'), 'cut file names carry no section number'],
   [names.includes('cut.plt`'), 'the cut file is named "<job> cut.plt"'],
   [!page.includes('for (const section of'), 'the builder downloads a single cut file'],
-  [!page.includes('cutTooTall'), 'the per-design section height limit is gone'],
-  [layout.includes('MARK_SECTION_IN = 36'), 'mark rows sit no more than 36 in apart'],
+  [layout.includes('MARK_SECTION_IN = 30'), 'mark rows sit no more than 30 in apart, inside one cutter pass'],
+  [layout.includes('CUT_MARGIN_IN = 0.3'), 'the cut box is 0.3 in around each design'],
+  [layout.includes('CUT_GUTTER_IN = CUT_MARGIN_IN * 2'), 'neighbouring cut boxes cannot overlap'],
+  [page.includes('minGutterIn: CUT_GUTTER_IN'), 'pre-cut packing keeps designs at least two cut boxes apart'],
+  [page.includes('cutTooTall'), 'a design too tall for one cutter pass is flagged'],
 ]
 
 const failed = checks.filter(([ok]) => !ok)

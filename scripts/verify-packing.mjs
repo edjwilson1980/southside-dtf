@@ -11,24 +11,34 @@ const SHEET_WIDTH_IN = 22
 const CUT_SECTION_IN = 30
 const MARK_SIZE_IN = 5 / 25.4
 const MARK_PAD_IN = 2 / 25.4
-const CUT_MARGIN_IN = 2 / 25.4
+const CUT_MARGIN_IN = 0.3
+const CUT_GUTTER_IN = CUT_MARGIN_IN * 2
 const MARK_GAP_X_IN = 21.5
 const MARK_EDGE_IN = Math.max(0, (SHEET_WIDTH_IN - MARK_GAP_X_IN - MARK_SIZE_IN) / 2)
 const MARK_CLEARANCE_IN = MARK_EDGE_IN + MARK_SIZE_IN + CUT_MARGIN_IN
 const PREFERRED_GUTTER_IN = 0.25
-const GUTTER_CHOICES = [PREFERRED_GUTTER_IN, 0.1875, SHEET_GUTTER_IN]
+
+function gutterChoices(minGutterIn) {
+  const preferred = Math.max(PREFERRED_GUTTER_IN, minGutterIn)
+  return [preferred, (preferred + minGutterIn) / 2, minGutterIn]
+}
 const LABEL_HEIGHT_IN = 1
 const LABEL_PAD_IN = 0.125
 const LABEL_MARGIN_IN = 0.75
 const CUT_ART_START_IN = LABEL_PAD_IN + LABEL_HEIGHT_IN + LABEL_MARGIN_IN
 const EPS = 1e-6
 
-/** The packer that shipped before this change: next-fit rows in upload order. */
+/**
+ * The packer that shipped before this change: next-fit rows in upload order.
+ * Given the same spacing the current packer is held to, so the comparison
+ * measures packing quality rather than a change in spacing policy.
+ */
 function lengthNextFit(items, packWidthIn, cutOut) {
+  const gutter = cutOut ? CUT_GUTTER_IN : SHEET_GUTTER_IN
   const rows = items.reduce((acc, item) => {
     const current = acc[acc.length - 1]
     const currentWidth = current?.reduce((sum, entry) => sum + entry.widthIn, 0) ?? 0
-    const gutters = current ? current.length * SHEET_GUTTER_IN : 0
+    const gutters = current ? current.length * gutter : 0
     if (!current || currentWidth + gutters + item.widthIn > packWidthIn) acc.push([item])
     else current.push(item)
     return acc
@@ -41,7 +51,7 @@ function lengthNextFit(items, packWidthIn, cutOut) {
       const sectionEnd = (section + 1) * CUT_SECTION_IN
       if (yIn + rowHeight + MARK_CLEARANCE_IN > sectionEnd) yIn = sectionEnd + MARK_CLEARANCE_IN
     }
-    yIn += rowHeight + SHEET_GUTTER_IN
+    yIn += rowHeight + gutter
   }
   return yIn - CUT_ART_START_IN
 }
@@ -143,8 +153,9 @@ function packSheetPieces(items, opts) {
 }
 
 function packSheetBestGutter(items, opts) {
-  let best = packSheetPieces(items, { ...opts, gutterIn: GUTTER_CHOICES[0] })
-  for (const gutterIn of GUTTER_CHOICES.slice(1)) {
+  const [first, ...rest] = gutterChoices(opts.minGutterIn ?? SHEET_GUTTER_IN)
+  let best = packSheetPieces(items, { ...opts, gutterIn: first })
+  for (const gutterIn of rest) {
     const candidate = packSheetPieces(items, { ...opts, gutterIn })
     if (candidate.contentBottom < best.contentBottom - EPS) best = candidate
   }
@@ -153,7 +164,7 @@ function packSheetBestGutter(items, opts) {
 
 function packOptions(cutOut, packWidthIn) {
   return cutOut
-    ? { packWidthIn, startYIn: CUT_ART_START_IN, sideInsetIn: MARK_CLEARANCE_IN }
+    ? { packWidthIn, startYIn: CUT_ART_START_IN, sideInsetIn: MARK_CLEARANCE_IN, minGutterIn: CUT_GUTTER_IN }
     : { packWidthIn, startYIn: CUT_ART_START_IN }
 }
 
@@ -250,29 +261,47 @@ checks.push([
 const oversize = packSheetBestGutter([{ widthIn: 30, heightIn: 5 }, { widthIn: 4, heightIn: 4 }], packOptions(false, SHEET_WIDTH_IN))
 checks.push([oversize.pieces.length === 2, 'a design wider than the sheet is still placed rather than dropped'])
 
-// The reported case: two 10.5 x 12 designs must sit side by side on a pre-cut sheet.
 const cutWidth = SHEET_WIDTH_IN - MARK_CLEARANCE_IN * 2
-const twoUp = packSheetBestGutter(repeat(10.5, 12, 2), packOptions(true, cutWidth))
-const twoUpRow = twoUp.pieces.every((piece) => Math.abs(piece.yIn - twoUp.pieces[0].yIn) < EPS)
-const twoUpGap = Math.abs(twoUp.pieces[1].xIn - twoUp.pieces[0].xIn) - 10.5
+const usable = cutWidth
 const markLeftEdge = MARK_EDGE_IN
 const markRightEdge = SHEET_WIDTH_IN - MARK_EDGE_IN
-const cutBoxes = twoUp.pieces.map((piece) => ({
-  left: piece.xIn - CUT_MARGIN_IN,
-  right: piece.xIn + piece.widthIn + CUT_MARGIN_IN,
-}))
-checks.push([twoUpRow, 'two 10.5 x 12 designs sit side by side on a pre-cut sheet'])
-checks.push([twoUp.contentEndY - CUT_ART_START_IN < 13, `two 10.5 x 12 designs need one 12 in row, not two (${(twoUp.contentEndY - CUT_ART_START_IN).toFixed(1)} in)`])
-checks.push([
-  cutBoxes.every((box) => box.left >= markLeftEdge + MARK_SIZE_IN - EPS && box.right <= markRightEdge - MARK_SIZE_IN + EPS),
-  'their 2 mm cut boxes still clear the printed crop marks',
-])
-checks.push([twoUpGap >= SHEET_GUTTER_IN - EPS, `they keep ${twoUpGap.toFixed(3)} in between them`])
 
-const usable = SHEET_WIDTH_IN - MARK_CLEARANCE_IN * 2
-checks.push([usable > 21, `pre-cut usable width is ${usable.toFixed(3)} in, enough for two 10.5 in designs`])
-const preferredTwoUp = (usable - PREFERRED_GUTTER_IN) / 2
-checks.push([preferredTwoUp > 10.4, `at the preferred ${PREFERRED_GUTTER_IN} in gap a pair can be ${preferredTwoUp.toFixed(3)} in wide`])
+// Widest pair that still fits two up now the cut box is 0.3 in a side.
+const maxTwoUp = (usable - CUT_GUTTER_IN) / 2
+checks.push([maxTwoUp > 10 && maxTwoUp < 10.5, `the widest 2-up pair is ${maxTwoUp.toFixed(3)} in with a ${CUT_GUTTER_IN} in gap`])
+
+const twoUp = packSheetBestGutter(repeat(10, 12, 2), packOptions(true, cutWidth))
+const twoUpRow = twoUp.pieces.every((piece) => Math.abs(piece.yIn - twoUp.pieces[0].yIn) < EPS)
+const twoUpGap = Math.abs(twoUp.pieces[1].xIn - twoUp.pieces[0].xIn) - 10
+checks.push([twoUpRow, 'two 10 x 12 designs still sit side by side on a pre-cut sheet'])
+checks.push([twoUp.contentEndY - CUT_ART_START_IN < 13, `they need one 12 in row, not two (${(twoUp.contentEndY - CUT_ART_START_IN).toFixed(1)} in)`])
+checks.push([twoUpGap >= CUT_GUTTER_IN - EPS, `they keep ${twoUpGap.toFixed(3)} in between them, enough for both cut boxes`])
+
+// Cut boxes must clear the printed marks and never reach into a neighbour.
+for (const scenario of scenarios) {
+  const packed = packSheetBestGutter(scenario.items, packOptions(true, cutWidth))
+  const boxes = packed.pieces.map((piece) => ({
+    left: piece.xIn - CUT_MARGIN_IN,
+    right: piece.xIn + piece.widthIn + CUT_MARGIN_IN,
+    top: piece.yIn - CUT_MARGIN_IN,
+    bottom: piece.yIn + piece.heightIn + CUT_MARGIN_IN,
+  }))
+  const offMark = boxes.filter(
+    (box) => box.left < markLeftEdge + MARK_SIZE_IN - EPS || box.right > markRightEdge - MARK_SIZE_IN + EPS,
+  )
+  checks.push([offMark.length === 0, `${scenario.name}: every ${CUT_MARGIN_IN} in cut box clears the printed crop marks`])
+
+  let overlapping = 0
+  for (let i = 0; i < boxes.length; i += 1) {
+    for (let j = i + 1; j < boxes.length; j += 1) {
+      const a = boxes[i]
+      const b = boxes[j]
+      const apart = a.right <= b.left + EPS || b.right <= a.left + EPS || a.bottom <= b.top + EPS || b.bottom <= a.top + EPS
+      if (!apart) overlapping += 1
+    }
+  }
+  checks.push([overlapping === 0, `${scenario.name}: no cut box reaches into a neighbouring design (${overlapping})`])
+}
 
 checks.push([compose.includes('export function packSheetPieces'), 'packSheetPieces is exported from compose-sheet'])
 checks.push([page.includes('packSheetBestGutter('), 'the builder uses packSheetBestGutter'])

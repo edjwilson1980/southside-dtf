@@ -13,9 +13,15 @@ export type PlacedSheetPiece = SheetPiece & {
 }
 
 export const SHEET_GUTTER_IN = 0.125
-/** Preferred space between designs; tightened toward SHEET_GUTTER_IN only when it would cost film. */
+
+/** Preferred space between designs; tightened toward the minimum only when it would cost film. */
 export const PREFERRED_GUTTER_IN = 0.25
-const GUTTER_CHOICES = [PREFERRED_GUTTER_IN, 0.1875, SHEET_GUTTER_IN]
+
+/** Widest to narrowest spacing to try, given a minimum the caller will not go below. */
+function gutterChoices(minGutterIn: number) {
+  const preferred = Math.max(PREFERRED_GUTTER_IN, minGutterIn)
+  return [preferred, (preferred + minGutterIn) / 2, minGutterIn]
+}
 export const SHEET_WIDTH_IN = 22
 export const LABEL_PT = 72
 export const PRINT_MARGIN_IN = 1.5
@@ -188,18 +194,20 @@ export function packSheetPieces<T extends PackItem>(
 }
 
 /**
- * Space designs generously, but never at the cost of a longer sheet. Two
- * 10.5 in designs only clear the crop marks with about 0.15 in between them,
- * so a fixed 0.25 in gutter would drop one of them to the next row.
- * Compared on content bottom rather than sheet end, since a wider gutter
- * always adds its own trailing space.
+ * Space designs generously, but never at the cost of a longer sheet.
+ *
+ * Pre-cut sheets pass a minimum wide enough that neighbouring cut boxes
+ * cannot overlap, since a cut box that reaches into the next design would
+ * put the knife straight through it. Compared on content bottom rather than
+ * sheet end, since a wider gutter always adds its own trailing space.
  */
 export function packSheetBestGutter<T extends PackItem>(
   items: T[],
-  opts: Omit<PackSheetOptions, 'gutterIn'>,
+  opts: Omit<PackSheetOptions, 'gutterIn'> & { minGutterIn?: number },
 ) {
-  let best = packSheetPieces(items, { ...opts, gutterIn: GUTTER_CHOICES[0] })
-  for (const gutterIn of GUTTER_CHOICES.slice(1)) {
+  const [first, ...rest] = gutterChoices(opts.minGutterIn ?? SHEET_GUTTER_IN)
+  let best = packSheetPieces(items, { ...opts, gutterIn: first })
+  for (const gutterIn of rest) {
     const candidate = packSheetPieces(items, { ...opts, gutterIn })
     if (candidate.contentBottom < best.contentBottom - EPS) best = candidate
   }
