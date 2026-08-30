@@ -229,11 +229,15 @@ function markScanCommand(marks: CutBox[], origin: { xIn: number; yIn: number }) 
 /** Tiny origin tick from the working Corel plugin file, then cuts, then return to the window width. */
 const ORIGIN_TICK = 'U-7,8;D-7,8;D-7,0;U-7,0;'
 
+/** Designs whose near edges are within this much are cut as one band. */
+const BAND_TOLERANCE = toUnits(0.5)
+
 /**
- * Cut order runs outward from the parked start mark: the nearest design
- * first, then across that band, then on up the film. Designs were being cut
- * in packing order, which starts wherever the tallest one landed, so the
- * knife could open somewhere out in the middle of the sheet.
+ * Cut order runs outward from the parked start mark and advances toward +Y.
+ * The nearest design is cut first, then anything level with it on X, then on
+ * to the next band up the Y axis. Designs used to be emitted in packing
+ * order, which is sorted tallest first, so the knife could open in the
+ * middle of the sheet and work back toward the start mark.
  */
 function boxesFromStart(boxes: CutBox[], origin: { xIn: number; yIn: number }) {
   return boxes
@@ -248,16 +252,14 @@ function boxesFromStart(boxes: CutBox[], origin: { xIn: number; yIn: number }) {
       }
     })
     .sort((a, b) => {
-      // A band tolerance keeps designs sitting side by side in one sweep
-      // instead of zig-zagging up and down the film.
-      if (Math.abs(a.x1 - b.x1) > BAND_TOLERANCE) return a.x1 - b.x1
-      if (Math.abs(a.y1 - b.y1) > 1) return a.y1 - b.y1
-      return a.x1 - b.x1
+      // Y leads, so the job as a whole travels up the positive Y axis. The
+      // band tolerance keeps designs level with each other in one sweep
+      // rather than zig-zagging back and forth.
+      if (Math.abs(a.y1 - b.y1) > BAND_TOLERANCE) return a.y1 - b.y1
+      if (Math.abs(a.x1 - b.x1) > 1) return a.x1 - b.x1
+      return a.y1 - b.y1
     })
 }
-
-/** Designs whose near edges are within this much feed are cut as one band. */
-const BAND_TOLERANCE = toUnits(0.5)
 
 /**
  * Match the working Corel Teneth plugin PLT:

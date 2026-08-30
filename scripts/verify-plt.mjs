@@ -85,9 +85,9 @@ function boxesFromStart(boxes, origin) {
       }
     })
     .sort((a, b) => {
-      if (Math.abs(a.x1 - b.x1) > BAND_TOLERANCE) return a.x1 - b.x1
-      if (Math.abs(a.y1 - b.y1) > 1) return a.y1 - b.y1
-      return a.x1 - b.x1
+      if (Math.abs(a.y1 - b.y1) > BAND_TOLERANCE) return a.y1 - b.y1
+      if (Math.abs(a.x1 - b.x1) > 1) return a.x1 - b.x1
+      return a.y1 - b.y1
     })
 }
 
@@ -150,14 +150,8 @@ const allCoords = [...plt.matchAll(/[UD](-?\d+),(-?\d+)/g)].map(([, x, y]) => [N
 const penUps = [...plt.matchAll(/U(\d+),(\d+);D/g)].map(([, x, y]) => ({ x: Number(x), y: Number(y) }))
 const cutStarts = penUps.filter((point) => !(point.x === 0 && point.y === 0))
 const orderedBoxes = boxesFromStart([near, far], origin)
-const nearestBox = [near, far]
-  .map((box) => {
-    const a = toPlt(box.xIn, box.yIn, origin)
-    const b = toPlt(box.xIn + box.widthIn, box.yIn + box.heightIn, origin)
-    return { x1: Math.min(a.x, b.x), y1: Math.min(a.y, b.y) }
-  })
-  .reduce((best, box) => (Math.hypot(box.x1, box.y1) < Math.hypot(best.x1, best.y1) ? box : best))
 const feedOrder = cutStarts.map((point) => point.x)
+const yOrder = cutStarts.map((point) => point.y)
 const firstCut = plt.indexOf(`U${nearRel.x},${nearRel.y};D`)
 
 const checks = [
@@ -199,13 +193,18 @@ const checks = [
     'the first cut is the design nearest the start mark',
   ],
   [
-    cutStarts.length > 0 && cutStarts[0].x === Math.min(...orderedBoxes.map((box) => box.x1)),
-    `the first cut opens at ${nearestBox.x1},${nearestBox.y1}, the least feed from the start mark`,
+    cutStarts.length > 0 && cutStarts[0].y === Math.min(...orderedBoxes.map((box) => box.y1)),
+    `the first cut opens at ${orderedBoxes[0].x1},${orderedBoxes[0].y1}, the least Y from the start mark`,
   ],
   [
-    feedOrder.every((x, index) => index === 0 || x >= feedOrder[index - 1] - BAND_TOLERANCE),
-    'the knife works up the film and never jumps back toward the start mark',
+    yOrder.every((y, index) => index === 0 || y >= yOrder[index - 1] - BAND_TOLERANCE),
+    'the job advances up the positive Y axis and never doubles back',
   ],
+  [
+    yOrder.length > 1 && yOrder[yOrder.length - 1] > yOrder[0],
+    `the job ends further along +Y than it started (${yOrder[0]} to ${yOrder[yOrder.length - 1]})`,
+  ],
+  [feedOrder.every((x) => x >= 0), 'every cut sits on the positive side of the feed axis'],
   [plt.includes(`U${nearRel.x},${nearRel.y};D${nearRel.x},${nearRel.y};`), 'each cut starts at its corner nearest the start mark'],
   [nearRel.x > farRel.x, 'designs nearer the start mark have a smaller feed X'],
   [plt.includes(`U${farRel.x},${farRel.y};`), 'the far cut uses the same bottom-right origin'],
