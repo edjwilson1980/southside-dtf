@@ -102,7 +102,7 @@ const checks = [
   [compose.includes('fillText'), 'job name is still printed on the sheet'],
   [preview.includes('black 5 mm circles'), 'preview copy describes circles'],
   [preview.includes('BOTTOM-RIGHT'), 'preview copy names the bottom-right start circle'],
-  [layout.includes('MARK_SECTION_IN = 30'), 'mark rows sit no more than 30 in apart'],
+  [layout.includes('MARK_SECTION_IN = 20'), 'mark rows sit no more than 20 in apart'],
   [layout.includes('const pitch = span / steps'), 'mark rows are evenly spaced down the sheet'],
   [layout.includes('MARK_LEAD_IN = 10 / 25.4'), 'the far mark row sits at the film edge'],
   [layout.includes('MARK_GAP_X_IN = SHEET_WIDTH_IN - MARK_SIZE_IN'), 'crop marks spread to the full film width'],

@@ -16,7 +16,7 @@ const MARK_GAP_X_IN = SHEET_WIDTH_IN - MARK_SIZE_IN - MARK_EDGE_IN * 2
 const MARK_LEAD_IN = 10 / 25.4
 const MARK_TRAIL_IN = 0.75
 const MARK_PAD_IN = 2 / 25.4
-const MARK_SECTION_IN = 30
+const MARK_SECTION_IN = 20
 const MARK_ROW_GAP_IN = MARK_SIZE_IN + MARK_PAD_IN * 2
 const START_ARROW_LENGTH_IN = 8 / 25.4
 
@@ -75,7 +75,7 @@ const arrowTipX = startMark.xIn - MARK_PAD_IN - 0.6 / 25.4
 const arrowBaseX = arrowTipX - START_ARROW_LENGTH_IN
 
 const checks = [
-  [layout.includes('MARK_SECTION_IN = 30'), 'the cutter never has to travel more than 30 in between mark rows'],
+  [layout.includes('MARK_SECTION_IN = 20'), 'the cutter never has to travel more than 20 in between mark rows'],
   [!layout.includes('SHORT_SHEET_IN'), 'the old under-12-in / 12-to-30-in mark rules are gone'],
   [layout.includes('const startRow = ys.length - 1'), 'the start mark is on the last row down the sheet'],
   [layout.includes('first: row === startRow'), 'the right-hand circle on that row is the start mark'],

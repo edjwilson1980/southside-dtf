@@ -1,11 +1,12 @@
 import {
-  CUT_MARGIN_IN,
   MARK_EDGE_IN,
   MARK_GAP_X_IN,
   MARK_LEAD_IN,
+  MARK_SECTION_IN,
   MARK_SIZE_IN,
   MARK_TRAIL_IN,
   PLT_UNITS_PER_IN,
+  buildTenethPlt,
   type CutBox,
 } from '@/lib/cut-layout'
 import { SHEET_WIDTH_IN } from '@/lib/sheet-size'
@@ -176,6 +177,58 @@ function variantCurrent() {
   return `TB26,0,${sections[0].feed},${carriage()};CT1;${HEADER}${ORIGIN_TICK}${pathsFor(all, origin)}U${sections[0].feed},0;PG;${TAIL}`
 }
 
+/** Test 2A: a full-length sheet at the widest mark spacing, through the real builder. */
+export const TEST2_SHEET_IN = 50
+
+export function test2MarkYs() {
+  const first = MARK_LEAD_IN
+  const last = TEST2_SHEET_IN - MARK_TRAIL_IN - MARK_SIZE_IN
+  const steps = Math.max(1, Math.ceil((last - first) / MARK_SECTION_IN - 1e-9))
+  const pitch = (last - first) / steps
+  return Array.from({ length: steps + 1 }, (_, index) => first + index * pitch)
+}
+
+export function test2Pitch() {
+  const ys = test2MarkYs()
+  return ys[1] - ys[0]
+}
+
+/** Two boxes per section, staggered across the sheet so a misplaced pass shows. */
+export function test2CutBoxes(): Array<CutBox & { label: string; section: number }> {
+  const ys = test2MarkYs()
+  const pitch = test2Pitch()
+  const boxes: Array<CutBox & { label: string; section: number }> = []
+  // Sections run from the start mark (last row) back up the sheet.
+  for (let index = 0; index < ys.length - 1; index += 1) {
+    const top = ys[ys.length - 2 - index]
+    const yIn = top + (pitch - TEST_BOX_IN) / 2 + MARK_SIZE_IN
+    const xs = index % 2 === 0 ? [12, 4] : [16, 8]
+    xs.forEach((xIn, position) => {
+      boxes.push({
+        xIn,
+        yIn,
+        widthIn: TEST_BOX_IN,
+        heightIn: TEST_BOX_IN,
+        label: String(index * 2 + position + 1),
+        section: index + 1,
+      })
+    })
+  }
+  return boxes
+}
+
+function test2Marks(): CutBox[] {
+  const xs = testMarkXs()
+  return test2MarkYs().flatMap((yIn) =>
+    [xs.left, xs.right].map((xIn) => ({ xIn, yIn, widthIn: MARK_SIZE_IN, heightIn: MARK_SIZE_IN })),
+  )
+}
+
+/** Built by the shipping code, so this test exercises what real jobs will use. */
+export function test2Plt() {
+  return buildTenethPlt(test2CutBoxes(), test2Marks())
+}
+
 export type TestVariant = {
   id: string
   title: string
@@ -185,7 +238,15 @@ export type TestVariant = {
 }
 
 export function testVariants(): TestVariant[] {
+  const ys = test2MarkYs()
   return [
+    {
+      id: '2A',
+      title: `${TEST2_SHEET_IN} in sheet, marks ${test2Pitch().toFixed(1)} in apart`,
+      idea: `Test 1A's structure at full length and the widest mark spacing worth using. ${TEST2_SHEET_IN} in of film, ${ys.length} mark rows, ${ys.length - 1} cutting passes instead of the ${Math.ceil((TEST2_SHEET_IN - 1) / TEST_PITCH_IN)} the 12 in spacing would need. Built by the shipping code, so this is exactly what real jobs now produce.`,
+      watchFor: `Cuts two boxes, advances ${test2Pitch().toFixed(1)} in, re-reads, repeats. All ${(ys.length - 1) * 2} boxes cut in the right places.`,
+      plt: test2Plt(),
+    },
     {
       id: '1A',
       title: 'Repeated register / cut / advance blocks',

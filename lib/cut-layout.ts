@@ -16,7 +16,7 @@ export const CUT_GUTTER_IN = CUT_MARGIN_IN * 2
  * belt and pick up the next pair of marks. Mark rows are never further apart
  * than this, so it always reaches the next registration before the stop.
  */
-export const MARK_SECTION_IN = 30
+export const MARK_SECTION_IN = 20
 /** Teneth CCD cameras lock onto filled 5 mm circles, not squares or L marks. */
 export const MARK_SIZE_IN = 5 / 25.4
 export const MARK_PAD_IN = 2 / 25.4
@@ -229,10 +229,7 @@ function toPlt(xIn: number, yIn: number, origin: { xIn: number; yIn: number }) {
  * circle, its pair across the film, and the next row up. Sizing it to the
  * furthest row instead made the camera run past the nearer rows.
  */
-function markScanCommand(marks: CutBox[], origin: { xIn: number; yIn: number }) {
-  const rows = markRowsFromStart(marks)
-  const frame = [...(rows[0] ?? []), ...(rows[1] ?? [])]
-  if (frame.length === 0) return ''
+function scanWindow(frame: CutBox[], origin: { xIn: number; yIn: number }) {
   let feed = 0
   let carriage = 0
   for (const mark of frame) {
@@ -241,7 +238,7 @@ function markScanCommand(marks: CutBox[], origin: { xIn: number; yIn: number }) 
     feed = Math.max(feed, point.x)
     carriage = Math.max(carriage, point.y)
   }
-  return { command: `TB26,0,${feed},${carriage};CT1;`, feed, carriage }
+  return { feed, carriage }
 }
 
 /** Tiny origin tick from the working Corel plugin file, then cuts, then return to the window width. */
@@ -294,20 +291,62 @@ function boxesFromStart(boxes: CutBox[], origin: { xIn: number; yIn: number }): 
   return order
 }
 
-/**
- * Match the working Corel Teneth plugin PLT:
- * TB26,0,feed,carriage;CT1;;:H A L0 ECN U  <tick> <semicolon U/D cuts> Ufeed,0;PG;@
- */
-export function buildTenethPlt(boxes: CutBox[], marks: CutBox[] = []) {
-  const ordered = marksFromStart(marks)
-  const firstMark = ordered[0]
-  const origin = firstMark ? markCenterInches(firstMark) : { xIn: 0, yIn: 0 }
-  const scan = markScanCommand(ordered, origin)
+const DMPL_HEADER = ';:H A L0 ECN U '
+const PLT_TAIL = '@'.repeat(21)
+
+/** One register, cut and advance block: the structure proven by cutter test 1A. */
+function sectionBlock(boxes: CutBox[], frame: CutBox[], origin: { xIn: number; yIn: number }) {
+  const { feed, carriage } = scanWindow(frame, origin)
   const paths = boxesFromStart(boxes, origin)
     .map((box) => rectanglePath(box.x1, box.y1, box.x2, box.y2))
     .join('')
-  if (!scan) return `;:H A L0 ECN U ${paths}U @`
-  return `${scan.command};:H A L0 ECN U ${ORIGIN_TICK}${paths}U${scan.feed},0;PG;${'@'.repeat(21)}`
+  return `TB26,0,${feed},${carriage};CT1;${DMPL_HEADER}${ORIGIN_TICK}${paths}U${feed},0;PG;`
+}
+
+/**
+ * A cut file the machine can work through in passes.
+ *
+ * Each pair of mark rows gets its own block: register on those four marks,
+ * cut what sits between them in that pair's own frame, then PG to stop,
+ * clamp and roll the film on to the next pair. A single block for the whole
+ * job ran the cutter into its travel stop on anything long; this is the
+ * encoding that came back working from cutter test 1A.
+ *
+ * A design is cut by the section its leading edge falls in, so one that
+ * crosses a mark row is still cut whole, by the pass that reaches it first.
+ */
+export function buildTenethPlt(boxes: CutBox[], marks: CutBox[] = []) {
+  const rows = markRowsFromStart(marks)
+  if (rows.length === 0) {
+    const paths = boxesFromStart(boxes, { xIn: 0, yIn: 0 })
+      .map((box) => rectanglePath(box.x1, box.y1, box.x2, box.y2))
+      .join('')
+    return `${DMPL_HEADER}${paths}U @`
+  }
+
+  const rowY = rows.map((row) => markCenterInches(row[0]).yIn)
+  if (rows.length === 1) {
+    return sectionBlock(boxes, rows[0], markCenterInches(rows[0][0])) + PLT_TAIL
+  }
+
+  // Leading edge is the one nearest the parked start mark, so the largest Y.
+  const sectionOf = (box: CutBox) => {
+    const leadingEdge = box.yIn + box.heightIn
+    for (let i = 0; i < rowY.length - 1; i += 1) {
+      if (leadingEdge > rowY[i + 1]) return i
+    }
+    return rowY.length - 2
+  }
+
+  const perSection: CutBox[][] = Array.from({ length: rows.length - 1 }, () => [])
+  for (const box of boxes) perSection[sectionOf(box)].push(box)
+
+  // Empty sections still need their block, or the film never advances past them.
+  return perSection
+    .map((sectionBoxes, index) =>
+      sectionBlock(sectionBoxes, [...rows[index], ...rows[index + 1]], markCenterInches(rows[index][0])),
+    )
+    .join('') + PLT_TAIL
 }
 
 /**

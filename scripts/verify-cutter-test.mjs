@@ -84,11 +84,27 @@ checks.push([toUnits(MARK_GAP_X_IN) === toUnits(SHEET_WIDTH_IN - MARK_SIZE_IN - 
 for (const id of ['1A', '1B', '1C', '1D']) {
   checks.push([page.includes('cutter test ${variant.id}.plt') || page.includes(id), `page offers test ${id}`])
 }
-checks.push([page.includes('Download test sheet PNG'), 'page offers the printable test sheet'])
+checks.push([page.includes('Test 1 sheet'), 'page offers the printable test sheet'])
 checks.push([page.includes('canvasToPngBlob(canvas, DPI)'), 'the test sheet carries its DPI so it prints at the right size'])
 checks.push([!page.includes('canvas.toBlob('), 'the test sheet is not written as an untagged PNG'])
 checks.push([page.includes('upside down'), 'page repeats the upside-down loading instruction'])
 checks.push([!page.includes('cutPlt('), 'the test page does not touch the real cut path'])
+
+// Test 2A: full length at the widest mark spacing, built by the shipping code.
+const SECTION_MAX = 20
+const TEST2 = 50
+const first2 = MARK_LEAD_IN
+const last2 = TEST2 - MARK_TRAIL_IN - MARK_SIZE_IN
+const steps2 = Math.max(1, Math.ceil((last2 - first2) / SECTION_MAX - 1e-9))
+const pitch2 = (last2 - first2) / steps2
+checks.push([src.includes('TEST2_SHEET_IN = 50'), 'test 2A is a 50 in sheet'])
+checks.push([src.includes('buildTenethPlt(test2CutBoxes(), test2Marks())'), 'test 2A is built by the shipping code, not a copy of it'])
+checks.push([steps2 === 3, `a 50 in sheet needs ${steps2} passes`])
+checks.push([pitch2 <= SECTION_MAX + 1e-9, `pitch ${pitch2.toFixed(2)} in is within the ${SECTION_MAX} in limit`])
+checks.push([pitch2 > PITCH, `pitch ${pitch2.toFixed(2)} in is wider than the ${PITCH} in that test 1A proved`])
+checks.push([src.includes('test2CutBoxes'), 'test 2A has its own numbered boxes'])
+checks.push([page.includes('Test 2A sheet'), 'the page offers the 50 in test sheet'])
+checks.push([page.includes('register / cut / advance'), 'the page says 1A is now what the builder does'])
 
 const failed = checks.filter(([ok]) => !ok)
 for (const [ok, label] of checks) console.log(`${ok ? 'ok' : 'FAIL'}  ${label}`)

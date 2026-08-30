@@ -308,3 +308,4 @@ button.thumb:disabled { cursor: default; }
 .cutter-test details { margin-top: 12px; }
 .cutter-test summary { cursor: pointer; color: #576275; font-size: 14px; }
 .cutter-test code { display: block; margin-top: 8px; padding: 10px; background: #f5f7fa; border-radius: 8px; font-size: 12px; word-break: break-all; line-height: 1.5; }
+.cutter-test .sheets { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 8px; }
