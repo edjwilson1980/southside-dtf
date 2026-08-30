@@ -1,7 +1,16 @@
 import { SHEET_WIDTH_IN, type PlacedSheetPiece } from '@/lib/compose-sheet'
 
-/** Cut contour is the printed image plus this much on every side. */
-export const CUT_MARGIN_IN = 0.3
+/**
+ * Cut contour is the printed image plus this much on every side.
+ *
+ * Two 10.5 in designs side by side is a hard requirement, and that sets the
+ * ceiling. Between the two crop marks there is 21.5 − 0.197 = 21.303 in of
+ * clear film, the pair uses 21.0 in of it, and the four cut margins (one
+ * outboard of each design, two back to back in the middle) share what is
+ * left. So the margin cannot exceed 0.303 / 4 = 0.0758 in. This sits just
+ * under that, keeping about 0.6 mm of tolerance.
+ */
+export const CUT_MARGIN_IN = 0.07
 /** Neighbouring designs need this much between them or their cut boxes overlap. */
 export const CUT_GUTTER_IN = CUT_MARGIN_IN * 2
 /**

@@ -11,7 +11,7 @@ const SHEET_WIDTH_IN = 21.75
 const CUT_SECTION_IN = 30
 const MARK_SIZE_IN = 5 / 25.4
 const MARK_PAD_IN = 2 / 25.4
-const CUT_MARGIN_IN = 0.3
+const CUT_MARGIN_IN = 0.07
 const CUT_GUTTER_IN = CUT_MARGIN_IN * 2
 const MARK_GAP_X_IN = 21.5
 const MARK_EDGE_IN = Math.max(0, (SHEET_WIDTH_IN - MARK_GAP_X_IN - MARK_SIZE_IN) / 2)
@@ -266,16 +266,39 @@ const usable = cutWidth
 const markLeftEdge = MARK_EDGE_IN
 const markRightEdge = SHEET_WIDTH_IN - MARK_EDGE_IN
 
-// Widest pair that still fits two up now the cut box is 0.3 in a side.
-const maxTwoUp = (usable - CUT_GUTTER_IN) / 2
-checks.push([maxTwoUp > 10 && maxTwoUp < 10.5, `the widest 2-up pair is ${maxTwoUp.toFixed(3)} in with a ${CUT_GUTTER_IN} in gap`])
+// HARD REQUIREMENT: two 10.5 x 12 designs must fit side by side on a pre-cut
+// sheet. The cut margin is the only free variable, so it is capped by this.
+const clearBetweenMarks = MARK_GAP_X_IN - MARK_SIZE_IN
+const maxCutMargin = (clearBetweenMarks - 2 * 10.5) / 4
+checks.push([
+  CUT_MARGIN_IN <= maxCutMargin + EPS,
+  `the ${CUT_MARGIN_IN} in cut box is within the ${maxCutMargin.toFixed(4)} in ceiling set by a 10.5 in pair`,
+])
 
-const twoUp = packSheetBestGutter(repeat(10, 12, 2), packOptions(true, cutWidth))
+const maxTwoUp = (usable - CUT_GUTTER_IN) / 2
+checks.push([maxTwoUp >= 10.5 - EPS, `the widest 2-up pair is ${maxTwoUp.toFixed(3)} in, so 10.5 in fits`])
+
+const twoUp = packSheetBestGutter(repeat(10.5, 12, 2), packOptions(true, cutWidth))
 const twoUpRow = twoUp.pieces.every((piece) => Math.abs(piece.yIn - twoUp.pieces[0].yIn) < EPS)
-const twoUpGap = Math.abs(twoUp.pieces[1].xIn - twoUp.pieces[0].xIn) - 10
-checks.push([twoUpRow, 'two 10 x 12 designs still sit side by side on a pre-cut sheet'])
+const twoUpGap = Math.abs(twoUp.pieces[1].xIn - twoUp.pieces[0].xIn) - 10.5
+checks.push([twoUp.pieces.length === 2, 'both 10.5 x 12 designs are placed'])
+checks.push([twoUpRow, 'two 10.5 x 12 designs sit side by side on a pre-cut sheet'])
 checks.push([twoUp.contentEndY - CUT_ART_START_IN < 13, `they need one 12 in row, not two (${(twoUp.contentEndY - CUT_ART_START_IN).toFixed(1)} in)`])
 checks.push([twoUpGap >= CUT_GUTTER_IN - EPS, `they keep ${twoUpGap.toFixed(3)} in between them, enough for both cut boxes`])
+
+// And their cut boxes must still clear the printed marks at both ends.
+const twoUpBoxes = twoUp.pieces.map((piece) => ({
+  left: piece.xIn - CUT_MARGIN_IN,
+  right: piece.xIn + piece.widthIn + CUT_MARGIN_IN,
+}))
+checks.push([
+  Math.min(...twoUpBoxes.map((b) => b.left)) >= MARK_EDGE_IN + MARK_SIZE_IN - EPS,
+  'the left design cut box clears the left crop mark',
+])
+checks.push([
+  Math.max(...twoUpBoxes.map((b) => b.right)) <= SHEET_WIDTH_IN - MARK_EDGE_IN - MARK_SIZE_IN + EPS,
+  'the right design cut box clears the right crop mark',
+])
 
 // Cut boxes must clear the printed marks and never reach into a neighbour.
 for (const scenario of scenarios) {
