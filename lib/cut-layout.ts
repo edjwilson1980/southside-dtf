@@ -21,7 +21,7 @@ export const MARK_EDGE_IN = Math.max(0, (SHEET_WIDTH_IN - MARK_GAP_X_IN - MARK_S
  * How far artwork sits in from the film edge: far enough that its 2 mm cut
  * box clears the printed circle. Reserving the white halo as well cost
  * another 2 mm a side, which was just enough to stop two 10.5 in designs
- * fitting across a 22 in sheet.
+ * fitting across the sheet.
  */
 export const MARK_CLEARANCE_IN = MARK_EDGE_IN + MARK_SIZE_IN + CUT_MARGIN_IN
 const MARK_ROW_GAP_IN = MARK_SIZE_IN + MARK_PAD_IN * 2

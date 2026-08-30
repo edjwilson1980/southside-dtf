@@ -10,7 +10,7 @@ const page = readFileSync(join(root, 'app/page.tsx'), 'utf8')
 const PLT_UNITS_PER_IN = 1016
 const MARK_SIZE_IN = 5 / 25.4
 const MARK_GAP_X_IN = 21.5
-const SHEET_WIDTH_IN = 22
+const SHEET_WIDTH_IN = 21.75
 const ORIGIN_TICK = 'U-7,8;D-7,8;D-7,0;U-7,0;'
 const WORKING_HEAD = 'TB26,0,9660,7105;CT1;;:H A L0 ECN U U-7,8;D-7,8;D-7,0;U-7,0;'
 

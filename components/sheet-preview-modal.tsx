@@ -153,7 +153,7 @@ export function SheetPreviewModal({
             <span className="eyebrow">Gang sheet preview</span>
             <h2 id="sheet-preview-title">{sheetLabel}</h2>
             <p>
-              22 in wide · {sheetLengthIn} in long · {totalTransfers} transfers.
+              {SHEET_WIDTH_IN} in wide · {sheetLengthIn} in long · {totalTransfers} transfers.
               {cutOut ? ` Red boxes are 2 mm cut lines for the plotter — preview only, not printed. ${cropMarkPreviewCopy(cutMarks.length)} The whole job downloads as one cut file, however long it is.` : ' Scroll or zoom to inspect the layout.'}
             </p>
           </div>

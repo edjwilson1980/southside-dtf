@@ -16,7 +16,7 @@ const MARK_TRAIL_IN = 0.75
 const MARK_PAD_IN = 2 / 25.4
 const MARK_SECTION_IN = 30
 const MARK_ROW_GAP_IN = MARK_SIZE_IN + MARK_PAD_IN * 2
-const SHEET_WIDTH_IN = 22
+const SHEET_WIDTH_IN = 21.75
 const START_ARROW_LENGTH_IN = 8 / 25.4
 
 /** Mirrors markYs in lib/cut-layout.ts. */
@@ -97,6 +97,9 @@ const checks = [
   [preview.includes('in the margins'), 'preview copy says crop marks stay off the designs'],
   [compose.includes('xIn: bestX + sideInsetIn'), 'cut sheets inset designs so marks do not land on them'],
   [Math.abs(xs.right - xs.left - 21.5) < 1e-9, 'left and right marks are 21.5 in apart'],
+  // The marks have to survive the printable width shrinking to 21.75 in.
+  [xs.left >= 0, `the left crop mark starts on the sheet (${xs.left.toFixed(4)} in)`],
+  [xs.right + MARK_SIZE_IN <= SHEET_WIDTH_IN + 1e-9, `the right crop mark ends on the sheet (${(xs.right + MARK_SIZE_IN).toFixed(4)} in of ${SHEET_WIDTH_IN})`],
   [arrowTipX < startMark.xIn, 'start arrow sits to the left of the start crop mark and points at it'],
   [arrowBaseX > 0, 'the whole start arrow stays on the sheet'],
   [startY > contentEnd, 'the start crop-mark row sits in the footer, below the artwork'],

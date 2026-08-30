@@ -1,4 +1,5 @@
 import { pngBlobWithDpi } from '@/lib/png-dpi'
+import { SHEET_WIDTH_IN } from '@/lib/sheet-size'
 
 export async function loadImageData(src: string) {
   const image = await loadImage(src)
@@ -47,9 +48,9 @@ export function readImageSize(src: string) {
 }
 
 export function parsePrintWidthInches(size: string, placement: string, customWidth: string) {
-  if (placement === 'Custom') return Math.min(22, Number(customWidth) || 0)
+  if (placement === 'Custom') return Math.min(SHEET_WIDTH_IN, Number(customWidth) || 0)
   const measurement = size.split(' · ').pop() ?? size
-  return Math.min(22, Number.parseFloat(measurement.match(/[0-9]+(?:\.[0-9]+)?/)?.[0] ?? '10.5'))
+  return Math.min(SHEET_WIDTH_IN, Number.parseFloat(measurement.match(/[0-9]+(?:\.[0-9]+)?/)?.[0] ?? '10.5'))
 }
 
 export function printDpi(pixelWidth: number, printWidthInches: number) {

@@ -1,5 +1,6 @@
 import { canvasToPngBlob, loadImage } from '@/lib/image-utils'
 import { mapRgbaThroughCmyk } from '@/lib/cmyk-map'
+import { SHEET_WIDTH_IN } from '@/lib/sheet-size'
 
 export type SheetPiece = {
   previewUrl: string
@@ -22,7 +23,7 @@ function gutterChoices(minGutterIn: number) {
   const preferred = Math.max(PREFERRED_GUTTER_IN, minGutterIn)
   return [preferred, (preferred + minGutterIn) / 2, minGutterIn]
 }
-export const SHEET_WIDTH_IN = 22
+export { FILM_WIDTH_IN, SHEET_WIDTH_IN } from '@/lib/sheet-size'
 export const LABEL_PT = 72
 export const PRINT_MARGIN_IN = 1.5
 export const LABEL_MARGIN_IN = 0.75

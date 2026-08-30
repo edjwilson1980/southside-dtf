@@ -5,14 +5,18 @@ import { fileURLToPath } from 'node:url'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const page = readFileSync(join(root, 'app/page.tsx'), 'utf8')
 
-const block = page.match(/const sheetOptions = \[([\s\S]*?)\n\]/)
+const width = readFileSync(join(root, 'lib/sheet-size.ts'), 'utf8')
+const SHEET_WIDTH_IN = Number(width.match(/SHEET_WIDTH_IN = ([\d.]+)/)?.[1])
+const FILM_WIDTH_IN = Number(width.match(/FILM_WIDTH_IN = ([\d.]+)/)?.[1])
+
+const block = page.match(/const sheetOptions = \[([\s\S]*?)\n\]\.map/)
 if (!block) {
   console.error('could not find sheetOptions in app/page.tsx')
   process.exit(1)
 }
 
-const sheetOptions = [...block[1].matchAll(/\{ length: (\d+), label: '([^']+)', price: (\d+) \}/g)].map(
-  ([, length, label, price]) => ({ length: Number(length), label, price: Number(price) }),
+const sheetOptions = [...block[1].matchAll(/\{ length: (\d+), price: (\d+) \}/g)].map(
+  ([, length, price]) => ({ length: Number(length), label: `${SHEET_WIDTH_IN} × ${length} in`, price: Number(price) }),
 )
 
 /** Mirrors billedSheetLength in app/page.tsx. */
@@ -37,6 +41,10 @@ function priceFor(artLength) {
 const checks = []
 
 checks.push([sheetOptions.length > 0, `sheetOptions parsed (${sheetOptions.length} tiers)`])
+checks.push([SHEET_WIDTH_IN === 21.75, `printable width is ${SHEET_WIDTH_IN} in`])
+checks.push([FILM_WIDTH_IN === 24, `physical film is ${FILM_WIDTH_IN} in`])
+checks.push([SHEET_WIDTH_IN < FILM_WIDTH_IN, 'printable width sits inside the physical film'])
+checks.push([!page.includes("'22 ×"), 'no sheet label hardcodes the old 22 in width'])
 
 const ascending = sheetOptions.every((option, index) => index === 0 || option.length > sheetOptions[index - 1].length)
 checks.push([ascending, 'tiers are listed shortest to longest so the smallest fitting sheet wins'])
@@ -44,7 +52,7 @@ checks.push([ascending, 'tiers are listed shortest to longest so the smallest fi
 const pricesRise = sheetOptions.every((option, index) => index === 0 || option.price > sheetOptions[index - 1].price)
 checks.push([pricesRise, 'a longer sheet never costs less than a shorter one'])
 
-const labelsMatch = sheetOptions.every((option) => option.label === `22 × ${option.length} in`)
+const labelsMatch = sheetOptions.every((option) => option.label === `${SHEET_WIDTH_IN} × ${option.length} in`)
 checks.push([labelsMatch, 'every tier label matches its length'])
 
 // Every tier must be reachable: a job just over the previous tier bills at this one.
