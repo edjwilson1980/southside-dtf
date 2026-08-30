@@ -229,18 +229,25 @@ function markScanCommand(marks: CutBox[], origin: { xIn: number; yIn: number }) 
 /** Tiny origin tick from the working Corel plugin file, then cuts, then return to the window width. */
 const ORIGIN_TICK = 'U-7,8;D-7,8;D-7,0;U-7,0;'
 
-/** Designs whose near edges are within this much are cut as one band. */
-const BAND_TOLERANCE = toUnits(0.5)
+/** Designs must share at least this much of the sheet's length to count as one row. */
+const ROW_OVERLAP_IN = toUnits(0.25)
+
+type PltBox = { x1: number; y1: number; x2: number; y2: number }
 
 /**
- * Cut order runs outward from the parked start mark and advances toward +Y.
- * The nearest design is cut first, then anything level with it on X, then on
- * to the next band up the Y axis. Designs used to be emitted in packing
- * order, which is sorted tallest first, so the knife could open in the
- * middle of the sheet and work back toward the start mark.
+ * Cut order is row by row, working outward from the parked start mark.
+ *
+ * The first cut is the design nearest the start mark. Everything sitting
+ * beside it is cut next, sweeping side by side across the film, and only
+ * then does the job move along to the next row.
+ *
+ * Rows are grouped by overlap rather than by a fixed tolerance. The packer
+ * staggers designs, so neighbours that plainly sit side by side can start a
+ * couple of inches apart; a fixed band split them into separate rows and the
+ * knife appeared to skip designs near the start of the page.
  */
-function boxesFromStart(boxes: CutBox[], origin: { xIn: number; yIn: number }) {
-  return boxes
+function boxesFromStart(boxes: CutBox[], origin: { xIn: number; yIn: number }): PltBox[] {
+  const remaining: PltBox[] = boxes
     .map((box) => {
       const a = toPlt(box.xIn, box.yIn, origin)
       const b = toPlt(box.xIn + box.widthIn, box.yIn + box.heightIn, origin)
@@ -251,14 +258,22 @@ function boxesFromStart(boxes: CutBox[], origin: { xIn: number; yIn: number }) {
         y2: Math.max(a.y, b.y),
       }
     })
-    .sort((a, b) => {
-      // Y leads, so the job as a whole travels up the positive Y axis. The
-      // band tolerance keeps designs level with each other in one sweep
-      // rather than zig-zagging back and forth.
-      if (Math.abs(a.y1 - b.y1) > BAND_TOLERANCE) return a.y1 - b.y1
-      if (Math.abs(a.x1 - b.x1) > 1) return a.x1 - b.x1
-      return a.y1 - b.y1
-    })
+    .sort((a, b) => a.x1 - b.x1 || a.y1 - b.y1)
+
+  const order: PltBox[] = []
+  while (remaining.length > 0) {
+    const seed = remaining.shift() as PltBox
+    const row = [seed]
+    // Compare against the seed, not a growing extent, so one tall design
+    // cannot chain the whole sheet into a single row.
+    for (let i = 0; i < remaining.length; ) {
+      if (remaining[i].x1 + ROW_OVERLAP_IN < seed.x2) row.push(remaining.splice(i, 1)[0])
+      else i += 1
+    }
+    row.sort((a, b) => a.y1 - b.y1)
+    order.push(...row)
+  }
+  return order
 }
 
 /**

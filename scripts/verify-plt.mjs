@@ -70,10 +70,10 @@ function markScanCommand(marks, origin) {
   return { command: `TB26,0,${feed},${carriage};CT1;`, feed, carriage }
 }
 
-const BAND_TOLERANCE = toUnits(0.5)
+const ROW_OVERLAP_IN = toUnits(0.25)
 
 function boxesFromStart(boxes, origin) {
-  return boxes
+  const remaining = boxes
     .map((box) => {
       const a = toPlt(box.xIn, box.yIn, origin)
       const b = toPlt(box.xIn + box.widthIn, box.yIn + box.heightIn, origin)
@@ -84,11 +84,31 @@ function boxesFromStart(boxes, origin) {
         y2: Math.max(a.y, b.y),
       }
     })
-    .sort((a, b) => {
-      if (Math.abs(a.y1 - b.y1) > BAND_TOLERANCE) return a.y1 - b.y1
-      if (Math.abs(a.x1 - b.x1) > 1) return a.x1 - b.x1
-      return a.y1 - b.y1
-    })
+    .sort((a, b) => a.x1 - b.x1 || a.y1 - b.y1)
+
+  const order = []
+  while (remaining.length > 0) {
+    const seed = remaining.shift()
+    const row = [seed]
+    for (let i = 0; i < remaining.length; ) {
+      if (remaining[i].x1 + ROW_OVERLAP_IN < seed.x2) row.push(remaining.splice(i, 1)[0])
+      else i += 1
+    }
+    row.sort((a, b) => a.y1 - b.y1)
+    order.push(...row)
+  }
+  return order
+}
+
+/** Group an emitted order back into rows: a new row starts when Y steps backwards. */
+function rowsOf(points) {
+  const rows = []
+  for (const point of points) {
+    const row = rows[rows.length - 1]
+    if (row && point.y > row[row.length - 1].y) row.push(point)
+    else rows.push([point])
+  }
+  return rows
 }
 
 function buildTenethPlt(boxes, marks = []) {
@@ -152,6 +172,19 @@ const cutStarts = penUps.filter((point) => !(point.x === 0 && point.y === 0))
 const orderedBoxes = boxesFromStart([near, far], origin)
 const feedOrder = cutStarts.map((point) => point.x)
 const yOrder = cutStarts.map((point) => point.y)
+
+// A staggered sheet: three designs side by side whose near edges do not line
+// up, then a second row further along. This is what the packer really emits.
+const staggered = [
+  { xIn: 0.6, yIn: 20.0, widthIn: 6.5, heightIn: 7.0 },
+  { xIn: 7.4, yIn: 20.4, widthIn: 6.5, heightIn: 6.6 },
+  { xIn: 14.2, yIn: 19.7, widthIn: 6.5, heightIn: 7.3 },
+  { xIn: 0.6, yIn: 8.0, widthIn: 10.3, heightIn: 11.0 },
+  { xIn: 11.2, yIn: 8.4, widthIn: 10.3, heightIn: 10.6 },
+]
+const staggeredOrder = boxesFromStart(staggered, origin)
+const staggeredRows = rowsOf(staggeredOrder.map((box) => ({ x: box.x1, y: box.y1 })))
+const staggeredNearest = Math.min(...staggeredOrder.map((box) => box.x1))
 const firstCut = plt.indexOf(`U${nearRel.x},${nearRel.y};D`)
 
 const checks = [
@@ -193,18 +226,25 @@ const checks = [
     'the first cut is the design nearest the start mark',
   ],
   [
-    cutStarts.length > 0 && cutStarts[0].y === Math.min(...orderedBoxes.map((box) => box.y1)),
-    `the first cut opens at ${orderedBoxes[0].x1},${orderedBoxes[0].y1}, the least Y from the start mark`,
+    cutStarts.length > 0 && cutStarts[0].x === Math.min(...orderedBoxes.map((box) => box.x1)),
+    'nothing along the sheet is cut before it',
+  ],
+  [feedOrder.every((x) => x >= 0) && yOrder.every((y) => y >= 0), 'every cut sits on the positive side of both axes'],
+  [layout.includes('row.sort((a, b) => a.y1 - b.y1)'), 'designs in a row are cut side by side'],
+  [layout.includes('ROW_OVERLAP_IN'), 'rows are grouped by overlap, not a fixed band'],
+  // The reported bug: staggered neighbours must be cut side by side, not skipped.
+  [staggeredRows.length === 2, `a staggered sheet is cut as two rows, not ${staggeredRows.length}`],
+  [staggeredRows[0].length === 3, `the first row cuts all three side-by-side designs (${staggeredRows[0].length})`],
+  [staggeredRows[1]?.length === 2, `the second row cuts both of its designs (${staggeredRows[1]?.length})`],
+  [staggeredOrder[0].x1 === staggeredNearest, 'the staggered sheet still starts on the design nearest the start mark'],
+  [
+    staggeredRows.every((row) => row.every((point, index) => index === 0 || point.y > row[index - 1].y)),
+    'each row sweeps side by side in one direction',
   ],
   [
-    yOrder.every((y, index) => index === 0 || y >= yOrder[index - 1] - BAND_TOLERANCE),
-    'the job advances up the positive Y axis and never doubles back',
+    staggeredRows.every((row, index) => index === 0 || Math.min(...row.map((p) => p.x)) > Math.min(...staggeredRows[index - 1].map((p) => p.x))),
+    'each new row is further along the sheet than the last',
   ],
-  [
-    yOrder.length > 1 && yOrder[yOrder.length - 1] > yOrder[0],
-    `the job ends further along +Y than it started (${yOrder[0]} to ${yOrder[yOrder.length - 1]})`,
-  ],
-  [feedOrder.every((x) => x >= 0), 'every cut sits on the positive side of the feed axis'],
   [plt.includes(`U${nearRel.x},${nearRel.y};D${nearRel.x},${nearRel.y};`), 'each cut starts at its corner nearest the start mark'],
   [nearRel.x > farRel.x, 'designs nearer the start mark have a smaller feed X'],
   [plt.includes(`U${farRel.x},${farRel.y};`), 'the far cut uses the same bottom-right origin'],
