@@ -9,7 +9,8 @@ const page = readFileSync(join(root, 'app/page.tsx'), 'utf8')
 
 const PLT_UNITS_PER_IN = 1016
 const MARK_SIZE_IN = 5 / 25.4
-const MARK_GAP_X_IN = 21.5
+const MARK_EDGE_IN = 0.01
+const MARK_GAP_X_IN = 21.75 - MARK_SIZE_IN - MARK_EDGE_IN * 2
 const SHEET_WIDTH_IN = 21.75
 const ORIGIN_TICK = 'U-7,8;D-7,8;D-7,0;U-7,0;'
 const WORKING_HEAD = 'TB26,0,9660,7105;CT1;;:H A L0 ECN U U-7,8;D-7,8;D-7,0;U-7,0;'
@@ -258,7 +259,7 @@ const checks = [
   [names.includes('cut.plt`'), 'the cut file is named "<job> cut.plt"'],
   [!page.includes('for (const section of'), 'the builder downloads a single cut file'],
   [layout.includes('MARK_SECTION_IN = 30'), 'mark rows sit no more than 30 in apart, inside one cutter pass'],
-  [layout.includes('CUT_MARGIN_IN = 0.07'), 'the cut box is 0.07 in around each design'],
+  [layout.includes('CUT_MARGIN_IN = 0.08'), 'the cut box is 0.08 in around each design'],
   [layout.includes('CUT_GUTTER_IN = CUT_MARGIN_IN * 2'), 'neighbouring cut boxes cannot overlap'],
   [page.includes('minGutterIn: CUT_GUTTER_IN'), 'pre-cut packing keeps designs at least two cut boxes apart'],
   [page.includes('cutTooTall'), 'a design too tall for one cutter pass is flagged'],

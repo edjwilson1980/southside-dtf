@@ -3,14 +3,12 @@ import { SHEET_WIDTH_IN, type PlacedSheetPiece } from '@/lib/compose-sheet'
 /**
  * Cut contour is the printed image plus this much on every side.
  *
- * Two 10.5 in designs side by side is a hard requirement, and that sets the
- * ceiling. Between the two crop marks there is 21.5 − 0.197 = 21.303 in of
- * clear film, the pair uses 21.0 in of it, and the four cut margins (one
- * outboard of each design, two back to back in the middle) share what is
- * left. So the margin cannot exceed 0.303 / 4 = 0.0758 in. This sits just
- * under that, keeping about 0.6 mm of tolerance.
+ * Two 10.5 in designs side by side is a hard requirement, and it sets the
+ * ceiling: the pair uses 21.0 in of the clear film between the crop marks,
+ * and four cut margins share whatever is left — one outboard of each design
+ * and two back to back in the middle. See MAX_CUT_MARGIN_IN below.
  */
-export const CUT_MARGIN_IN = 0.07
+export const CUT_MARGIN_IN = 0.08
 /** Neighbouring designs need this much between them or their cut boxes overlap. */
 export const CUT_GUTTER_IN = CUT_MARGIN_IN * 2
 /**
@@ -19,18 +17,24 @@ export const CUT_GUTTER_IN = CUT_MARGIN_IN * 2
  * than this, so it always reaches the next registration before the stop.
  */
 export const MARK_SECTION_IN = 30
-/** Left and right crop marks are 21.5 in apart. */
-export const MARK_GAP_X_IN = 21.5
 /** Teneth CCD cameras lock onto filled 5 mm circles, not squares or L marks. */
 export const MARK_SIZE_IN = 5 / 25.4
 export const MARK_PAD_IN = 2 / 25.4
-/** Marks are centred on the sheet, so the first one starts this far in. */
-export const MARK_EDGE_IN = Math.max(0, (SHEET_WIDTH_IN - MARK_GAP_X_IN - MARK_SIZE_IN) / 2)
 /**
- * How far artwork sits in from the film edge: far enough that its 2 mm cut
- * box clears the printed circle. Reserving the white halo as well cost
- * another 2 mm a side, which was just enough to stop two 10.5 in designs
- * fitting across the sheet.
+ * The marks sit hard against both film edges, as they do on the sheets that
+ * cut correctly by hand. Centring them on a fixed 21.5 in gap threw away a
+ * quarter inch of the clear span between them, which is the only room the
+ * artwork and its cut boxes have.
+ */
+export const MARK_EDGE_IN = 0.01
+export const MARK_GAP_X_IN = SHEET_WIDTH_IN - MARK_SIZE_IN - MARK_EDGE_IN * 2
+/** Clear film between the two printed circles: everything has to fit in here. */
+export const MARK_CLEAR_SPAN_IN = MARK_GAP_X_IN - MARK_SIZE_IN
+/** Largest cut margin that still lets two 10.5 in designs sit side by side. */
+export const MAX_CUT_MARGIN_IN = (MARK_CLEAR_SPAN_IN - 21) / 4
+/**
+ * How far artwork sits in from the film edge: far enough that its cut box
+ * clears the printed circle.
  */
 export const MARK_CLEARANCE_IN = MARK_EDGE_IN + MARK_SIZE_IN + CUT_MARGIN_IN
 const MARK_ROW_GAP_IN = MARK_SIZE_IN + MARK_PAD_IN * 2

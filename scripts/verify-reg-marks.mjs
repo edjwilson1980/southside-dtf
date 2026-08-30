@@ -105,7 +105,7 @@ const checks = [
   [layout.includes('MARK_SECTION_IN = 30'), 'mark rows sit no more than 30 in apart'],
   [layout.includes('const pitch = span / steps'), 'mark rows are evenly spaced down the sheet'],
   [layout.includes('MARK_LEAD_IN = 10 / 25.4'), 'the far mark row sits at the film edge'],
-  [layout.includes('MARK_GAP_X_IN = 21.5'), 'left and right marks are 21.5 in apart'],
+  [layout.includes('MARK_GAP_X_IN = SHEET_WIDTH_IN - MARK_SIZE_IN'), 'crop marks spread to the full film width'],
   [centerBlack, `center pixel is black (${cr},${cg},${cb},${ca})`],
   [cornerOpaque === 0, `bounding-box corners are transparent, not a white square (${cornerOpaque} opaque)`],
 ]

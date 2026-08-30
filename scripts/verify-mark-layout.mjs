@@ -9,14 +9,15 @@ const preview = readFileSync(join(root, 'components/sheet-preview-modal.tsx'), '
 const overlay = readFileSync(join(root, 'components/cut-box-overlay.tsx'), 'utf8')
 const css = readFileSync(join(root, 'app/globals.css'), 'utf8')
 
+const SHEET_WIDTH_IN = 21.75
 const MARK_SIZE_IN = 5 / 25.4
-const MARK_GAP_X_IN = 21.5
+const MARK_EDGE_IN = 0.01
+const MARK_GAP_X_IN = SHEET_WIDTH_IN - MARK_SIZE_IN - MARK_EDGE_IN * 2
 const MARK_LEAD_IN = 10 / 25.4
 const MARK_TRAIL_IN = 0.75
 const MARK_PAD_IN = 2 / 25.4
 const MARK_SECTION_IN = 30
 const MARK_ROW_GAP_IN = MARK_SIZE_IN + MARK_PAD_IN * 2
-const SHEET_WIDTH_IN = 21.75
 const START_ARROW_LENGTH_IN = 8 / 25.4
 
 /** Mirrors markYs in lib/cut-layout.ts. */
@@ -84,7 +85,7 @@ const checks = [
   [layout.includes('y: toUnits(origin.xIn - xIn)'), 'the carriage runs left from the bottom-right start mark'],
   [layout.includes('MARK_LEAD_IN = 10 / 25.4'), 'the far mark row still sits at the film edge'],
   [layout.includes('MARK_TRAIL_IN = 0.75'), 'the sheet ends 0.75 in after the start mark row'],
-  [layout.includes('MARK_GAP_X_IN = 21.5'), '21.5 in left-to-right crop-mark spacing is in code'],
+  [layout.includes('MARK_GAP_X_IN = SHEET_WIDTH_IN - MARK_SIZE_IN - MARK_EDGE_IN * 2'), 'crop marks spread to the full film width'],
   [layout.includes("shape: 'circle'"), 'printed marks are circles, not squares'],
   [overlay.includes('<circle'), 'preview overlay draws crop marks as SVG circles'],
   [overlay.includes('cut-start-arrow') && overlay.includes('<polygon'), 'preview overlay draws a start arrow pointing at the start crop mark'],
@@ -96,7 +97,8 @@ const checks = [
   [preview.includes('evenly spaced'), 'preview copy says mark rows are evenly spaced'],
   [preview.includes('in the margins'), 'preview copy says crop marks stay off the designs'],
   [compose.includes('xIn: bestX + sideInsetIn'), 'cut sheets inset designs so marks do not land on them'],
-  [Math.abs(xs.right - xs.left - 21.5) < 1e-9, 'left and right marks are 21.5 in apart'],
+  [Math.abs(xs.left - MARK_EDGE_IN) < 1e-9, `the left mark sits ${MARK_EDGE_IN} in off the film edge`],
+  [Math.abs((SHEET_WIDTH_IN - xs.right - MARK_SIZE_IN) - MARK_EDGE_IN) < 1e-9, 'the right mark sits the same distance off the other edge'],
   // The marks have to survive the printable width shrinking to 21.75 in.
   [xs.left >= 0, `the left crop mark starts on the sheet (${xs.left.toFixed(4)} in)`],
   [xs.right + MARK_SIZE_IN <= SHEET_WIDTH_IN + 1e-9, `the right crop mark ends on the sheet (${(xs.right + MARK_SIZE_IN).toFixed(4)} in of ${SHEET_WIDTH_IN})`],
