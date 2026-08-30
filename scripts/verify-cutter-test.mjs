@@ -8,16 +8,16 @@ const page = readFileSync(join(root, 'app/cutter-test/page.tsx'), 'utf8')
 
 const IN = 25.4
 const PLT = 1016
-const SHEET_WIDTH_IN = 21.75
+const SHEET_WIDTH_IN = 21.93
 const MARK_SIZE_IN = 5 / IN
-const MARK_EDGE_IN = 0.01
+const MARK_EDGE_IN = 0.003
 const MARK_GAP_X_IN = SHEET_WIDTH_IN - MARK_SIZE_IN - MARK_EDGE_IN * 2
 const MARK_LEAD_IN = 10 / IN
 const MARK_TRAIL_IN = 0.75
 const PITCH = 12
 const ROWS = 3
 const BOX = 4
-const CUT_MARGIN_IN = 0.08
+const CUT_MARGIN_IN = 0.125
 
 const toUnits = (i) => Math.round(i * PLT)
 const ys = Array.from({ length: ROWS }, (_, i) => MARK_LEAD_IN + i * PITCH)
@@ -78,7 +78,7 @@ checks.push([src.includes('U-7,8;D-7,8;D-7,0;U-7,0;'), 'test files use the same 
 // Section geometry: the advance must be one mark pitch.
 const pitchUnits = toUnits(PITCH)
 checks.push([pitchUnits === 12192, `one section advance is ${pitchUnits} units (${PITCH} in)`])
-checks.push([toUnits(MARK_GAP_X_IN) === toUnits(SHEET_WIDTH_IN - MARK_SIZE_IN - 0.02), 'carriage span is the full mark spacing'])
+checks.push([toUnits(MARK_GAP_X_IN) === toUnits(SHEET_WIDTH_IN - MARK_SIZE_IN - MARK_EDGE_IN * 2), 'carriage span is the full mark spacing'])
 
 // The page has to actually hand over all four files plus the sheet.
 for (const id of ['1A', '1B', '1C', '1D']) {

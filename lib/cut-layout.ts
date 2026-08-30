@@ -8,7 +8,7 @@ import { SHEET_WIDTH_IN, type PlacedSheetPiece } from '@/lib/compose-sheet'
  * and four cut margins share whatever is left — one outboard of each design
  * and two back to back in the middle. See MAX_CUT_MARGIN_IN below.
  */
-export const CUT_MARGIN_IN = 0.08
+export const CUT_MARGIN_IN = 0.125
 /** Neighbouring designs need this much between them or their cut boxes overlap. */
 export const CUT_GUTTER_IN = CUT_MARGIN_IN * 2
 /**
@@ -21,12 +21,12 @@ export const MARK_SECTION_IN = 20
 export const MARK_SIZE_IN = 5 / 25.4
 export const MARK_PAD_IN = 2 / 25.4
 /**
- * The marks sit hard against both film edges, as they do on the sheets that
- * cut correctly by hand. Centring them on a fixed 21.5 in gap threw away a
- * quarter inch of the clear span between them, which is the only room the
- * artwork and its cut boxes have.
+ * The marks sit hard against both film edges, the same 0.003 in inset
+ * measured off the hand-built sheet. Centring them on a fixed 21.5 in gap
+ * threw away a quarter inch of the clear span between them, which is the
+ * only room the artwork and its cut boxes have.
  */
-export const MARK_EDGE_IN = 0.01
+export const MARK_EDGE_IN = 0.003
 export const MARK_GAP_X_IN = SHEET_WIDTH_IN - MARK_SIZE_IN - MARK_EDGE_IN * 2
 /** Clear film between the two printed circles: everything has to fit in here. */
 export const MARK_CLEAR_SPAN_IN = MARK_GAP_X_IN - MARK_SIZE_IN

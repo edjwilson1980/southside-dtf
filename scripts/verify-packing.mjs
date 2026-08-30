@@ -7,13 +7,13 @@ const compose = readFileSync(join(root, 'lib/compose-sheet.ts'), 'utf8')
 const page = readFileSync(join(root, 'app/page.tsx'), 'utf8')
 
 const SHEET_GUTTER_IN = 0.125
-const SHEET_WIDTH_IN = 21.75
+const SHEET_WIDTH_IN = 21.93
 const CUT_SECTION_IN = 30
 const MARK_SIZE_IN = 5 / 25.4
 const MARK_PAD_IN = 2 / 25.4
-const CUT_MARGIN_IN = 0.08
+const CUT_MARGIN_IN = 0.125
 const CUT_GUTTER_IN = CUT_MARGIN_IN * 2
-const MARK_EDGE_IN = 0.01
+const MARK_EDGE_IN = 0.003
 const MARK_GAP_X_IN = SHEET_WIDTH_IN - MARK_SIZE_IN - MARK_EDGE_IN * 2
 const MARK_CLEARANCE_IN = MARK_EDGE_IN + MARK_SIZE_IN + CUT_MARGIN_IN
 const PREFERRED_GUTTER_IN = 0.25
