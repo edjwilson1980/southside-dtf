@@ -162,11 +162,6 @@ export default function Home() {
   const [built, setBuilt] = useState(false)
   const [duplicateTargetId, setDuplicateTargetId] = useState<number | null>(null)
   const [sizeGuidePlacement, setSizeGuidePlacement] = useState<string | null>(null)
-  useEffect(() => {
-    if (placement === 'Custom') return
-    const node = document.getElementById(`size-chart-${placement.replace(/\s+/g, '-').toLowerCase()}`)
-    node?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [placement])
   const [customerName, setCustomerName] = useState('')
   const [inspectId, setInspectId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
@@ -466,29 +461,23 @@ export default function Home() {
             </div>
           </div>
           <div className="live-size-chart" aria-live="polite">
-            {placements.filter((item) => item !== 'Custom').map((item) => {
-              const options = sizeOptions[item as keyof typeof sizeOptions] ?? sizeOptions.default
-              return (
-                <section
-                  key={item}
-                  id={`size-chart-${item.replace(/\s+/g, '-').toLowerCase()}`}
-                  className={`live-size-section ${placement === item ? 'selected' : ''}`}
-                >
-                  <header>
-                    <h3>{item}</h3>
-                    <span>{placement === item ? 'Selected' : 'Max print size'}</span>
-                  </header>
-                  <div className="size-recommendations">
-                    {options.map((option) => (
-                      <div key={option} className="size-recommendation">
-                        <strong>{option.split(' · ')[0]}</strong>
-                        <span>{option.includes(' · ') ? option.split(' · ')[1] : option}</span>
-                      </div>
-                    ))}
+            <section
+              id={`size-chart-${placement.replace(/\s+/g, '-').toLowerCase()}`}
+              className="live-size-section selected"
+            >
+              <header>
+                <h3>{placement === 'Custom' ? 'Custom sizes' : placement}</h3>
+                <span>Max print size</span>
+              </header>
+              <div className="size-recommendations">
+                {(sizeOptions[placement as keyof typeof sizeOptions] ?? sizeOptions.default).map((option) => (
+                  <div key={option} className="size-recommendation">
+                    <strong>{option.split(' · ')[0]}</strong>
+                    <span>{option.includes(' · ') ? option.split(' · ')[1] : option}</span>
                   </div>
-                </section>
-              )
-            })}
+                ))}
+              </div>
+            </section>
           </div>
         </div>
         <div id="step-1" className="guide-block">
