@@ -154,7 +154,7 @@ export function SheetPreviewModal({
             <h2 id="sheet-preview-title">{sheetLabel}</h2>
             <p>
               {SHEET_WIDTH_IN} in wide · {sheetLengthIn} in long · {totalTransfers} transfers.
-              {cutOut ? ` Red boxes are 2 mm cut lines for the plotter — preview only, not printed. ${cropMarkPreviewCopy(cutMarks.length)} The whole job downloads as one cut file, however long it is.` : ' Scroll or zoom to inspect the layout.'}
+              {cutOut ? ` Red boxes are 2.5 mm cut lines for the plotter — preview only, not printed. ${cropMarkPreviewCopy(cutMarks.length)} The whole job downloads as one cut file, however long it is.` : ' Scroll or zoom to inspect the layout.'}
             </p>
           </div>
           <button className="size-popup-close" aria-label="Close gang sheet preview" onClick={onClose} disabled={saving}>

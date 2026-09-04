@@ -73,7 +73,7 @@ const checks = [
   [layout.includes('row.sort((a, b) => a.y1 - b.y1)'), 'designs in a row are cut side by side'],
   [layout.includes('ROW_OVERLAP_IN'), 'rows are grouped by overlap, not a fixed band'],
   [layout.includes('MARK_SECTION_IN = 20'), 'mark rows sit no more than 20 in apart'],
-  [layout.includes('CUT_MARGIN_IN = 0.125'), 'the cut box is 0.125 in around each design'],
+  [layout.includes('CUT_MARGIN_IN = 2.5 / 25.4'), 'the cut box is 2.5 mm around each design'],
   [layout.includes('CUT_GUTTER_IN = CUT_MARGIN_IN * 2'), 'neighbouring cut boxes cannot overlap'],
   [!layout.includes('cutPltSections'), 'the job is not split into separate files'],
   [layout.includes('export function cutPlt('), 'the whole job builds one cut file'],

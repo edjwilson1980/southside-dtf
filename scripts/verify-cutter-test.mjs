@@ -8,7 +8,7 @@ const page = readFileSync(join(root, 'app/cutter-test/page.tsx'), 'utf8')
 
 const IN = 25.4
 const PLT = 1016
-const SHEET_WIDTH_IN = 21.93
+const SHEET_WIDTH_IN = 22.3
 const MARK_SIZE_IN = 5 / IN
 const MARK_EDGE_IN = 0.003
 const MARK_GAP_X_IN = SHEET_WIDTH_IN - MARK_SIZE_IN - MARK_EDGE_IN * 2
@@ -17,7 +17,7 @@ const MARK_TRAIL_IN = 0.75
 const PITCH = 12
 const ROWS = 3
 const BOX = 4
-const CUT_MARGIN_IN = 0.125
+const CUT_MARGIN_IN = 2.5 / 25.4
 
 const toUnits = (i) => Math.round(i * PLT)
 const ys = Array.from({ length: ROWS }, (_, i) => MARK_LEAD_IN + i * PITCH)

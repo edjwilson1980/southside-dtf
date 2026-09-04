@@ -41,7 +41,7 @@ function priceFor(artLength) {
 const checks = []
 
 checks.push([sheetOptions.length > 0, `sheetOptions parsed (${sheetOptions.length} tiers)`])
-checks.push([SHEET_WIDTH_IN === 21.93, `printable width is ${SHEET_WIDTH_IN} in`])
+checks.push([SHEET_WIDTH_IN === 22.3, `printable width is ${SHEET_WIDTH_IN} in`])
 checks.push([FILM_WIDTH_IN === 24, `physical film is ${FILM_WIDTH_IN} in`])
 checks.push([SHEET_WIDTH_IN < FILM_WIDTH_IN, 'printable width sits inside the physical film'])
 checks.push([!page.includes("'22 ×"), 'no sheet label hardcodes the old 22 in width'])

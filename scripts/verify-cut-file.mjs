@@ -35,8 +35,8 @@ function rectangles(plt) {
 
 const checks = []
 const scenarios = [
-  { name: 'short job, one pass', count: 2, w: 10.5, h: 12 },
-  { name: 'long job, several passes', count: 8, w: 10.5, h: 12 },
+  { name: 'short job, one pass', count: 2, w: 10.75, h: 12 },
+  { name: 'long job, several passes', count: 8, w: 10.75, h: 12 },
   { name: 'many small designs', count: 40, w: 4, h: 4 },
   { name: 'mixed sizes', count: 14, w: 6.5, h: 9 },
 ]

@@ -1,14 +1,14 @@
 import { SHEET_WIDTH_IN, type PlacedSheetPiece } from '@/lib/compose-sheet'
 
 /**
- * Cut contour is the printed image plus this much on every side.
+ * Cut contour is the printed image plus this much on every side (2.5 mm).
  *
- * Two 10.5 in designs side by side is a hard requirement, and it sets the
- * ceiling: the pair uses 21.0 in of the clear film between the crop marks,
+ * Two 10.75 in designs side by side is a hard requirement, and it sets the
+ * ceiling: the pair uses 21.5 in of the clear film between the crop marks,
  * and four cut margins share whatever is left — one outboard of each design
  * and two back to back in the middle. See MAX_CUT_MARGIN_IN below.
  */
-export const CUT_MARGIN_IN = 0.125
+export const CUT_MARGIN_IN = 2.5 / 25.4
 /** Neighbouring designs need this much between them or their cut boxes overlap. */
 export const CUT_GUTTER_IN = CUT_MARGIN_IN * 2
 /**
@@ -19,6 +19,7 @@ export const CUT_GUTTER_IN = CUT_MARGIN_IN * 2
 export const MARK_SECTION_IN = 20
 /** Teneth CCD cameras lock onto filled 5 mm circles, not squares or L marks. */
 export const MARK_SIZE_IN = 5 / 25.4
+/** Gap kept between mark rows so neighbouring black circles do not touch. */
 export const MARK_PAD_IN = 2 / 25.4
 /**
  * The marks sit hard against both film edges, the same 0.003 in inset
@@ -30,8 +31,10 @@ export const MARK_EDGE_IN = 0.003
 export const MARK_GAP_X_IN = SHEET_WIDTH_IN - MARK_SIZE_IN - MARK_EDGE_IN * 2
 /** Clear film between the two printed circles: everything has to fit in here. */
 export const MARK_CLEAR_SPAN_IN = MARK_GAP_X_IN - MARK_SIZE_IN
-/** Largest cut margin that still lets two 10.5 in designs sit side by side. */
-export const MAX_CUT_MARGIN_IN = (MARK_CLEAR_SPAN_IN - 21) / 4
+/** Widest design that must still fit two-up between the crop marks. */
+export const MAX_TWO_UP_WIDTH_IN = 10.75
+/** Largest cut margin that still lets two MAX_TWO_UP_WIDTH_IN designs sit side by side. */
+export const MAX_CUT_MARGIN_IN = (MARK_CLEAR_SPAN_IN - MAX_TWO_UP_WIDTH_IN * 2) / 4
 /**
  * How far artwork sits in from the film edge: far enough that its cut box
  * clears the printed circle.
@@ -77,22 +80,13 @@ export function cutPreviewBoxes(
 export type PrintMark = CutBox & { color: string; shape: 'rect' | 'circle' }
 
 function markStack(xIn: number, yIn: number): PrintMark[] {
-  const pad = MARK_PAD_IN
-  const size = MARK_SIZE_IN
+  // Black registration circle only — no white ring around it.
   return [
-    {
-      xIn: xIn - pad,
-      yIn: yIn - pad,
-      widthIn: size + pad * 2,
-      heightIn: size + pad * 2,
-      color: '#ffffff',
-      shape: 'circle',
-    },
     {
       xIn,
       yIn,
-      widthIn: size,
-      heightIn: size,
+      widthIn: MARK_SIZE_IN,
+      heightIn: MARK_SIZE_IN,
       color: '#000000',
       shape: 'circle',
     },
