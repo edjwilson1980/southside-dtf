@@ -9,7 +9,7 @@ const preview = readFileSync(join(root, 'components/sheet-preview-modal.tsx'), '
 const overlay = readFileSync(join(root, 'components/cut-box-overlay.tsx'), 'utf8')
 const css = readFileSync(join(root, 'app/globals.css'), 'utf8')
 
-const SHEET_WIDTH_IN = 21.93
+const SHEET_WIDTH_IN = 22.3
 const MARK_SIZE_IN = 5 / 25.4
 const MARK_EDGE_IN = 0.003
 const MARK_GAP_X_IN = SHEET_WIDTH_IN - MARK_SIZE_IN - MARK_EDGE_IN * 2

@@ -20,13 +20,11 @@ writeFileSync(htmlPath, `<!DOCTYPE html>
 <canvas id="c"></canvas>
 <script>
 const dpi = 150
-const padMm = 9
 const blackMm = 5
-const pad = Math.round((padMm / 25.4) * dpi)
 const black = Math.round((blackMm / 25.4) * dpi)
 const canvas = document.getElementById('c')
-canvas.width = pad + 8
-canvas.height = pad + 8
+canvas.width = black + 8
+canvas.height = black + 8
 const ctx = canvas.getContext('2d')
 ctx.clearRect(0, 0, canvas.width, canvas.height)
 function fillCircle(x, y, size, color) {
@@ -37,8 +35,7 @@ function fillCircle(x, y, size, color) {
   ctx.fill()
 }
 const origin = 4
-fillCircle(origin, origin, pad, '#ffffff')
-fillCircle(origin + (pad - black) / 2, origin + (pad - black) / 2, black, '#000000')
+fillCircle(origin, origin, black, '#000000')
 const dataUrl = canvas.toDataURL('image/png')
 document.body.textContent = dataUrl
 </script>`)
@@ -91,7 +88,7 @@ await sharp(png).png().toFile(cropPath)
 
 const checks = [
   [layout.includes('MARK_SIZE_IN = 5 / 25.4'), 'printed marks are 5 mm'],
-  [/color: '#ffffff',\s*shape: 'circle'/.test(layout), 'white pads are circular'],
+  [!/color: '#ffffff'/.test(layout), 'registration marks have no white ring'],
   [compose.includes('fillMarkCircle'), 'export fills marks with canvas arcs'],
   [!compose.includes('fillRect('), 'export no longer fillRects marks'],
   [css.includes('.cut-reg-mark') && css.includes('stroke: #ff1a1a'), 'overlay crop marks are stroked circles'],

@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import {
-  MARK_PAD_IN,
   MARK_SIZE_IN,
   CUT_MARGIN_IN,
   startMarkArrowPoints,
@@ -87,7 +86,6 @@ async function buildTestSheet({ lengthIn, ys, boxes: sheetBoxes, note }: SheetSp
     for (const xIn of [xs.left, xs.right]) {
       const cx = (xIn + MARK_SIZE_IN / 2) * DPI
       const cy = (yIn + MARK_SIZE_IN / 2) * DPI
-      circle(context, cx, cy, (MARK_SIZE_IN / 2 + MARK_PAD_IN) * DPI, '#ffffff')
       circle(context, cx, cy, (MARK_SIZE_IN / 2) * DPI, '#000000')
     }
   })
