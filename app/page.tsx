@@ -9,10 +9,11 @@ import { DesignInspector } from '@/components/design-inspector'
 import { SheetPreviewModal } from '@/components/sheet-preview-modal'
 import { composeGangSheet, packSheetBestGutter, pieceHeightInches, ART_INSET_IN, CUT_ART_START_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
-import { CUT_GUTTER_IN, CUT_MARGIN_IN, MARK_CLEARANCE_IN, MARK_SECTION_IN, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, startMarkArrowPoints } from '@/lib/cut-layout'
+import { CUT_GUTTER_IN, CUT_MARGIN_IN, MARK_CLEARANCE_IN, MARK_SECTION_IN, cutPlt, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, startMarkArrowPoints } from '@/lib/cut-layout'
 import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
+import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 
 type Design = {
   id: number
@@ -180,6 +181,7 @@ export default function Home() {
   const [sheetPreviewOpen, setSheetPreviewOpen] = useState(false)
   const [jobStamp, setJobStamp] = useState('')
   const [cutOut, setCutOut] = useState(false)
+  const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null)
   const previewGen = useRef(0)
 
   function addFiles(list: FileList | File[]) {
@@ -340,6 +342,7 @@ export default function Home() {
     setSheetPreviewOpen(false)
     setJobStamp('')
     setBuilt(false)
+    setDriveFolderUrl(null)
     setSheetPreviewUrl((url) => {
       if (url) URL.revokeObjectURL(url)
       return null
@@ -397,13 +400,31 @@ export default function Home() {
     if (!customerName.trim() || designs.length === 0 || saving || !previewing) return
     setSaving(true)
     setSaveError(null)
+    setDriveFolderUrl(null)
     try {
       const stamp = jobStamp || sheetStamp()
       const label = sheetJobName(customerName.trim(), billedLength, stamp)
       const fileName = sheetFileName(customerName.trim(), billedLength, stamp)
       const png = await composeCurrentSheet(sheetPxPerIn(14000, 150), label, true)
-      // Customer-facing: print PNG only. Cut/PLT files stay in Shop tools.
+      // Customers always get the print PNG locally.
       downloadBlob(png, fileName)
+
+      // Pre-cut jobs also land in Google Drive for the shop (PNG + PLT).
+      // The PLT is not offered as a customer download.
+      if (cutOut) {
+        const pltText = cutPlt(sheetLayout.pieces, printHeight)
+        if (!pltText) throw new Error('Could not build the cutter PLT for this sheet.')
+        const cutName = sheetCutFileName(customerName.trim(), billedLength, stamp)
+        const drive = await uploadJobToGoogleDrive({
+          customerName: customerName.trim(),
+          stamp,
+          files: [
+            { name: fileName, mimeType: 'image/png', blob: png },
+            { name: cutName, mimeType: 'application/vnd.hp-hpgl', blob: new Blob([pltText], { type: 'application/vnd.hp-hpgl' }) },
+          ],
+        })
+        setDriveFolderUrl(drive.folderUrl)
+      }
 
       setBuilt(true)
       setSheetPreviewOpen(false)
@@ -604,7 +625,7 @@ export default function Home() {
           </button>
           {previewing && sheetPreviewUrl && (
             <button className="confirm-button" disabled={saving} onClick={() => void buildAndStore()}>
-              <Check size={18} /> {saving ? 'Building…' : 'Confirm & Build Gang Sheet'}
+              <Check size={18} /> {saving ? (cutOut ? 'Saving to Drive…' : 'Building…') : 'Confirm & Build Gang Sheet'}
             </button>
           )}
           {saveError && <p className="save-error">{saveError}</p>}
@@ -613,7 +634,12 @@ export default function Home() {
           <div className="built-card">
             <div className="built-title"><span><Check size={21} /></span><strong>Your print file is ready.</strong></div>
             <p>{sheet.label} · {totalTransfers} transfers · Send this file to South Side DTF to print{cutOut ? ' and cut' : ''}.</p>
-            <button onClick={() => setBuilt(false)}>Build another sheet <span>›</span></button>
+            {driveFolderUrl && (
+              <a className="drive-link" href={driveFolderUrl} target="_blank" rel="noreferrer">
+                Open your job folder in Google Drive
+              </a>
+            )}
+            <button onClick={() => { setBuilt(false); setDriveFolderUrl(null) }}>Build another sheet <span>›</span></button>
           </div>
         )}
       </aside>
