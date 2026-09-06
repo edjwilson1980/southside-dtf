@@ -9,7 +9,7 @@ import { DesignInspector } from '@/components/design-inspector'
 import { SheetPreviewModal } from '@/components/sheet-preview-modal'
 import { composeGangSheet, packSheetBestGutter, pieceHeightInches, ART_INSET_IN, CUT_ART_START_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
-import { CUT_GUTTER_IN, CUT_MARGIN_IN, MARK_CLEARANCE_IN, MARK_SECTION_IN, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, startMarkArrowPoints } from '@/lib/cut-layout'
+import { CUT_GUTTER_IN, CUT_MARGIN_IN, MARK_CLEARANCE_IN, MARK_SECTION_IN, cutPlt, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, startMarkArrowPoints } from '@/lib/cut-layout'
 import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
@@ -135,11 +135,11 @@ function recommendedSize(type: string) {
 }
 
 const howToSteps = [
-  { id: 'step-1', number: 1, title: 'Your name', detail: 'Enter your name so we can label your sheet.' },
+  { id: 'step-1', number: 1, title: 'Customer name', detail: 'Type the customer name first.' },
   { id: 'step-2', number: 2, title: 'Upload your design', detail: 'Drop or click to add artwork.' },
   { id: 'step-3', number: 3, title: 'What are you printing?', detail: 'Pick the shirt, hoodie, hat, or custom size.' },
   { id: 'step-4', number: 4, title: 'Set sizes and edit', detail: 'Choose the print size, quantity, and fix the art if needed.' },
-  { id: 'step-5', number: 5, title: 'Preview & download', detail: 'Check the layout, then download your print-ready sheet.' },
+  { id: 'step-5', number: 5, title: 'Check out your gang sheet', detail: 'Preview it, then confirm to download.' },
 ]
 
 function GuideHeading({ number, title, hint }: { number: number; title: string; hint: string }) {
@@ -402,8 +402,17 @@ export default function Home() {
       const label = sheetJobName(customerName.trim(), billedLength, stamp)
       const fileName = sheetFileName(customerName.trim(), billedLength, stamp)
       const png = await composeCurrentSheet(sheetPxPerIn(14000, 150), label, true)
-      // Customer-facing: print PNG only. Cut/PLT files stay in Shop tools.
       downloadBlob(png, fileName)
+      if (cutOut) {
+        const plt = cutPlt(sheetLayout.pieces, printHeight)
+        if (plt) {
+          await wait(200)
+          downloadBlob(
+            new Blob([plt], { type: 'application/vnd.hp-hpgl' }),
+            sheetCutFileName(customerName.trim(), billedLength, stamp),
+          )
+        }
+      }
 
       setBuilt(true)
       setSheetPreviewOpen(false)
@@ -418,11 +427,11 @@ export default function Home() {
     <div className="builder-topbar">
       <img src={logoUrl} alt="South Side DTF" className="brand-logo" />
       <div className="title-block">
-        <h1>Build My Gangsheet</h1>
-        <p className="lead">No gang sheet experience needed.</p>
-        <p className="sublead">Follow the numbered steps. We pack and size your designs for South Side DTF.</p>
+        <h1>Shop Gang Sheet Tools</h1>
+        <p className="lead">Production builder with cut files and marks.</p>
+        <p className="sublead">Use this for print + PLT output. Customers use the public builder.</p>
       </div>
-      <a className="staff-tools-link" href="/shop">Shop tools</a>
+      <a className="staff-tools-link" href="/">Customer builder</a>
     </div>
     <ol className="how-to" aria-label="How to build your gang sheet">
       {howToSteps.map((step) => (
@@ -481,8 +490,8 @@ export default function Home() {
           </div>
         </div>
         <div id="step-1" className="guide-block">
-          <GuideHeading number={1} title="Your name" hint="Enter your name before you upload anything. We use it to label your sheet." />
-          <label className="customer-name-field workspace-customer-name">Your name <span className="required-field">Required</span><input required type="text" maxLength={80} placeholder="Enter your name before uploading" value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></label>
+          <GuideHeading number={1} title="Customer name" hint="Type the customer name before you upload anything." />
+          <label className="customer-name-field workspace-customer-name">Customer name <span className="required-field">Required</span><input required type="text" maxLength={80} placeholder="Enter customer name before uploading" value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></label>
         </div>
         <div id="step-2" className="guide-block">
           <GuideHeading number={2} title="Upload your design" hint="Drop a PNG or JPG here, or click to choose a file from your computer." />
@@ -517,7 +526,7 @@ export default function Home() {
             cutMarks={cutMarks}
             printHeightIn={printHeight}
             cutOut={cutOut}
-            audience="customer"
+            audience="shop"
           />
         )}
       </section>
@@ -526,8 +535,8 @@ export default function Home() {
         <div id="step-5" className="order-title">
           <span className="guide-num">5</span>
           <div>
-            <h2>Your gang sheet</h2>
-            <p className="order-hint">Preview the layout, add pre-cut if you want, then download your print-ready sheet.</p>
+            <h2>Check out your gang sheet</h2>
+            <p className="order-hint">Look at the preview, then confirm to download the print file.</p>
           </div>
         </div>
         <button
@@ -541,7 +550,7 @@ export default function Home() {
             Pre-cut DTFs
             {cutOut ? <em>On</em> : null}
           </span>
-          <small>Optional: we cut each transfer out for you. Rate drops as quantity goes up.</small>
+          <small>We cut each transfer out for you. Rate drops as quantity goes up.</small>
         </button>
         {cutOut && (
           <div className="precut-rates">
@@ -612,9 +621,9 @@ export default function Home() {
         </div>
         {built && (
           <div className="built-card">
-            <div className="built-title"><span><Check size={21} /></span><strong>Your print file is ready.</strong></div>
-            <p>{sheet.label} · {totalTransfers} transfers · Send this file to South Side DTF to print{cutOut ? ' and cut' : ''}.</p>
-            <button onClick={() => setBuilt(false)}>Build another sheet <span>›</span></button>
+            <div className="built-title"><span><Check size={21} /></span><strong>Your gang sheet is built.</strong></div>
+            <p>{sheet.label} · {totalTransfers} transfers · Ready to review</p>
+            <button onClick={() => setBuilt(false)}>Review &amp; Add to Cart <span>›</span></button>
           </div>
         )}
       </aside>

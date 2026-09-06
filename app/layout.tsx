@@ -4,7 +4,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Build My Gangsheet | South Side DTF',
-  description: 'Upload your designs and build a custom DTF gang sheet with South Side DTF.',
+  description: 'Customer gang sheet builder for South Side DTF — upload designs, pick sizes, and download a print-ready sheet.',
   generator: 'South Side DTF',
   icons: {
     icon: [
