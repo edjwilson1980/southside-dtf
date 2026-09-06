@@ -306,6 +306,7 @@ button.thumb:disabled { cursor: default; }
   .sheet-preview-actions { grid-template-columns: 1fr; }
 }
 .cutter-test { max-width: 860px; margin: 0 auto; padding: 32px 20px 64px; color: var(--ink); }
+.cutter-test .shop-nav { margin: 0 0 18px; margin-left: 0; }
 .cutter-test h1 { font-size: 30px; letter-spacing: -.02em; margin: 0 0 6px; }
 .cutter-test .lede { color: #576275; margin: 0 0 20px; }
 .cutter-test .steps { background: #fbfefd; border: 1px solid #cfe8d8; border-radius: 12px; padding: 16px 16px 16px 34px; line-height: 1.6; }
@@ -323,5 +324,6 @@ button.thumb:disabled { cursor: default; }
 .cutter-test code { display: block; margin-top: 8px; padding: 10px; background: #f5f7fa; border-radius: 8px; font-size: 12px; word-break: break-all; line-height: 1.5; }
 .cutter-test .sheets { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 8px; }
 
-.staff-tools-link { margin-left: auto; align-self: center; padding: 8px 12px; border: 1px solid #b9ddeb; border-radius: 7px; background: #fff; color: #006e99; font-size: 12px; font-weight: 800; text-decoration: none; white-space: nowrap; }
-.staff-tools-link:hover { border-color: var(--chicago-blue); background: #e9f8fc; }
+.shop-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; align-self: center; }
+.shop-nav-link { padding: 8px 12px; border: 1px solid #b9ddeb; border-radius: 7px; background: #fff; color: #006e99; font-size: 12px; font-weight: 800; text-decoration: none; white-space: nowrap; }
+.shop-nav-link:hover { border-color: var(--chicago-blue); background: #e9f8fc; }

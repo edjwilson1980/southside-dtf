@@ -422,7 +422,6 @@ export default function Home() {
         <p className="lead">No gang sheet experience needed.</p>
         <p className="sublead">Follow the numbered steps. We pack and size your designs for South Side DTF.</p>
       </div>
-      <a className="staff-tools-link" href="/shop">Shop tools</a>
     </div>
     <ol className="how-to" aria-label="How to build your gang sheet">
       {howToSteps.map((step) => (
