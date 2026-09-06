@@ -434,6 +434,7 @@ export default function Home() {
       <nav className="shop-nav" aria-label="Shop tools">
         <a className="shop-nav-link" href="/">Customer builder</a>
         <a className="shop-nav-link" href="/shop/cutter-test">Cutter test</a>
+        <a className="shop-nav-link" href="/shop/connect-drive">Connect Drive</a>
       </nav>
     </div>
     <ol className="how-to" aria-label="How to build your gang sheet">

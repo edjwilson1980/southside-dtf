@@ -1,6 +1,7 @@
 import { google } from 'googleapis'
 
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
+/** Full Drive scope so we can write into an existing My Drive folder (personal Gmail). */
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive'
 
 export type DriveUploadSpec = {
   name: string
@@ -17,7 +18,7 @@ function requiredEnv(name: string) {
   const value = process.env[name]?.trim()
   if (!value) {
     throw new Error(
-      `Google Drive is not configured (${name} is missing). Add the service account env vars on the host.`,
+      `Google Drive is not configured (${name} is missing). Connect Drive from Shop tools or add the env vars on the host.`,
     )
   }
   return value
@@ -31,7 +32,18 @@ export function driveParentFolderId() {
   return requiredEnv('GOOGLE_DRIVE_PARENT_FOLDER_ID')
 }
 
-export function isGoogleDriveConfigured() {
+/** Personal Gmail path: OAuth as the shop owner (kwprintings@gmail.com). */
+export function isGoogleDriveOAuthConfigured() {
+  return Boolean(
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID?.trim() &&
+      process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET?.trim() &&
+      process.env.GOOGLE_DRIVE_REFRESH_TOKEN?.trim() &&
+      process.env.GOOGLE_DRIVE_PARENT_FOLDER_ID?.trim(),
+  )
+}
+
+/** Workspace Shared Drive path: service account with storage on a Shared Drive. */
+export function isGoogleDriveServiceAccountConfigured() {
   return Boolean(
     process.env.GOOGLE_DRIVE_CLIENT_EMAIL?.trim() &&
       process.env.GOOGLE_DRIVE_PRIVATE_KEY?.trim() &&
@@ -39,7 +51,48 @@ export function isGoogleDriveConfigured() {
   )
 }
 
+export function isGoogleDriveConfigured() {
+  return isGoogleDriveOAuthConfigured() || isGoogleDriveServiceAccountConfigured()
+}
+
+export function createOAuthClient(redirectUri?: string) {
+  return new google.auth.OAuth2(
+    requiredEnv('GOOGLE_DRIVE_OAUTH_CLIENT_ID'),
+    requiredEnv('GOOGLE_DRIVE_OAUTH_CLIENT_SECRET'),
+    redirectUri,
+  )
+}
+
+export function getDriveAuthUrl(redirectUri: string, state?: string) {
+  const client = createOAuthClient(redirectUri)
+  return client.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: [DRIVE_SCOPE],
+    state,
+  })
+}
+
+export async function exchangeDriveAuthCode(redirectUri: string, code: string) {
+  const client = createOAuthClient(redirectUri)
+  const { tokens } = await client.getToken(code)
+  if (!tokens.refresh_token) {
+    throw new Error(
+      'Google did not return a refresh token. Revoke app access at https://myaccount.google.com/permissions and connect again.',
+    )
+  }
+  return tokens
+}
+
 async function driveAuth() {
+  if (isGoogleDriveOAuthConfigured()) {
+    const client = createOAuthClient()
+    client.setCredentials({
+      refresh_token: requiredEnv('GOOGLE_DRIVE_REFRESH_TOKEN'),
+    })
+    return client
+  }
+
   const auth = new google.auth.JWT({
     email: requiredEnv('GOOGLE_DRIVE_CLIENT_EMAIL'),
     key: privateKey(),
@@ -115,4 +168,29 @@ export async function createResumableUploadSessions(
     sessions.push({ name: file.name, uploadUrl })
   }
   return sessions
+}
+
+/** Smoke-test: create a tiny folder then delete it. */
+export async function verifyDriveWriteAccess() {
+  const auth = await driveAuth()
+  const drive = google.drive({ version: 'v3', auth })
+  const parent = driveParentFolderId()
+  const created = await drive.files.create({
+    requestBody: {
+      name: `Drive connect check ${new Date().toISOString()}`,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parent],
+    },
+    fields: 'id,name,webViewLink',
+    supportsAllDrives: true,
+  })
+  const folderId = created.data.id
+  if (!folderId) throw new Error('Drive check failed: no folder id.')
+  // Leave the check folder so the shop can see it; they can delete it.
+  return {
+    folderId,
+    folderName: created.data.name || 'Drive connect check',
+    folderUrl: created.data.webViewLink || `https://drive.google.com/drive/folders/${folderId}`,
+    mode: isGoogleDriveOAuthConfigured() ? 'oauth' : 'service-account',
+  }
 }

@@ -3,6 +3,7 @@ import {
   createCustomerDriveFolder,
   createResumableUploadSessions,
   isGoogleDriveConfigured,
+  isGoogleDriveOAuthConfigured,
   type DriveUploadSpec,
 } from '@/lib/google-drive'
 
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           error:
-            'Google Drive is not configured. Set GOOGLE_DRIVE_CLIENT_EMAIL, GOOGLE_DRIVE_PRIVATE_KEY, and GOOGLE_DRIVE_PARENT_FOLDER_ID.',
+            'Google Drive is not connected yet. Open /shop/connect-drive and sign in with the shop Gmail account, or set the Drive env vars on the host.',
         },
         { status: 503 },
       )
@@ -54,6 +55,7 @@ export async function POST(req: Request) {
       folderName: folder.folderName,
       folderUrl: folder.folderUrl,
       uploads,
+      authMode: isGoogleDriveOAuthConfigured() ? 'oauth' : 'service-account',
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Could not start Google Drive upload.'

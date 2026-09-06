@@ -164,6 +164,7 @@ export default function CutterTestPage() {
     <main className="cutter-test">
       <nav className="shop-nav" aria-label="Shop tools">
         <a className="shop-nav-link" href="/shop">Shop builder</a>
+        <a className="shop-nav-link" href="/shop/connect-drive">Connect Drive</a>
         <a className="shop-nav-link" href="/">Customer builder</a>
       </nav>
       <h1>Cutter advance test</h1>
