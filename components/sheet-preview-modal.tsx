@@ -10,7 +10,7 @@ import { SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 function cropMarkPreviewCopy(markCount: number, audience: 'customer' | 'shop') {
   const countLabel = markCount === 4 ? 'four' : markCount === 6 ? 'six' : String(markCount)
   if (audience === 'customer') {
-    return `Black 5 mm circles (${countLabel}) print in the margins for our cutter — not on your art. Red boxes are ${CUT_MARGIN_IN} in cut lines (preview only). Download your print-ready PNG and send it to South Side DTF.`
+    return `Black 5 mm circles (${countLabel}) print in the margins for our cutter — not on your art. Red boxes are ${CUT_MARGIN_IN} in cut lines (preview only). Add the sheet to your cart when you are ready to order.`
   }
   return `The ${countLabel} black 5 mm circles ARE printed on the PNG for the cutter camera, in the margins — not on the designs. Lay the sheet on the bed UPSIDE DOWN, so the bottom of this preview goes in first and the job name reads back to front. Park the camera on what is then the nearest circle: the BOTTOM-RIGHT one in this preview, with the arrow beside it. The cut file is built for that corner, so loading the sheet the right way up will cut mirrored. Mark rows are evenly spaced, never more than ${MARK_SECTION_IN} in apart, so the cutter always reaches the next pair before it runs out of travel and can stop, advance the belt and pick them up. Overlay crop marks are red circles. Red rectangles are the image plus ${CUT_MARGIN_IN} in cut lines.`
 }
@@ -221,7 +221,7 @@ export function SheetPreviewModal({
             Close
           </button>
           <button type="button" className="confirm-button sheet-preview-confirm" disabled={saving} onClick={onConfirm}>
-            <Check size={18} /> {saving ? 'Building…' : audience === 'customer' ? 'Download Print File' : 'Confirm & Build Gang Sheet'}
+            <Check size={18} /> {saving ? 'Adding to cart…' : audience === 'customer' ? 'Add to Cart' : 'Confirm & Build Gang Sheet'}
           </button>
         </div>
       </section>
