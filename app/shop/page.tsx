@@ -429,9 +429,13 @@ export default function Home() {
       <div className="title-block">
         <h1>Shop Gang Sheet Tools</h1>
         <p className="lead">Production builder with cut files and marks.</p>
-        <p className="sublead">Use this for print + PLT output. Customers use the public builder.</p>
+        <p className="sublead">Internal shop app — advanced features stay here, not on the customer builder.</p>
       </div>
-      <a className="staff-tools-link" href="/">Customer builder</a>
+      <nav className="shop-nav" aria-label="Shop tools">
+        <a className="shop-nav-link" href="/">Customer builder</a>
+        <a className="shop-nav-link" href="/shop/cutter-test">Cutter test</a>
+        <a className="shop-nav-link" href="/shop/connect-drive">Connect Drive</a>
+      </nav>
     </div>
     <ol className="how-to" aria-label="How to build your gang sheet">
       {howToSteps.map((step) => (
