@@ -22,20 +22,20 @@ export type DriveUploadResult = {
   webViewLink?: string
 }
 
-/** Stay under typical serverless request body limits when proxying through our API. */
-const PROXY_MAX_BYTES = 3_500_000
+/** 8 MB chunks — resumable PUT direct to Google (never through Vercel body limits). */
+const CHUNK = 8 * 1024 * 1024
 
 /**
  * Creates a customer folder in the shop Google Drive and uploads the given files.
  * - Cutter PLT: uploaded by our API (small text).
- * - Print PNG: proxied through our API when small enough; otherwise direct to Google
- *   using a resumable session initiated with this page's Origin (required for CORS).
+ * - Print files: browser → Google resumable PUT only. Vercel/WP never see the bytes.
  */
 export async function uploadJobToGoogleDrive(options: {
   customerName: string
   stamp: string
   files: DriveFileUpload[]
   cutterFile?: DriveCutterUpload
+  onProgress?: (fraction: number) => void
 }): Promise<DriveUploadResult> {
   const origin = typeof window !== 'undefined' ? window.location.origin : undefined
 
@@ -79,13 +79,21 @@ export async function uploadJobToGoogleDrive(options: {
   }
 
   const uploads = sessionJson.uploads ?? []
+  const totalBytes = options.files.reduce((sum, file) => sum + file.blob.size, 0)
+  let uploadedBytes = 0
   let printFile: { id?: string; name?: string; webViewLink?: string } | null = null
+
   for (const file of options.files) {
     const session = uploads.find((item) => item.name === file.name)
     if (!session?.uploadUrl) {
       throw new Error(`Missing Google Drive upload session for ${file.name}.`)
     }
-    const uploaded = await putDriveFile(file, session.uploadUrl)
+    const uploaded = await putDriveFileChunked(file, session.uploadUrl, (fileFraction) => {
+      const done = uploadedBytes + file.blob.size * fileFraction
+      options.onProgress?.(totalBytes > 0 ? Math.min(1, done / totalBytes) : 1)
+    })
+    uploadedBytes += file.blob.size
+    options.onProgress?.(totalBytes > 0 ? Math.min(1, uploadedBytes / totalBytes) : 1)
     if (!printFile) printFile = uploaded
   }
 
@@ -111,65 +119,84 @@ export async function uploadJobToGoogleDrive(options: {
   }
 }
 
-async function putDriveFile(
+async function sleep(ms: number) {
+  await new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+async function putWithRetry(
+  uploadUrl: string,
+  init: RequestInit,
+  attempts = 3,
+): Promise<Response> {
+  let lastError: Error | null = null
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const res = await fetch(uploadUrl, init)
+      if (res.status === 308 || res.ok || (res.status >= 400 && res.status < 500 && res.status !== 408)) {
+        return res
+      }
+      lastError = new Error(`Upload failed: ${res.status} ${await res.text()}`)
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error('Network error during Drive upload.')
+    }
+    await sleep(500 * 2 ** attempt)
+  }
+  throw lastError || new Error('Drive upload failed after retries.')
+}
+
+/**
+ * Chunked resumable PUT direct to Google.
+ * No Authorization header — the session URI carries credentials.
+ */
+async function putDriveFileChunked(
   file: DriveFileUpload,
   googleUploadUrl: string,
+  onProgress?: (fraction: number) => void,
 ): Promise<{ id?: string; name?: string; webViewLink?: string }> {
-  // Prefer same-origin proxy so the browser never talks to googleapis (no CORS).
-  if (file.blob.size <= PROXY_MAX_BYTES) {
-    const proxyRes = await fetch('/api/drive/upload', {
+  const size = file.blob.size
+  if (size <= 0) throw new Error(`File ${file.name} is empty.`)
+
+  let offset = 0
+  while (offset < size) {
+    const end = Math.min(offset + CHUNK, size)
+    const chunk = file.blob.slice(offset, end)
+    const res = await putWithRetry(googleUploadUrl, {
       method: 'PUT',
       headers: {
-        'Content-Type': file.mimeType,
-        'X-Drive-Upload-Url': googleUploadUrl,
+        'Content-Length': String(chunk.size),
+        'Content-Range': `bytes ${offset}-${end - 1}/${size}`,
       },
-      body: file.blob,
+      body: chunk,
     })
-    if (proxyRes.ok) {
-      const proxyJson = (await proxyRes.json().catch(() => ({}))) as {
-        id?: string
-        name?: string
-        webViewLink?: string
-      }
-      const id = proxyJson.id
-      return {
-        id,
-        name: proxyJson.name || file.name,
-        webViewLink:
-          proxyJson.webViewLink ||
-          (id ? `https://drive.google.com/file/d/${id}/view` : undefined),
-      }
+
+    if (res.status === 308) {
+      const range = res.headers.get('range')
+      offset = range ? parseInt(range.split('-')[1] || '', 10) + 1 : end
+      if (!Number.isFinite(offset) || offset < 0) offset = end
+      onProgress?.(Math.min(1, offset / size))
+      continue
     }
-    const proxyJson = (await proxyRes.json().catch(() => ({}))) as { error?: string }
-    // Fall through to direct PUT when proxy cannot accept the body.
-    if (proxyRes.status !== 413 && proxyRes.status < 500) {
-      throw new Error(proxyJson.error || `Could not upload ${file.name} to Google Drive.`)
+
+    if (!res.ok) {
+      throw new Error(`Could not upload ${file.name} to Google Drive: ${res.status} ${await res.text()}`)
+    }
+
+    const detail = await res.text()
+    let parsed: { id?: string; name?: string; webViewLink?: string } = {}
+    try {
+      parsed = detail ? JSON.parse(detail) : {}
+    } catch {
+      parsed = {}
+    }
+    const id = parsed.id
+    onProgress?.(1)
+    return {
+      id,
+      name: parsed.name || file.name,
+      webViewLink:
+        parsed.webViewLink || (id ? `https://drive.google.com/file/d/${id}/view` : undefined),
     }
   }
 
-  // Direct browser → Google (session must have been started with this Origin).
-  const putRes = await fetch(googleUploadUrl, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': file.mimeType,
-    },
-    body: file.blob,
-  })
-  const detail = await putRes.text()
-  if (!putRes.ok) {
-    throw new Error(`Could not upload ${file.name} to Google Drive: ${detail || putRes.statusText}`)
-  }
-  let parsed: { id?: string; name?: string; webViewLink?: string } = {}
-  try {
-    parsed = detail ? JSON.parse(detail) : {}
-  } catch {
-    parsed = {}
-  }
-  const id = parsed.id
-  return {
-    id,
-    name: parsed.name || file.name,
-    webViewLink:
-      parsed.webViewLink || (id ? `https://drive.google.com/file/d/${id}/view` : undefined),
-  }
+  throw new Error(`Could not finish uploading ${file.name} to Google Drive.`)
 }

@@ -18,8 +18,9 @@ export type GangSheetCartPayload = {
   precut: boolean
   precutTotal: number
   fileName: string
-  /** Staged locally until payment — omit Drive links at Add to Cart. */
-  fileUrl?: string
+  /** Google Drive link — required. File bytes never go through WordPress. */
+  fileUrl: string
+  driveFileId?: string
   sheetIndex: string
   /** Builder-packed sheet vs customer-uploaded file. */
   sheetType?: 'built' | 'uploaded'
@@ -28,11 +29,8 @@ export type GangSheetCartPayload = {
   scaleFactor?: number
   effectiveDpi?: number
   dpiSource?: 'file' | 'assumed' | 'customer'
-  /** Used when payment pushes the job to Drive. */
   jobStamp?: string
   printFileName?: string
-  cutterFileName?: string
-  cutterContent?: string
 }
 
 export type StoreBridgeStatus = 'idle' | 'sending' | 'error' | 'sent'
@@ -83,10 +81,18 @@ function inIframe() {
   }
 }
 
+function isDriveFileUrl(url: string) {
+  try {
+    const host = new URL(url).hostname
+    return host === 'drive.google.com' || host.endsWith('.google.com')
+  } catch {
+    return false
+  }
+}
+
 /**
  * Bridge between the embedded builder iframe and the southsidedtf.com store page.
- * Cart work is done by the WordPress plugin via postMessage — no cross-origin fetches.
- * Artwork is sent as a Blob (structured clone) so the parent can multipart-upload it.
+ * Only small JSON crosses to WordPress — the artwork must already be on Google Drive.
  */
 export function useStoreBridge() {
   const origin = useMemo(() => storeOrigin(), [])
@@ -115,15 +121,15 @@ export function useStoreBridge() {
   )
 
   const addToCart = useCallback(
-    async (blob: Blob, payload: GangSheetCartPayload): Promise<AddToCartResult> => {
+    async (payload: GangSheetCartPayload): Promise<AddToCartResult> => {
       if (typeof window === 'undefined') {
         return { ok: false, error: 'Cart bridge is only available in the browser.' }
       }
       if (!inIframe()) {
         return { ok: false, error: 'Add to Cart is only available inside the store page.' }
       }
-      if (!blob || blob.size < 32) {
-        return { ok: false, error: 'Missing gang sheet file.' }
+      if (!payload.fileUrl || !isDriveFileUrl(payload.fileUrl)) {
+        return { ok: false, error: 'Missing Google Drive file link for this sheet.' }
       }
 
       setStatus('sending')
@@ -133,13 +139,6 @@ export function useStoreBridge() {
         typeof crypto !== 'undefined' && 'randomUUID' in crypto
           ? crypto.randomUUID()
           : `ssgs-${Date.now()}`
-
-      const fileName = payload.fileName || 'gangsheet.png'
-      const mimeType = blob.type || 'image/png'
-      const artwork =
-        blob instanceof File
-          ? blob
-          : new File([blob], fileName, { type: mimeType })
 
       return new Promise((resolve) => {
         const timeout = window.setTimeout(() => {
@@ -176,9 +175,7 @@ export function useStoreBridge() {
             type: 'add-to-cart',
             requestId,
             payload,
-            fileName,
-            mimeType,
-            artwork,
+            fileName: payload.fileName,
           },
           '*',
         )

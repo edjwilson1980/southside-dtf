@@ -8,6 +8,7 @@ import { isEmbedSearchParam } from '@/lib/embed'
 import { formatInches, measureUploadFile, type MeasuredFile } from '@/lib/measure-file'
 import { getGangSheet, SAFETY_WIDTH_IN } from '@/lib/sheet-pricing'
 import { evaluateScaledSheet, scaleToSafetyWidth, softDpiWarning, type ScaledSheet } from '@/lib/upload-scale'
+import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
 import { sheetStamp } from '@/lib/sheet-name'
 
@@ -57,7 +58,9 @@ function UploadFlow() {
   const [cutOutNoteOpen, setCutOutNoteOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [built, setBuilt] = useState(false)
+  const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null)
 
   useEffect(() => {
     if (!embed) return
@@ -165,13 +168,31 @@ function UploadFlow() {
     if (!scaleGate?.ok) return
     setSaving(true)
     setSaveError(null)
+    setUploadProgress(0)
+    setDriveFolderUrl(null)
     try {
       const stamp = sheetStamp()
       const safeName = slugify(customerName.trim())
       const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '.png'
       const printName = `${safeName}-upload-${Math.round(scaled.scaledHeightIn)}in-${stamp}${ext}`
 
-      // Stage on WordPress at Add to Cart; Drive push happens after payment.
+      // Browser → Google Drive directly (chunked). WordPress only gets the Drive link.
+      const drive = await uploadJobToGoogleDrive({
+        customerName: customerName.trim(),
+        stamp,
+        files: [{ name: printName, mimeType: file.type || 'application/octet-stream', blob: file }],
+        onProgress: setUploadProgress,
+      })
+      setDriveFolderUrl(drive.folderUrl)
+
+      const driveLink =
+        drive.webViewLink ??
+        drive.fileUrl ??
+        (drive.fileId ? `https://drive.google.com/file/d/${drive.fileId}/view` : null)
+      if (!driveLink || !drive.fileId) {
+        throw new Error('Could not save your sheet to our print queue. Please try again.')
+      }
+
       const payload: GangSheetCartPayload = {
         customerName: customerName.trim(),
         sheetWidthIn: SAFETY_WIDTH_IN,
@@ -183,6 +204,8 @@ function UploadFlow() {
         precut: false,
         precutTotal: 0,
         fileName: `${safeName}-gangsheet-upload${ext}`,
+        fileUrl: driveLink,
+        driveFileId: drive.fileId,
         sheetIndex: '1 of 1',
         sheetType: 'uploaded',
         sourceWidthIn: scaled.sourceWidthIn,
@@ -193,13 +216,14 @@ function UploadFlow() {
         jobStamp: stamp,
         printFileName: printName,
       }
-      const result = await addToCart(file, payload)
+      const result = await addToCart(payload)
       if (!result.ok) throw new Error(result.error)
       setBuilt(true)
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not add this sheet to the cart.')
     } finally {
       setSaving(false)
+      setUploadProgress(null)
     }
   }
 
@@ -379,7 +403,7 @@ function UploadFlow() {
                 <span className="guide-num">4</span>
                 <div>
                   <h2>Review & order</h2>
-                  <p>We stage your original file on the store, then add it to the cart. It moves to the print queue after payment.</p>
+                  <p>We upload your original file to Google Drive, then add it to the cart.</p>
                 </div>
               </div>
               <div className="upload-review">
@@ -403,15 +427,26 @@ function UploadFlow() {
               </div>
               {fileUrl && <img className="upload-file-preview" src={fileUrl} alt="Sheet preview" />}
               {!built ? (
-                <button
-                  type="button"
-                  className="confirm-button cart-button"
-                  disabled={saving || cartStatus === 'sending' || !customerName.trim()}
-                  onClick={() => void addUploadedToCart()}
-                >
-                  <Check size={18} />
-                  {saving || cartStatus === 'sending' ? 'Adding to cart…' : 'Add to Cart'}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="confirm-button cart-button"
+                    disabled={saving || cartStatus === 'sending' || !customerName.trim()}
+                    onClick={() => void addUploadedToCart()}
+                  >
+                    <Check size={18} />
+                    {saving || cartStatus === 'sending'
+                      ? uploadProgress != null
+                        ? `Uploading to Drive… ${Math.round(uploadProgress * 100)}%`
+                        : 'Adding to cart…'
+                      : 'Add to Cart'}
+                  </button>
+                  {uploadProgress != null && (
+                    <div className="upload-progress" aria-live="polite">
+                      <div className="upload-progress-bar" style={{ width: `${Math.round(uploadProgress * 100)}%` }} />
+                    </div>
+                  )}
+                </>
               ) : (
                 <div className="built-card">
                   <div className="built-title">
@@ -420,7 +455,11 @@ function UploadFlow() {
                     </span>
                     <strong>Added to your cart.</strong>
                   </div>
-                  <p className="sublead">Your file will move to Google Drive after payment clears.</p>
+                  {driveFolderUrl && (
+                    <a className="drive-link" href={driveFolderUrl} target="_blank" rel="noreferrer">
+                      Open your job folder in Google Drive
+                    </a>
+                  )}
                 </div>
               )}
               {(saveError || cartError) && <p className="save-error">{saveError || cartError}</p>}

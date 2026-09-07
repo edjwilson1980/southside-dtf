@@ -2,7 +2,7 @@
 /**
  * Plugin Name: South Side Gang Sheet Builder
  * Description: Embed the South Side DTF customer gang sheet builder and add finished sheets to the WooCommerce cart.
- * Version: 1.10
+ * Version: 1.11
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.10');
+define('SSGS_PLUGIN_VERSION', '1.11');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 
 function ssgs_default_options() {
@@ -25,7 +25,7 @@ function ssgs_default_options() {
     'product_id' => 0,
     'precut_product_id' => 0,
     'upload_product_id' => 0,
-    'drive_commit_url' => SSGS_DEFAULT_BUILDER_URL . '/api/drive/commit',
+    'drive_commit_url' => SSGS_DEFAULT_BUILDER_URL . '/api/drive/finalize',
     'drive_commit_secret' => '',
   );
 }
@@ -116,14 +116,14 @@ function ssgs_render_settings_page() {
           <th scope="row"><label for="ssgs_drive_commit_url"><?php esc_html_e('Drive commit URL', 'southside-gangsheet'); ?></label></th>
           <td>
             <input name="ssgs_options[drive_commit_url]" id="ssgs_drive_commit_url" type="url" class="regular-text" value="<?php echo esc_attr($opts['drive_commit_url']); ?>" />
-            <p class="description"><?php esc_html_e('Usually https://southside-dtf.vercel.app/api/drive/commit — called after payment to push staged artwork to Google Drive.', 'southside-gangsheet'); ?></p>
+            <p class="description"><?php esc_html_e('Usually https://southside-dtf.vercel.app/api/drive/finalize — called after payment to rename the Drive file with the order number.', 'southside-gangsheet'); ?></p>
           </td>
         </tr>
         <tr>
           <th scope="row"><label for="ssgs_drive_commit_secret"><?php esc_html_e('Drive commit secret', 'southside-gangsheet'); ?></label></th>
           <td>
             <input name="ssgs_options[drive_commit_secret]" id="ssgs_drive_commit_secret" type="password" class="regular-text" value="<?php echo esc_attr($opts['drive_commit_secret']); ?>" autocomplete="new-password" />
-            <p class="description"><?php esc_html_e('Must match SSGS_COMMIT_SECRET on the Next.js host. Leave blank to skip Drive push.', 'southside-gangsheet'); ?></p>
+            <p class="description"><?php esc_html_e('Must match SSGS_COMMIT_SECRET on the Next.js host. Leave blank to skip order-number rename.', 'southside-gangsheet'); ?></p>
           </td>
         </tr>
         <tr>
@@ -320,38 +320,14 @@ function ssgs_handle_add_to_cart() {
     wp_send_json_error(array('message' => 'Set the WooCommerce product ID in Gang Sheet Builder settings (Build A Gangsheet).'), 400);
   }
 
-  if (empty($_FILES['artwork']) || empty($_FILES['artwork']['tmp_name'])) {
-    wp_send_json_error(array('message' => 'Missing gang sheet file.'), 400);
+  $file_url = esc_url_raw($payload['fileUrl'] ?? '');
+  $drive_file_id = sanitize_text_field($payload['driveFileId'] ?? '');
+  if ($file_url === '' || (strpos($file_url, 'drive.google.com') === false && strpos($file_url, 'docs.google.com') === false)) {
+    wp_send_json_error(array('message' => 'Missing Google Drive file link for this sheet.'), 400);
   }
-
-  require_once ABSPATH . 'wp-admin/includes/file.php';
-
-  $original_name = sanitize_file_name((string) ($_FILES['artwork']['name'] ?? 'gangsheet.png'));
-  if ($original_name === '') {
-    $original_name = 'gangsheet.png';
+  if ($drive_file_id === '' && preg_match('#/d/([^/]+)#', $file_url, $m)) {
+    $drive_file_id = $m[1];
   }
-  $_FILES['artwork']['name'] = wp_generate_password(12, false) . '-' . $original_name;
-
-  add_filter('upload_dir', 'ssgs_staging_upload_dir');
-  $moved = wp_handle_upload($_FILES['artwork'], array(
-    'test_form' => false,
-    'mimes'     => array(
-      'png'      => 'image/png',
-      'jpg|jpeg' => 'image/jpeg',
-      'pdf'      => 'application/pdf',
-      'tif|tiff' => 'image/tiff',
-    ),
-  ));
-  remove_filter('upload_dir', 'ssgs_staging_upload_dir');
-
-  if (isset($moved['error'])) {
-    wp_send_json_error(array('message' => $moved['error']), 500);
-  }
-
-  $upload = array(
-    'url' => $moved['url'],
-    'file' => $moved['file'],
-  );
 
   $product = wc_get_product($product_id);
   if (!$product) {
@@ -401,11 +377,10 @@ function ssgs_handle_add_to_cart() {
     'ssgs_dpi_source' => sanitize_text_field($payload['dpiSource'] ?? ''),
     'ssgs_job_stamp' => sanitize_text_field($payload['jobStamp'] ?? ''),
     'ssgs_print_file_name' => sanitize_file_name($payload['printFileName'] ?? ''),
-    'ssgs_cutter_file_name' => sanitize_file_name($payload['cutterFileName'] ?? ''),
-    'ssgs_cutter_content' => isset($payload['cutterContent']) ? (string) $payload['cutterContent'] : '',
-    'ssgs_file_url' => esc_url_raw($upload['url']),
-    'ssgs_local_file' => esc_url_raw($upload['url']),
-    'unique_key' => md5($upload['url'] . microtime()),
+    'ssgs_drive_file_id' => $drive_file_id,
+    'ssgs_file_url' => $file_url,
+    'ssgs_local_file' => '',
+    'unique_key' => md5($file_url . microtime()),
   );
 
   $added = WC()->cart->add_to_cart($product_id, $quantity, $variation_id, $variation, $cart_item_data);
@@ -429,7 +404,7 @@ function ssgs_handle_add_to_cart() {
 
   wp_send_json_success(array(
     'cartUrl' => wc_get_cart_url(),
-    'fileUrl' => $upload['url'],
+    'fileUrl' => $file_url,
   ));
 }
 
@@ -557,64 +532,14 @@ add_action('woocommerce_checkout_create_order_line_item', function ($item, $cart
     'ssgs_dpi_source',
     'ssgs_job_stamp',
     'ssgs_print_file_name',
-    'ssgs_cutter_file_name',
-    'ssgs_cutter_content',
+    'ssgs_drive_file_id',
     'ssgs_file_url',
     'ssgs_local_file',
   ) as $key) {
     if (isset($values[$key]) && $values[$key] !== '') {
       $item->add_meta_data($key, $values[$key], true);
-    }
-  }
-}, 10, 3);
-
-
-function ssgs_staging_upload_dir($dirs) {
-  $sub = '/gang-sheets/staging/' . gmdate('Y/m');
-  $dirs['subdir'] = $sub;
-  $dirs['path'] = $dirs['basedir'] . $sub;
-  $dirs['url'] = $dirs['baseurl'] . $sub;
-  return $dirs;
-}
-
-function ssgs_schedule_staging_purge() {
-  if (!wp_next_scheduled('ssgs_purge_staging')) {
-    wp_schedule_event(time() + 3600, 'daily', 'ssgs_purge_staging');
-  }
-}
-
-register_activation_hook(__FILE__, 'ssgs_schedule_staging_purge');
-register_deactivation_hook(__FILE__, function () {
-  $timestamp = wp_next_scheduled('ssgs_purge_staging');
-  if ($timestamp) {
-    wp_unschedule_event($timestamp, 'ssgs_purge_staging');
-  }
-});
-
-add_action('init', 'ssgs_schedule_staging_purge');
-
-add_action('ssgs_purge_staging', function () {
-  $base = wp_upload_dir()['basedir'] . '/gang-sheets/staging';
-  if (!is_dir($base)) {
-    return;
-  }
-  $cutoff = time() - (14 * DAY_IN_SECONDS);
-  $it = new RecursiveIteratorIterator(
-    new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS)
-  );
-  foreach ($it as $file) {
-    if ($file->isFile() && $file->getMTime() < $cutoff) {
-      @unlink($file->getPathname());
-    }
-  }
-});
-
-add_action('woocommerce_payment_complete', 'ssgs_send_order_to_drive');
-add_action('woocommerce_order_status_processing', 'ssgs_send_order_to_drive');
-add_action('woocommerce_order_status_completed', 'ssgs_send_order_to_drive');
-add_action('ssgs_retry_drive', 'ssgs_send_order_to_drive');
-
-function ssgs_send_order_to_drive($order_id) {
+  
+function ssgs_rename_drive_after_payment($order_id) {
   $opts = ssgs_get_options();
   $url = trim((string) ($opts['drive_commit_url'] ?? ''));
   $secret = trim((string) ($opts['drive_commit_secret'] ?? ''));
@@ -623,72 +548,59 @@ function ssgs_send_order_to_drive($order_id) {
   }
 
   $order = wc_get_order($order_id);
-  if (!$order || $order->get_meta('_ssgs_drive_done')) {
+  if (!$order || $order->get_meta('_ssgs_drive_renamed')) {
     return;
   }
 
-  $sheets = array();
+  $renamed = 0;
   foreach ($order->get_items() as $item_id => $item) {
-    $local = $item->get_meta('ssgs_local_file', true);
-    if (!$local) {
+    $file_id = $item->get_meta('ssgs_drive_file_id', true);
+    if (!$file_id) {
       continue;
     }
-    $sheets[] = array(
-      'lineItemId' => (int) $item_id,
-      'fileUrl' => $local,
-      'customerName' => $item->get_meta('ssgs_customer_name', true),
-      'sheetIndex' => $item->get_meta('ssgs_sheet_index', true),
-      'sheetType' => $item->get_meta('ssgs_sheet_type', true),
-      'size' => $item->get_meta('size', true),
-      'transfers' => $item->get_meta('ssgs_transfers', true),
-      'precut' => $item->get_meta('ssgs_precut', true),
-      'jobStamp' => $item->get_meta('ssgs_job_stamp', true),
-      'printFileName' => $item->get_meta('ssgs_print_file_name', true),
-      'cutterFileName' => $item->get_meta('ssgs_cutter_file_name', true),
-      'cutterContent' => $item->get_meta('ssgs_cutter_content', true),
-    );
-  }
-  if (!$sheets) {
-    return;
-  }
-
-  $res = wp_remote_post($url, array(
-    'timeout' => 60,
-    'headers' => array(
-      'Content-Type' => 'application/json',
-      'X-SSGS-Secret' => $secret,
-    ),
-    'body' => wp_json_encode(array(
-      'orderId' => $order->get_id(),
-      'orderNumber' => $order->get_order_number(),
-      'paidAt' => $order->get_date_paid() ? $order->get_date_paid()->date('c') : current_time('c'),
-      'customer' => array(
-        'name' => trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name()),
-        'email' => $order->get_billing_email(),
-        'phone' => $order->get_billing_phone(),
+    $res = wp_remote_post($url, array(
+      'timeout' => 30,
+      'headers' => array(
+        'Content-Type' => 'application/json',
+        'X-SSGS-Secret' => $secret,
       ),
-      'sheets' => $sheets,
-    )),
-  ));
-
-  if (is_wp_error($res) || wp_remote_retrieve_response_code($res) !== 200) {
-    $why = is_wp_error($res) ? $res->get_error_message() : ('HTTP ' . wp_remote_retrieve_response_code($res));
-    $order->add_order_note('Drive upload failed: ' . $why . ' - retrying in 10 minutes.');
-    $order->save();
-    wp_schedule_single_event(time() + 600, 'ssgs_retry_drive', array($order_id));
-    return;
-  }
-
-  $body = json_decode(wp_remote_retrieve_body($res), true);
-  foreach ((array) ($body['files'] ?? array()) as $file) {
-    $item = $order->get_item(intval($file['lineItemId'] ?? 0));
-    if ($item && !empty($file['driveUrl'])) {
-      $item->update_meta_data('ssgs_file_url', esc_url_raw($file['driveUrl']));
-      $item->save();
+      'body' => wp_json_encode(array(
+        'driveFileId' => $file_id,
+        'orderNumber' => $order->get_order_number(),
+      )),
+    ));
+    if (is_wp_error($res)) {
+      error_log('[SSGS] finalize error: ' . $res->get_error_message());
+      $order->add_order_note('Drive rename failed: ' . $res->get_error_message());
+      $order->save();
+      continue;
     }
+    $code = wp_remote_retrieve_response_code($res);
+    $body_raw = wp_remote_retrieve_body($res);
+    error_log(sprintf('[SSGS] finalize %d: %s', $code, substr($body_raw, 0, 500)));
+    if ($code !== 200) {
+      $order->add_order_note('Drive rename failed: HTTP ' . $code);
+      $order->save();
+      continue;
+    }
+    $body = json_decode($body_raw, true);
+    if (!empty($body['webViewLink'])) {
+      $item->update_meta_data('ssgs_file_url', esc_url_raw($body['webViewLink']));
+    }
+    if (!empty($body['name'])) {
+      $item->update_meta_data('ssgs_print_file_name', sanitize_file_name($body['name']));
+    }
+    $item->save();
+    $renamed += 1;
   }
 
-  $order->update_meta_data('_ssgs_drive_done', current_time('mysql'));
-  $order->add_order_note(sprintf('Sent %d sheet%s to Google Drive.', count($sheets), count($sheets) === 1 ? '' : 's'));
-  $order->save();
+  if ($renamed > 0) {
+    $order->update_meta_data('_ssgs_drive_renamed', current_time('mysql'));
+    $order->add_order_note(sprintf('Renamed %d Drive file%s with order number.', $renamed, $renamed === 1 ? '' : 's'));
+    $order->save();
+  }
 }
+
+add_action('woocommerce_payment_complete', 'ssgs_rename_drive_after_payment');
+add_action('woocommerce_order_status_processing', 'ssgs_rename_drive_after_payment');
+add_action('woocommerce_order_status_completed', 'ssgs_rename_drive_after_payment');

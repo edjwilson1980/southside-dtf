@@ -195,6 +195,18 @@ button.thumb:disabled { cursor: default; }
 
 .save-error { margin: 10px 14px 0; color: var(--chicago-red); font-size: 12px; font-weight: 700; text-align: center; }
 .drive-link { display: block; margin: 0 0 12px 39px; color: var(--chicago-blue); font-size: 13px; font-weight: 700; }
+.upload-progress {
+  margin-top: 10px;
+  height: 8px;
+  border-radius: 999px;
+  background: #dce8ef;
+  overflow: hidden;
+}
+.upload-progress-bar {
+  height: 100%;
+  background: #087c40;
+  transition: width .2s ease;
+}
 .build-button:disabled { cursor: not-allowed; opacity: .6; }
 .sheet-final-preview {
   display: block;

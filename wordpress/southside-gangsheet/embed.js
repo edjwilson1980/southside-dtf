@@ -51,14 +51,10 @@
     }
 
     var payload = data.payload || {};
-    var fileName = data.fileName || payload.fileName || 'gangsheet.png';
-    var mimeType = data.mimeType || 'image/png';
-    var artwork = data.artwork;
-
-    if (!artwork || typeof artwork.size !== 'number' || artwork.size < 32) {
+    if (!payload.fileUrl) {
       reply(event.source, data.requestId, {
         ok: false,
-        error: 'Missing gang sheet file.',
+        error: 'Missing Google Drive file link for this sheet.',
       });
       return;
     }
@@ -67,7 +63,6 @@
     body.append('action', 'ssgs_add_to_cart');
     body.append('nonce', nonce);
     body.append('payload', JSON.stringify(payload));
-    body.append('artwork', artwork, fileName);
 
     fetch(ajaxUrl, {
       method: 'POST',
