@@ -13,6 +13,8 @@
 .embed-bar strong { font-size: 15px; }
 .embed-bar a { color: var(--chicago-blue); font-size: 13px; font-weight: 600; text-decoration: none; }
 .embed-bar a:hover { text-decoration: underline; }
+.cart-button { margin-top: 10px; background: #159849; }
+.cart-button:hover { filter: brightness(0.96); }
 .builder-topbar { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: center; text-align: center; gap: 12px; margin-bottom: 18px; }
 .builder-topbar .title-block { flex: 1 1 220px; }
 .brand-logo { width: 86px; height: 118px; object-fit: contain; object-position: center; mix-blend-mode: multiply; }

@@ -16,6 +16,7 @@ import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { isEmbedSearchParam } from '@/lib/embed'
+import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
 
 type Design = {
   id: number
@@ -175,7 +176,10 @@ export default function Home() {
 
 function HomeBuilder() {
   const searchParams = useSearchParams()
-  const embed = isEmbedSearchParam(searchParams.get('embed'))
+  const embedParam = isEmbedSearchParam(searchParams.get('embed'))
+  const { embedded, addToCart, status: cartStatus, error: cartError, reportHeight } = useStoreBridge()
+  const embed = embedParam || embedded
+  const shellRef = useRef<HTMLElement | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [designs, setDesigns] = useState<Design[]>([])
   const [placement, setPlacement] = useState('Adult Shirt')
@@ -197,28 +201,19 @@ function HomeBuilder() {
   const previewGen = useRef(0)
 
   useEffect(() => {
-    if (!embed || typeof window === 'undefined') return
-    const postHeight = () => {
-      const height = Math.max(
-        document.documentElement.scrollHeight,
-        document.body?.scrollHeight || 0,
-      )
-      window.parent.postMessage(
-        { source: 'southside-gangsheet', type: 'resize', height },
-        '*',
-      )
-    }
-    postHeight()
-    const observer = new ResizeObserver(() => postHeight())
-    observer.observe(document.documentElement)
-    window.addEventListener('load', postHeight)
-    const interval = window.setInterval(postHeight, 1000)
+    if (!embed) return
+    const post = () => reportHeight(shellRef.current)
+    post()
+    const root = shellRef.current
+    if (!root || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => post())
+    observer.observe(root)
+    window.addEventListener('load', post)
     return () => {
       observer.disconnect()
-      window.removeEventListener('load', postHeight)
-      window.clearInterval(interval)
+      window.removeEventListener('load', post)
     }
-  }, [embed, designs.length, cutOut, built, previewing, sheetPreviewOpen, saveError])
+  }, [embed, reportHeight, designs.length, cutOut, built, previewing, sheetPreviewOpen, saveError, cartStatus])
 
   function addFiles(list: FileList | File[]) {
     if (!customerName.trim()) return
@@ -469,7 +464,61 @@ function HomeBuilder() {
     }
   }
 
-  return <main className={`builder-shell${embed ? ' embed-mode' : ''}`}>
+  async function addSheetToStoreCart() {
+    if (!customerName.trim() || designs.length === 0 || saving || cartStatus === 'sending') return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const stamp = jobStamp || sheetStamp()
+      const label = sheetJobName(customerName.trim(), billedLength, stamp)
+      const fileName = `${slugify(customerName.trim())}-gangsheet.png`
+      const png = await composeCurrentSheet(sheetPxPerIn(14000, 150), label, true)
+
+      let driveFileUrl: string | undefined
+      if (cutOut) {
+        const pltText = cutPlt(sheetLayout.pieces, printHeight)
+        if (!pltText) throw new Error('Could not build the cutter PLT for this sheet.')
+        const printName = sheetFileName(customerName.trim(), billedLength, stamp)
+        const cutName = sheetCutFileName(customerName.trim(), billedLength, stamp)
+        const drive = await uploadJobToGoogleDrive({
+          customerName: customerName.trim(),
+          stamp,
+          files: [{ name: printName, mimeType: 'image/png', blob: png }],
+          cutterFile: { name: cutName, content: pltText, mimeType: 'text/plain' },
+        })
+        setDriveFolderUrl(drive.folderUrl)
+        driveFileUrl = drive.folderUrl
+      }
+
+      // One print-ready export covers the full packed sheet; sheetCount is the roll billing split.
+      for (let index = 0; index < sheetCount; index += 1) {
+        const payload: GangSheetCartPayload = {
+          customerName: customerName.trim(),
+          sheetWidthIn: SHEET_WIDTH_IN,
+          sheetHeightIn: billedLength,
+          quantity: 1,
+          designs: designs.length,
+          transfers: totalTransfers,
+          precut: cutOut,
+          precutTotal: cutFee,
+          fileName: sheetCount > 1 ? fileName.replace(/\.png$/i, `-${index + 1}.png`) : fileName,
+          fileUrl: driveFileUrl,
+          sheetIndex: `${index + 1} of ${sheetCount}`,
+        }
+        const result = await addToCart(png, payload)
+        if (!result.ok) throw new Error(result.error)
+      }
+
+      setBuilt(true)
+      setSheetPreviewOpen(false)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not add this sheet to the cart.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return <main ref={shellRef} className={`builder-shell${embed ? ' embed-mode' : ''}`}>
     {embed ? (
       <div className="embed-bar">
         <strong>Build your gang sheet</strong>
@@ -668,6 +717,20 @@ function HomeBuilder() {
             <button className="confirm-button" disabled={saving} onClick={() => void buildAndStore()}>
               <Check size={18} /> {saving ? (cutOut ? 'Saving to Drive…' : 'Building…') : 'Confirm & Build Gang Sheet'}
             </button>
+          )}
+          {embedded && previewing && sheetPreviewUrl && (
+            <button
+              type="button"
+              className="confirm-button cart-button"
+              disabled={saving || cartStatus === 'sending' || designs.length === 0 || !customerName.trim()}
+              onClick={() => void addSheetToStoreCart()}
+            >
+              <Check size={18} />
+              {cartStatus === 'sending' || saving ? 'Adding to cart…' : 'Add to Cart'}
+            </button>
+          )}
+          {embedded && cartStatus === 'error' && cartError && (
+            <p className="save-error">{cartError}</p>
           )}
           {saveError && <p className="save-error">{saveError}</p>}
         </div>
