@@ -170,6 +170,46 @@ export async function createResumableUploadSessions(
   return sessions
 }
 
+/**
+ * Upload a small text cutter file (PLT) from the server.
+ * Browser → Drive resumable PUTs are reliable for PNG, but PLT uploads have
+ * failed for customers in practice; server-side media upload is tiny and stable.
+ */
+export async function uploadCutterFileToFolder(
+  folderId: string,
+  name: string,
+  content: string,
+  mimeType = 'text/plain',
+) {
+  if (!name.trim()) throw new Error('Cutter file name is required.')
+  if (!content) throw new Error('Cutter file content is empty.')
+
+  const auth = await driveAuth()
+  const drive = google.drive({ version: 'v3', auth })
+  const created = await drive.files.create({
+    requestBody: {
+      name,
+      parents: [folderId],
+      mimeType,
+    },
+    media: {
+      mimeType,
+      body: Buffer.from(content, 'utf8'),
+    },
+    fields: 'id, name, webViewLink',
+    supportsAllDrives: true,
+  })
+
+  const fileId = created.data.id
+  if (!fileId) throw new Error(`Google Drive did not return an id for ${name}.`)
+
+  return {
+    id: fileId,
+    name: created.data.name || name,
+    webViewLink: created.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
+  }
+}
+
 /** Smoke-test: create a tiny folder then delete it. */
 export async function verifyDriveWriteAccess() {
   const auth = await driveAuth()

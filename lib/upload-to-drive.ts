@@ -4,20 +4,29 @@ export type DriveFileUpload = {
   blob: Blob
 }
 
+export type DriveCutterUpload = {
+  name: string
+  content: string
+  mimeType?: string
+}
+
 export type DriveUploadResult = {
   folderId: string
   folderName: string
   folderUrl: string
+  cutterFileName?: string
 }
 
 /**
- * Creates a customer folder in the shop Google Drive and uploads the given files
- * via resumable sessions (so large gang-sheet PNGs fit past serverless body limits).
+ * Creates a customer folder in the shop Google Drive and uploads the given files.
+ * Large PNGs use resumable sessions (client PUT to Google).
+ * Cutter PLT files are uploaded by our API (small text; more reliable than browser PUT).
  */
 export async function uploadJobToGoogleDrive(options: {
   customerName: string
   stamp: string
   files: DriveFileUpload[]
+  cutterFile?: DriveCutterUpload
 }): Promise<DriveUploadResult> {
   const sessionRes = await fetch('/api/drive/session', {
     method: 'POST',
@@ -30,6 +39,13 @@ export async function uploadJobToGoogleDrive(options: {
         mimeType: file.mimeType,
         size: file.blob.size,
       })),
+      cutterFile: options.cutterFile
+        ? {
+            name: options.cutterFile.name,
+            content: options.cutterFile.content,
+            mimeType: options.cutterFile.mimeType || 'text/plain',
+          }
+        : undefined,
     }),
   })
 
@@ -39,10 +55,15 @@ export async function uploadJobToGoogleDrive(options: {
     folderName?: string
     folderUrl?: string
     uploads?: Array<{ name: string; uploadUrl: string }>
+    cutter?: { id?: string; name?: string } | null
   }
 
   if (!sessionRes.ok) {
     throw new Error(sessionJson.error || 'Could not create the Google Drive folder.')
+  }
+
+  if (options.cutterFile && !sessionJson.cutter?.id) {
+    throw new Error(`Could not upload cutter file ${options.cutterFile.name} to Google Drive.`)
   }
 
   const uploads = sessionJson.uploads ?? []
@@ -51,11 +72,11 @@ export async function uploadJobToGoogleDrive(options: {
     if (!session?.uploadUrl) {
       throw new Error(`Missing Google Drive upload session for ${file.name}.`)
     }
+    // Do not set Content-Length — browsers treat it as a forbidden header.
     const putRes = await fetch(session.uploadUrl, {
       method: 'PUT',
       headers: {
         'Content-Type': file.mimeType,
-        'Content-Length': String(file.blob.size),
       },
       body: file.blob,
     })
@@ -73,5 +94,6 @@ export async function uploadJobToGoogleDrive(options: {
     folderId: sessionJson.folderId,
     folderName: sessionJson.folderName || options.customerName,
     folderUrl: sessionJson.folderUrl,
+    cutterFileName: sessionJson.cutter?.name,
   }
 }
