@@ -508,6 +508,7 @@ function HomeBuilder() {
           fileName: sheetCount > 1 ? cartFileName.replace(/\.png$/i, `-${index + 1}.png`) : cartFileName,
           fileUrl: driveLink,
           sheetIndex: `${index + 1} of ${sheetCount}`,
+          sheetType: 'built',
         }
         const result = await addToCart(png, payload)
         if (!result.ok) throw new Error(result.error)

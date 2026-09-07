@@ -20,6 +20,13 @@ export type GangSheetCartPayload = {
   fileName: string
   fileUrl?: string
   sheetIndex: string
+  /** Builder-packed sheet vs customer-uploaded file. */
+  sheetType?: 'built' | 'uploaded'
+  transferSource?: 'auto' | 'manual'
+  sourceWidthIn?: number
+  sourceHeightIn?: number
+  scaleFactor?: number
+  effectiveDpi?: number
 }
 
 export type StoreBridgeStatus = 'idle' | 'sending' | 'error' | 'sent'

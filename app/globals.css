@@ -387,3 +387,48 @@ button.thumb:disabled { cursor: default; }
 .shop-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; align-self: center; }
 .shop-nav-link { padding: 8px 12px; border: 1px solid #b9ddeb; border-radius: 7px; background: #fff; color: #006e99; font-size: 12px; font-weight: 800; text-decoration: none; white-space: nowrap; }
 .shop-nav-link:hover { border-color: var(--chicago-blue); background: #e9f8fc; }
+
+.upload-how-to { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.upload-how-to .how-to-item { width: 100%; cursor: pointer; }
+.upload-measure-card,
+.upload-review {
+  margin: 12px 0 16px;
+  padding: 14px 16px;
+  border: 1px solid #d7e3ea;
+  border-radius: 10px;
+  background: #f7fbfd;
+}
+.upload-measure-card p,
+.upload-review p { margin: 0 0 8px; font-size: 14px; line-height: 1.45; }
+.upload-measure-card p:last-child,
+.upload-review p:last-child { margin-bottom: 0; }
+.upload-warn { color: #9a3412; font-weight: 700; }
+.upload-total { font-size: 18px !important; }
+.upload-size-actions,
+.upload-override {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.upload-override { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; }
+.upload-override label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.upload-override input {
+  height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--input);
+  border-radius: 7px;
+  background: #fff;
+}
+.upload-override .build-button { grid-column: 1 / -1; }
+.upload-file-preview {
+  display: block;
+  width: min(520px, 100%);
+  margin-top: 16px;
+  border: 1px solid #d7dce3;
+  border-radius: 8px;
+  background: #c4b8a8;
+}
+@media (max-width: 700px) {
+  .upload-how-to { grid-template-columns: 1fr; }
+  .upload-override { grid-template-columns: 1fr; }
+}
