@@ -8,6 +8,11 @@
 @layer base { * { @apply border-border outline-ring/50; } html { background: var(--background); scroll-behavior: smooth; } body { @apply bg-background text-foreground font-sans; margin: 0; } button, select, input { font: inherit; } }
 
 .builder-shell { max-width: 1440px; margin: 0 auto; padding: 28px 36px 42px; color: var(--ink); }
+.builder-shell.embed-mode { padding: 12px 12px 28px; max-width: none; }
+.embed-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 10px 12px; border: 1px solid #d7e3ea; border-radius: 10px; background: #fff; }
+.embed-bar strong { font-size: 15px; }
+.embed-bar a { color: var(--chicago-blue); font-size: 13px; font-weight: 600; text-decoration: none; }
+.embed-bar a:hover { text-decoration: underline; }
 .builder-topbar { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: center; text-align: center; gap: 12px; margin-bottom: 18px; }
 .builder-topbar .title-block { flex: 1 1 220px; }
 .brand-logo { width: 86px; height: 118px; object-fit: contain; object-position: center; mix-blend-mode: multiply; }

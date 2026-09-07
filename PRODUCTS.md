@@ -11,6 +11,7 @@ These are **separate products** that share print/packing libraries. Do not mix t
   - PLT is uploaded by the server (not a customer browser download)
   - PNG is proxied through our API when small enough; larger PNGs use a Drive session started with the page Origin (required for browser CORS)
 - Drive uses shop Gmail OAuth (personal Gmail has no Shared drives). Staff connect once at `/shop/connect-drive`
+- WordPress: embed with plugin in `wordpress/southside-gangsheet/` shortcode `[southside_gangsheet]` (loads `/embed`)
 
 ## Shop tools (`/shop`)
 

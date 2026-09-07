@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   Baby, Check, Copy, Eye, FileImage, Image as ImageIcon, Maximize2,
   Minus, Plus, Ruler, Scissors, Shirt, Sparkles, Trash2, Upload,
@@ -14,6 +15,7 @@ import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
+import { isEmbedSearchParam } from '@/lib/embed'
 
 type Design = {
   id: number
@@ -164,6 +166,16 @@ function revokeUnusedUrls(urls: Array<string | null>, remaining: Design[]) {
 }
 
 export default function Home() {
+  return (
+    <Suspense fallback={<main className="builder-shell"><p className="sublead">Loading builder…</p></main>}>
+      <HomeBuilder />
+    </Suspense>
+  )
+}
+
+function HomeBuilder() {
+  const searchParams = useSearchParams()
+  const embed = isEmbedSearchParam(searchParams.get('embed'))
   const inputRef = useRef<HTMLInputElement>(null)
   const [designs, setDesigns] = useState<Design[]>([])
   const [placement, setPlacement] = useState('Adult Shirt')
@@ -183,6 +195,30 @@ export default function Home() {
   const [cutOut, setCutOut] = useState(false)
   const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null)
   const previewGen = useRef(0)
+
+  useEffect(() => {
+    if (!embed || typeof window === 'undefined') return
+    const postHeight = () => {
+      const height = Math.max(
+        document.documentElement.scrollHeight,
+        document.body?.scrollHeight || 0,
+      )
+      window.parent.postMessage(
+        { source: 'southside-gangsheet', type: 'resize', height },
+        '*',
+      )
+    }
+    postHeight()
+    const observer = new ResizeObserver(() => postHeight())
+    observer.observe(document.documentElement)
+    window.addEventListener('load', postHeight)
+    const interval = window.setInterval(postHeight, 1000)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('load', postHeight)
+      window.clearInterval(interval)
+    }
+  }, [embed, designs.length, cutOut, built, previewing, sheetPreviewOpen, saveError])
 
   function addFiles(list: FileList | File[]) {
     if (!customerName.trim()) return
@@ -433,15 +469,22 @@ export default function Home() {
     }
   }
 
-  return <main className="builder-shell">
-    <div className="builder-topbar">
-      <img src={logoUrl} alt="South Side DTF" className="brand-logo" />
-      <div className="title-block">
-        <h1>Build My Gangsheet</h1>
-        <p className="lead">No gang sheet experience needed.</p>
-        <p className="sublead">Follow the numbered steps. We pack and size your designs for South Side DTF.</p>
+  return <main className={`builder-shell${embed ? ' embed-mode' : ''}`}>
+    {embed ? (
+      <div className="embed-bar">
+        <strong>Build your gang sheet</strong>
+        <a href="/" target="_blank" rel="noreferrer">Open full page</a>
       </div>
-    </div>
+    ) : (
+      <div className="builder-topbar">
+        <img src={logoUrl} alt="South Side DTF" className="brand-logo" />
+        <div className="title-block">
+          <h1>Build My Gangsheet</h1>
+          <p className="lead">No gang sheet experience needed.</p>
+          <p className="sublead">Follow the numbered steps. We pack and size your designs for South Side DTF.</p>
+        </div>
+      </div>
+    )}
     <ol className="how-to" aria-label="How to build your gang sheet">
       {howToSteps.map((step) => (
         <li key={step.id}>
