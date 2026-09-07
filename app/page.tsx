@@ -15,7 +15,6 @@ import { CUT_GUTTER_IN, CUT_MARGIN_IN, MARK_CLEARANCE_IN, MARK_SECTION_IN, cutPl
 import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
-import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { isEmbedSearchParam } from '@/lib/embed'
 import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
 
@@ -198,7 +197,6 @@ function HomeBuilder() {
   const [sheetPreviewOpen, setSheetPreviewOpen] = useState(false)
   const [jobStamp, setJobStamp] = useState('')
   const [cutOut, setCutOut] = useState(false)
-  const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null)
   const [precutOfferOpen, setPrecutOfferOpen] = useState(false)
   const [precutOfferDeclinedFor, setPrecutOfferDeclinedFor] = useState<string | null>(null)
   const [pendingCartAfterCut, setPendingCartAfterCut] = useState(false)
@@ -398,7 +396,6 @@ function HomeBuilder() {
     setSheetPreviewOpen(false)
     setJobStamp('')
     setBuilt(false)
-    setDriveFolderUrl(null)
     setSheetPreviewUrl((url) => {
       if (url) URL.revokeObjectURL(url)
       return null
@@ -456,7 +453,6 @@ function HomeBuilder() {
     if (!customerName.trim() || designs.length === 0 || saving || cartStatus === 'sending') return
     setSaving(true)
     setSaveError(null)
-    setDriveFolderUrl(null)
     try {
       const stamp = jobStamp || sheetStamp()
       const label = sheetJobName(customerName.trim(), billedLength, stamp)
@@ -464,33 +460,14 @@ function HomeBuilder() {
       const cartFileName = `${slugify(customerName.trim())}-gangsheet.png`
       const png = await composeCurrentSheet(sheetPxPerIn(14000, 150), label, true)
 
-      // Always upload to Drive before cart — fail closed if we get no Drive file link.
-      let cutterFile: { name: string; content: string; mimeType: string } | undefined
+      // Stage on WordPress at Add to Cart; Drive push happens after payment.
+      let cutterFileName: string | undefined
+      let cutterContent: string | undefined
       if (cutOut) {
         const pltText = cutPlt(sheetLayout.pieces, printHeight)
         if (!pltText) throw new Error('Could not build the cutter PLT for this sheet.')
-        cutterFile = {
-          name: sheetCutFileName(customerName.trim(), billedLength, stamp),
-          content: pltText,
-          mimeType: 'text/plain',
-        }
-      }
-
-      const drive = await uploadJobToGoogleDrive({
-        customerName: customerName.trim(),
-        stamp,
-        files: [{ name: printName, mimeType: 'image/png', blob: png }],
-        cutterFile,
-      })
-      setDriveFolderUrl(drive.folderUrl)
-
-      const driveLink =
-        drive.webViewLink ??
-        drive.fileUrl ??
-        (drive.fileId ? `https://drive.google.com/file/d/${drive.fileId}/view` : null)
-
-      if (!driveLink) {
-        throw new Error('Could not save your sheet to our print queue. Please try again.')
+        cutterFileName = sheetCutFileName(customerName.trim(), billedLength, stamp)
+        cutterContent = pltText
       }
 
       // One print-ready export covers the full packed sheet; sheetCount is the roll billing split.
@@ -506,9 +483,12 @@ function HomeBuilder() {
           precut: cutOut,
           precutTotal: cutFee,
           fileName: sheetCount > 1 ? cartFileName.replace(/\.png$/i, `-${index + 1}.png`) : cartFileName,
-          fileUrl: driveLink,
           sheetIndex: `${index + 1} of ${sheetCount}`,
           sheetType: 'built',
+          jobStamp: stamp,
+          printFileName: printName,
+          cutterFileName,
+          cutterContent,
         }
         const result = await addToCart(png, payload)
         if (!result.ok) throw new Error(result.error)
@@ -798,13 +778,11 @@ function HomeBuilder() {
         {built && (
           <div className="built-card">
             <div className="built-title"><span><Check size={21} /></span><strong>Added to your cart.</strong></div>
-            <p>{sheet.label} · {totalTransfers} transfers · We will print{cutOut ? ' and cut' : ''} your sheet.</p>
-            {driveFolderUrl && (
-              <a className="drive-link" href={driveFolderUrl} target="_blank" rel="noreferrer">
-                Open your job folder in Google Drive (print PNG + cutter PLT)
-              </a>
-            )}
-            <button onClick={() => { setBuilt(false); setDriveFolderUrl(null) }}>Build another sheet <span>›</span></button>
+            <p>
+              {sheet.label} · {totalTransfers} transfers · We will print{cutOut ? ' and cut' : ''} your
+              sheet after payment.
+            </p>
+            <button onClick={() => setBuilt(false)}>Build another sheet <span>›</span></button>
           </div>
         )}
       </aside>

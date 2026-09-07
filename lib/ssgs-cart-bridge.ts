@@ -18,6 +18,7 @@ export type GangSheetCartPayload = {
   precut: boolean
   precutTotal: number
   fileName: string
+  /** Staged locally until payment — omit Drive links at Add to Cart. */
   fileUrl?: string
   sheetIndex: string
   /** Builder-packed sheet vs customer-uploaded file. */
@@ -27,6 +28,11 @@ export type GangSheetCartPayload = {
   scaleFactor?: number
   effectiveDpi?: number
   dpiSource?: 'file' | 'assumed' | 'customer'
+  /** Used when payment pushes the job to Drive. */
+  jobStamp?: string
+  printFileName?: string
+  cutterFileName?: string
+  cutterContent?: string
 }
 
 export type StoreBridgeStatus = 'idle' | 'sending' | 'error' | 'sent'
@@ -77,22 +83,10 @@ function inIframe() {
   }
 }
 
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(new Error('Could not read the gang sheet file.'))
-    reader.onload = () => {
-      const result = String(reader.result || '')
-      const comma = result.indexOf(',')
-      resolve(comma >= 0 ? result.slice(comma + 1) : result)
-    }
-    reader.readAsDataURL(blob)
-  })
-}
-
 /**
  * Bridge between the embedded builder iframe and the southsidedtf.com store page.
  * Cart work is done by the WordPress plugin via postMessage — no cross-origin fetches.
+ * Artwork is sent as a Blob (structured clone) so the parent can multipart-upload it.
  */
 export function useStoreBridge() {
   const origin = useMemo(() => storeOrigin(), [])
@@ -128,6 +122,9 @@ export function useStoreBridge() {
       if (!inIframe()) {
         return { ok: false, error: 'Add to Cart is only available inside the store page.' }
       }
+      if (!blob || blob.size < 32) {
+        return { ok: false, error: 'Missing gang sheet file.' }
+      }
 
       setStatus('sending')
       setError(null)
@@ -137,15 +134,12 @@ export function useStoreBridge() {
           ? crypto.randomUUID()
           : `ssgs-${Date.now()}`
 
-      let fileBase64: string
-      try {
-        fileBase64 = await blobToBase64(blob)
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Could not prepare the gang sheet file.'
-        setStatus('error')
-        setError(message)
-        return { ok: false, error: message }
-      }
+      const fileName = payload.fileName || 'gangsheet.png'
+      const mimeType = blob.type || 'image/png'
+      const artwork =
+        blob instanceof File
+          ? blob
+          : new File([blob], fileName, { type: mimeType })
 
       return new Promise((resolve) => {
         const timeout = window.setTimeout(() => {
@@ -182,9 +176,9 @@ export function useStoreBridge() {
             type: 'add-to-cart',
             requestId,
             payload,
-            fileName: payload.fileName,
-            mimeType: blob.type || 'image/png',
-            fileBase64,
+            fileName,
+            mimeType,
+            artwork,
           },
           '*',
         )

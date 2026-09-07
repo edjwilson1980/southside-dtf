@@ -177,20 +177,18 @@ export async function createResumableUploadSessions(
 }
 
 /**
- * Upload a small text cutter file (PLT) from the server.
- * Uses the same resumable PUT path as PNG (googleapis media body streams
- * are unreliable on this Node/runtime combo — `body.pipe is not a function`).
+ * Upload bytes to Drive via resumable upload (server-side — no browser CORS).
+ * Used for payment-commit pushes and small cutter PLT files.
  */
-export async function uploadCutterFileToFolder(
+export async function uploadBufferToFolder(
   folderId: string,
   name: string,
-  content: string,
-  mimeType = 'text/plain',
+  bytes: Buffer,
+  mimeType: string,
 ) {
-  if (!name.trim()) throw new Error('Cutter file name is required.')
-  if (!content) throw new Error('Cutter file content is empty.')
+  if (!name.trim()) throw new Error('File name is required.')
+  if (!bytes.length) throw new Error(`File ${name} is empty.`)
 
-  const bytes = Buffer.from(content, 'utf8')
   const [session] = await createResumableUploadSessions(folderId, [
     { name, mimeType, size: bytes.length },
   ])
@@ -208,7 +206,7 @@ export async function uploadCutterFileToFolder(
   })
   const detail = await putRes.text()
   if (!putRes.ok) {
-    throw new Error(`Could not upload cutter file ${name}: ${detail || putRes.statusText}`)
+    throw new Error(`Could not upload ${name}: ${detail || putRes.statusText}`)
   }
 
   let parsed: { id?: string; name?: string; webViewLink?: string } = {}
@@ -226,6 +224,22 @@ export async function uploadCutterFileToFolder(
     name: parsed.name || name,
     webViewLink: parsed.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
   }
+}
+
+/**
+ * Upload a small text cutter file (PLT) from the server.
+ * Uses the same resumable PUT path as PNG (googleapis media body streams
+ * are unreliable on this Node/runtime combo — `body.pipe is not a function`).
+ */
+export async function uploadCutterFileToFolder(
+  folderId: string,
+  name: string,
+  content: string,
+  mimeType = 'text/plain',
+) {
+  if (!name.trim()) throw new Error('Cutter file name is required.')
+  if (!content) throw new Error('Cutter file content is empty.')
+  return uploadBufferToFolder(folderId, name, Buffer.from(content, 'utf8'), mimeType)
 }
 
 /** Smoke-test: create a tiny folder then delete it. */
