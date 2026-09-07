@@ -4,6 +4,11 @@ export const UPLOAD_CUT_CLEARANCE_IN = 0.25
 export const UPLOAD_DILATE_IN = 0.125
 /** Ignore components smaller than this area (sq in). */
 export const UPLOAD_MIN_AREA_IN2 = 0.25
+/**
+ * Soft / feathered edge ratio among ink-ish pixels (alpha 20–235).
+ * Above this, pre-cut is not offered — no hard edge for the blade.
+ */
+export const UPLOAD_SOFT_EDGE_RATIO = 0.35
 const ALPHA_INK = 10
 
 export type TransferBox = {
@@ -13,18 +18,18 @@ export type TransferBox = {
   heightIn: number
 }
 
-export type TransferDetection =
+/** Silent eligibility result — never shown as outlines or priced on. */
+export type CutEligibility =
   | {
       ok: true
-      count: number
-      boxes: TransferBox[]
-      minGapIn: number
-      precutAvailable: boolean
-      precutBlockedReason?: string
-      previewUrl?: string
+      cutEligible: boolean
+      detectedCount: number
+      reason?: string
     }
   | {
       ok: false
+      cutEligible: false
+      detectedCount: number
       reason: string
     }
 
@@ -108,15 +113,15 @@ function boxGapIn(a: TransferBox, b: TransferBox) {
 }
 
 /**
- * Detect transfer islands from alpha at reduced resolution.
- * Returns cut availability based on blade clearance between pieces and edges.
+ * Silent cut-eligibility pass for uploaded sheets.
+ * Detection never prices the order — it only decides whether pre-cut can be offered.
  */
-export async function detectTransfersFromFile(options: {
+export async function assessUploadCutEligibility(options: {
   file: Blob
   sheetWidthIn: number
   sheetHeightIn: number
   resizeWidth?: number
-}): Promise<TransferDetection> {
+}): Promise<CutEligibility> {
   const resizeWidth = options.resizeWidth ?? 2000
   let bitmap: ImageBitmap
   try {
@@ -127,8 +132,10 @@ export async function detectTransfersFromFile(options: {
   } catch {
     return {
       ok: false,
+      cutEligible: false,
+      detectedCount: 0,
       reason:
-        'Could not read pixels from this file for transfer detection. Upload a transparent PNG or TIFF for pre-cut.',
+        'We could not check this file for cutting. Upload a transparent PNG or TIFF if you want pre-cut, or continue without cutting.',
     }
   }
 
@@ -138,7 +145,12 @@ export async function detectTransfersFromFile(options: {
     canvas.height = bitmap.height
     const ctx = canvas.getContext('2d', { willReadFrequently: true })
     if (!ctx) {
-      return { ok: false, reason: 'Could not analyse this image in the browser.' }
+      return {
+        ok: false,
+        cutEligible: false,
+        detectedCount: 0,
+        reason: 'Could not analyse this image in the browser.',
+      }
     }
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(bitmap, 0, 0)
@@ -146,6 +158,7 @@ export async function detectTransfersFromFile(options: {
 
     let opaque = 0
     let ink = 0
+    let soft = 0
     const total = canvas.width * canvas.height
     const mask = new Uint8Array(total)
     for (let i = 0, p = 0; i < total; i++, p += 4) {
@@ -155,19 +168,35 @@ export async function detectTransfersFromFile(options: {
         ink += 1
       }
       if (a > 250) opaque += 1
+      if (a >= 20 && a <= 235) soft += 1
     }
 
     if (ink === 0) {
       return {
         ok: false,
+        cutEligible: false,
+        detectedCount: 0,
         reason: 'No artwork found on a transparent background. Export a PNG/TIFF with transparency.',
       }
     }
     if (opaque / total > 0.92) {
       return {
         ok: false,
+        cutEligible: false,
+        detectedCount: 0,
         reason:
-          'This file looks fully opaque (solid background). DTF prints white ink, so it would print as a white rectangle. Export with a transparent background.',
+          'This file has a solid background. DTF prints white ink, so a white background prints as a white rectangle.',
+      }
+    }
+
+    const softRatio = soft / Math.max(1, ink)
+    if (softRatio > UPLOAD_SOFT_EDGE_RATIO) {
+      return {
+        ok: true,
+        cutEligible: false,
+        detectedCount: 0,
+        reason:
+          'This artwork has soft edges (glows, drop shadows, or feathering), so we cannot cut a clean outline. Flatten to hard edges and re-upload, or order without cutting.',
       }
     }
 
@@ -185,18 +214,13 @@ export async function detectTransfersFromFile(options: {
       heightIn: (c.maxY - c.minY + 1) / pxPerInY,
     }))
 
-    // Draw outline preview
-    ctx.strokeStyle = '#ff1a1a'
-    ctx.lineWidth = Math.max(2, canvas.width / 400)
-    for (const c of comps) {
-      ctx.strokeRect(c.minX, c.minY, c.maxX - c.minX + 1, c.maxY - c.minY + 1)
-    }
-    const previewUrl = canvas.toDataURL('image/png')
-
     if (boxes.length === 0) {
       return {
-        ok: false,
-        reason: 'Could not find any transfers large enough to cut. Check that artwork is separated on transparency.',
+        ok: true,
+        cutEligible: false,
+        detectedCount: 0,
+        reason:
+          'We could not find clear separate transfers to cut. Space designs on transparency and re-upload, or order without cutting.',
       }
     }
 
@@ -216,19 +240,24 @@ export async function detectTransfersFromFile(options: {
     }
     if (!Number.isFinite(minGapIn)) minGapIn = 0
 
-    const precutAvailable = minGapIn + 1e-6 >= UPLOAD_CUT_CLEARANCE_IN
+    if (minGapIn + 1e-6 < UPLOAD_CUT_CLEARANCE_IN) {
+      return {
+        ok: true,
+        cutEligible: false,
+        detectedCount: boxes.length,
+        reason: `Some transfers on this sheet are closer than ${UPLOAD_CUT_CLEARANCE_IN} in, so we can't get a blade between them. You can space them out and re-upload, or order without cutting.`,
+      }
+    }
+
     return {
       ok: true,
-      count: boxes.length,
-      boxes,
-      minGapIn,
-      precutAvailable,
-      precutBlockedReason: precutAvailable
-        ? undefined
-        : `Some transfers are closer than ${UPLOAD_CUT_CLEARANCE_IN} in — we can't get a blade between them. Space them out and re-upload, or order without cutting.`,
-      previewUrl,
+      cutEligible: true,
+      detectedCount: boxes.length,
     }
   } finally {
     bitmap.close()
   }
 }
+
+/** @deprecated Use assessUploadCutEligibility — kept for internal tooling later. */
+export const detectTransfersFromFile = assessUploadCutEligibility

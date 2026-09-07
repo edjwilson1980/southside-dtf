@@ -5,26 +5,31 @@ import { Scissors, X } from 'lucide-react'
 
 type PrecutOfferModalProps = {
   open: boolean
-  transfers: number
-  rateEach: number
-  precutTotal: number
   sheetPrice: number
   busy?: boolean
   onAccept: () => void
   onDecline: () => void
   onCancel: () => void
+  /** Builder: per-transfer quote. Upload: size-band catalogue (no client price). */
+  pricing?: 'per-transfer' | 'size-band'
+  transfers?: number
+  rateEach?: number
+  precutTotal?: number
+  sheetSizeLabel?: string
 }
 
 export function PrecutOfferModal({
   open,
-  transfers,
-  rateEach,
-  precutTotal,
   sheetPrice,
   busy = false,
   onAccept,
   onDecline,
   onCancel,
+  pricing = 'per-transfer',
+  transfers = 0,
+  rateEach = 0,
+  precutTotal = 0,
+  sheetSizeLabel,
 }: PrecutOfferModalProps) {
   const titleId = useId()
   const dialogRef = useRef<HTMLElement>(null)
@@ -79,9 +84,16 @@ export function PrecutOfferModal({
 
   if (!open) return null
 
-  const rateLabel = rateEach.toFixed(2)
-  const totalLabel = precutTotal.toFixed(2)
   const sheetLabel = sheetPrice.toFixed(2)
+  const sizeBand = pricing === 'size-band'
+  const totalLabel = precutTotal.toFixed(2)
+  const acceptLabel = sizeBand
+    ? busy
+      ? 'Adding pre-cut…'
+      : `Add pre-cut — ${sheetSizeLabel || 'this size'}`
+    : busy
+      ? 'Adding pre-cut…'
+      : `Add pre-cut — $${totalLabel}`
 
   return (
     <div
@@ -120,29 +132,29 @@ export function PrecutOfferModal({
         </div>
 
         <div className="precut-offer-math">
-          <p>
-            {transfers} transfer{transfers === 1 ? '' : 's'} × ${rateLabel} each
-          </p>
-          <strong>Add pre-cut for ${totalLabel}</strong>
-          <span>Your gang sheet price stays the same — ${sheetLabel}.</span>
+          {sizeBand ? (
+            <>
+              <p>Pre-cut for your <strong>{sheetSizeLabel || 'sheet'}</strong> — same size band as the gang sheet.</p>
+              <strong>Add pre-cut at the matching size price in cart</strong>
+              <span>Your gang sheet price stays the same — ${sheetLabel}.</span>
+            </>
+          ) : (
+            <>
+              <p>
+                {transfers} transfer{transfers === 1 ? '' : 's'} × ${rateEach.toFixed(2)} each
+              </p>
+              <strong>Add pre-cut for ${totalLabel}</strong>
+              <span>Your gang sheet price stays the same — ${sheetLabel}.</span>
+            </>
+          )}
         </div>
 
         <div className="precut-offer-actions">
-          <button
-            type="button"
-            className="precut-offer-accept"
-            disabled={busy}
-            onClick={onAccept}
-          >
+          <button type="button" className="precut-offer-accept" disabled={busy} onClick={onAccept}>
             <Scissors size={18} />
-            {busy ? 'Adding pre-cut…' : `Add pre-cut — $${totalLabel}`}
+            {acceptLabel}
           </button>
-          <button
-            type="button"
-            className="precut-offer-decline"
-            disabled={busy}
-            onClick={onDecline}
-          >
+          <button type="button" className="precut-offer-decline" disabled={busy} onClick={onDecline}>
             No thanks, continue
           </button>
         </div>

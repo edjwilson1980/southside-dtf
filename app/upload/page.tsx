@@ -4,10 +4,10 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Check, Scissors, Upload } from 'lucide-react'
 import { PrecutOfferModal } from '@/components/precut-offer-modal'
-import { detectTransfersFromFile, type TransferDetection } from '@/lib/detect-transfers'
+import { assessUploadCutEligibility, type CutEligibility } from '@/lib/detect-transfers'
 import { isEmbedSearchParam } from '@/lib/embed'
 import { formatInches, measureUploadFile, type MeasuredFile } from '@/lib/measure-file'
-import { cuttingFeeEach, getGangSheet, SAFETY_WIDTH_IN } from '@/lib/sheet-pricing'
+import { getGangSheet, SAFETY_WIDTH_IN } from '@/lib/sheet-pricing'
 import { evaluateScaledSheet, scaleToSafetyWidth, softDpiWarning, type ScaledSheet } from '@/lib/upload-scale'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
@@ -18,6 +18,7 @@ const logoUrl =
 const MAX_UPLOAD_BYTES = 40 * 1024 * 1024
 
 type Step = 1 | 2 | 3 | 4 | 5
+type DpiSource = 'file' | 'assumed' | 'customer'
 
 function UploadFlow() {
   const searchParams = useSearchParams()
@@ -38,12 +39,10 @@ function UploadFlow() {
   const [overrideWidth, setOverrideWidth] = useState('')
   const [overrideHeight, setOverrideHeight] = useState('')
   const [overrideDpi, setOverrideDpi] = useState('')
+  const [dpiSource, setDpiSource] = useState<DpiSource>('assumed')
   const [cutOut, setCutOut] = useState(false)
-  const [detection, setDetection] = useState<TransferDetection | null>(null)
+  const [eligibility, setEligibility] = useState<CutEligibility | null>(null)
   const [detecting, setDetecting] = useState(false)
-  const [manualTransfers, setManualTransfers] = useState('')
-  const [transferSource, setTransferSource] = useState<'auto' | 'manual'>('auto')
-  const [disagree, setDisagree] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [precutOfferOpen, setPrecutOfferOpen] = useState(false)
@@ -60,7 +59,7 @@ function UploadFlow() {
     const observer = new ResizeObserver(() => post())
     observer.observe(root)
     return () => observer.disconnect()
-  }, [embed, reportHeight, step, measured, detection, cutOut, saveError, cartStatus, built])
+  }, [embed, reportHeight, step, measured, eligibility, cutOut, saveError, cartStatus, built])
 
   useEffect(() => {
     return () => {
@@ -72,16 +71,9 @@ function UploadFlow() {
     if (!measured) return null
     if (!overrideMode) return measured
     const dpi = Number(overrideDpi) || measured.dpiX
-    const widthIn = Number(overrideWidth) || (measured.pixelWidth / Math.max(1, dpi))
-    const heightIn = Number(overrideHeight) || (measured.pixelHeight / Math.max(1, dpi))
-    return {
-      ...measured,
-      dpiX: dpi,
-      dpiY: dpi,
-      dpiAssumed: false,
-      widthIn,
-      heightIn,
-    }
+    const widthIn = Number(overrideWidth) || measured.pixelWidth / Math.max(1, dpi)
+    const heightIn = Number(overrideHeight) || measured.pixelHeight / Math.max(1, dpi)
+    return { ...measured, dpiX: dpi, dpiY: dpi, dpiAssumed: false, widthIn, heightIn }
   }, [measured, overrideMode, overrideWidth, overrideHeight, overrideDpi])
 
   const scaled: ScaledSheet | null = useMemo(() => {
@@ -97,25 +89,14 @@ function UploadFlow() {
   const scaleGate = scaled ? evaluateScaledSheet(scaled) : null
   const dpiSoft = scaled ? softDpiWarning(scaled) : null
   const sheet = scaled ? getGangSheet(scaled.scaledHeightIn) : null
-  const transferCount = disagree
-    ? Math.max(0, Math.floor(Number(manualTransfers) || 0))
-    : detection && detection.ok
-      ? detection.count
-      : 0
-  const cutRate = cuttingFeeEach(transferCount)
-  const offeredCutFee = transferCount > 0 ? cutRate * transferCount : 0
-  const precutAllowed = Boolean(detection && detection.ok && detection.precutAvailable && transferCount > 0)
-  const cutFee = cutOut && precutAllowed ? offeredCutFee : 0
-  const total = ((sheet?.price ?? 0) + cutFee).toFixed(2)
+  const cutEligible = Boolean(eligibility && eligibility.ok && eligibility.cutEligible)
+  const total = (sheet?.price ?? 0).toFixed(2)
 
   async function onPickFile(list: FileList | null) {
     const next = list?.[0]
     if (!next) return
     setMeasureError(null)
-    setDetection(null)
-    setDisagree(false)
-    setManualTransfers('')
-    setTransferSource('auto')
+    setEligibility(null)
     setSizeConfirmed(false)
     setOverrideMode(false)
     setCutOut(false)
@@ -133,7 +114,7 @@ function UploadFlow() {
       const info = await measureUploadFile(next)
       if (info.kind === 'jpeg') {
         setMeasureError(
-          'This looks like a JPEG. JPEGs have no transparency — DTF would print a white rectangle. Export a transparent PNG or TIFF (PDF is OK for size, but pre-cut needs PNG/TIFF).',
+          'This file has a solid background. DTF prints white ink, so a white background prints as a white rectangle. Export a transparent PNG or TIFF.',
         )
         return
       }
@@ -143,6 +124,7 @@ function UploadFlow() {
         return URL.createObjectURL(next)
       })
       setMeasured(info)
+      setDpiSource(info.dpiAssumed ? 'assumed' : 'file')
       setOverrideWidth(formatInches(info.widthIn))
       setOverrideHeight(formatInches(info.heightIn))
       setOverrideDpi(String(Math.round(info.dpiX)))
@@ -157,38 +139,38 @@ function UploadFlow() {
   async function confirmSize() {
     if (!file || !scaled || !scaleGate?.ok) return
     setSizeConfirmed(true)
+    setDpiSource(overrideMode ? 'customer' : measured?.dpiAssumed ? 'assumed' : 'file')
     setStep(4)
     setDetecting(true)
-    setDetection(null)
+    setEligibility(null)
     try {
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        setDetection({
+        setEligibility({
           ok: false,
+          cutEligible: false,
+          detectedCount: 0,
           reason:
-            'Pre-cut detection needs a transparent PNG or TIFF so we can see each transfer. You can still order this PDF without cutting.',
+            'Pre-cut needs a transparent PNG or TIFF so we can check spacing. You can still order this PDF without cutting.',
         })
+        setCutOut(false)
       } else {
-        const result = await detectTransfersFromFile({
+        const result = await assessUploadCutEligibility({
           file,
           sheetWidthIn: scaled.scaledWidthIn,
           sheetHeightIn: scaled.scaledHeightIn,
         })
-        setDetection(result)
-        if (result.ok && !result.precutAvailable) setCutOut(false)
+        setEligibility(result)
+        if (!result.cutEligible) setCutOut(false)
       }
     } finally {
       setDetecting(false)
     }
   }
 
-  function goReview() {
-    setStep(5)
-  }
-
   async function addUploadedToCart(withCut: boolean) {
     if (!file || !scaled || !sheet || !customerName.trim() || saving || cartStatus === 'sending') return
     if (!scaleGate?.ok) return
-    const useCut = withCut && precutAllowed && transferCount > 0
+    const useCut = withCut && cutEligible
     setSaving(true)
     setSaveError(null)
     setDriveFolderUrl(null)
@@ -216,18 +198,20 @@ function UploadFlow() {
         billableHeightIn: scaled.scaledHeightIn,
         quantity: 1,
         designs: 1,
-        transfers: transferCount,
+        transfers: eligibility?.detectedCount ?? 0,
         precut: useCut,
-        precutTotal: useCut ? offeredCutFee : 0,
+        precutTotal: 0,
         fileName: `${safeName}-gangsheet-upload${ext}`,
         fileUrl: driveLink,
         sheetIndex: '1 of 1',
         sheetType: 'uploaded',
-        transferSource: disagree ? 'manual' : 'auto',
         sourceWidthIn: scaled.sourceWidthIn,
         sourceHeightIn: scaled.sourceHeightIn,
         scaleFactor: scaled.scaleFactor,
         effectiveDpi: scaled.effectiveDpi,
+        dpiSource,
+        detectedCount: eligibility?.detectedCount ?? 0,
+        cutEligible,
       }
       const result = await addToCart(file, payload)
       if (!result.ok) throw new Error(result.error)
@@ -243,11 +227,11 @@ function UploadFlow() {
 
   function requestAddToCart() {
     if (!customerName.trim() || !file || !sheet || saving || cartStatus === 'sending') return
-    if (!cutOut && precutAllowed && offeredCutFee > 0 && !precutDeclined) {
+    if (!cutOut && cutEligible && !precutDeclined) {
       setPrecutOfferOpen(true)
       return
     }
-    void addUploadedToCart(cutOut && precutAllowed)
+    void addUploadedToCart(cutOut && cutEligible)
   }
 
   return (
@@ -313,12 +297,7 @@ function UploadFlow() {
                   autoComplete="name"
                 />
               </label>
-              <button
-                type="button"
-                className="build-button"
-                disabled={!customerName.trim()}
-                onClick={() => setStep(2)}
-              >
+              <button type="button" className="build-button" disabled={!customerName.trim()} onClick={() => setStep(2)}>
                 Continue
               </button>
             </div>
@@ -394,12 +373,7 @@ function UploadFlow() {
 
               {!overrideMode ? (
                 <div className="upload-size-actions">
-                  <button
-                    type="button"
-                    className="build-button"
-                    disabled={!scaleGate?.ok}
-                    onClick={() => void confirmSize()}
-                  >
+                  <button type="button" className="build-button" disabled={!scaleGate?.ok} onClick={() => void confirmSize()}>
                     <Check size={18} /> That&apos;s right
                   </button>
                   <button type="button" className="confirm-button" onClick={() => setOverrideMode(true)}>
@@ -420,12 +394,7 @@ function UploadFlow() {
                     DPI
                     <input value={overrideDpi} onChange={(e) => setOverrideDpi(e.target.value)} />
                   </label>
-                  <button
-                    type="button"
-                    className="build-button"
-                    disabled={!scaleGate?.ok}
-                    onClick={() => void confirmSize()}
-                  >
+                  <button type="button" className="build-button" disabled={!scaleGate?.ok} onClick={() => void confirmSize()}>
                     Use this size
                   </button>
                 </div>
@@ -442,63 +411,31 @@ function UploadFlow() {
                 <span className="guide-num">4</span>
                 <div>
                   <h2>Cut my gang sheet?</h2>
-                  <p>We look for separate transfers on transparency. Spacing must clear the blade.</p>
+                  <p>Yes or no — we only offer cutting when this file can be cut cleanly.</p>
                 </div>
               </div>
-              {detecting && <p className="sublead">Checking transfers…</p>}
-              {!detecting && detection && !detection.ok && (
-                <p className="upload-warn">{detection.reason}</p>
+              {detecting && <p className="sublead">Checking whether this file can be cut…</p>}
+              {!detecting && eligibility && !eligibility.cutEligible && (
+                <p className="upload-warn">{eligibility.reason}</p>
               )}
-              {!detecting && detection && detection.ok && (
-                <>
-                  <p>
-                    We found <strong>{detection.count} transfers</strong>
-                    {detection.precutAvailable
-                      ? '.'
-                      : ` — but pre-cut is not available. ${detection.precutBlockedReason}`}
-                  </p>
-                  {detection.previewUrl && (
-                    <img className="upload-file-preview" src={detection.previewUrl} alt="Detected transfer outlines" />
-                  )}
-                  {detection.precutAvailable && (
-                    <button
-                      type="button"
-                      className={`precut-button ${cutOut ? 'selected' : ''}`}
-                      aria-pressed={cutOut}
-                      onClick={() => setCutOut((v) => !v)}
-                    >
-                      <span className="precut-button-title">
-                        <Scissors size={18} />
-                        Pre-cut DTFs
-                        {cutOut ? <em>On</em> : null}
-                      </span>
-                      <small>
-                        {transferCount} × ${cutRate.toFixed(2)} = ${offeredCutFee.toFixed(2)}
-                      </small>
-                    </button>
-                  )}
-                  <button type="button" className="compare-link" onClick={() => setDisagree((v) => !v)}>
-                    That doesn&apos;t look right
-                  </button>
-                  {disagree && (
-                    <label className="customer-name-field">
-                      How many transfers should we cut?
-                      <input
-                        type="number"
-                        min={1}
-                        step={1}
-                        value={manualTransfers}
-                        onChange={(e) => {
-                          setManualTransfers(e.target.value)
-                          setTransferSource('manual')
-                        }}
-                      />
-                      <small>We will flag this order for shop review.</small>
-                    </label>
-                  )}
-                </>
+              {!detecting && cutEligible && sheet && (
+                <button
+                  type="button"
+                  className={`precut-button ${cutOut ? 'selected' : ''}`}
+                  aria-pressed={cutOut}
+                  onClick={() => setCutOut((v) => !v)}
+                >
+                  <span className="precut-button-title">
+                    <Scissors size={18} />
+                    Pre-cut DTFs
+                    {cutOut ? <em>On</em> : null}
+                  </span>
+                  <small>
+                    Cut this {sheet.label} sheet for you. Priced in cart at the matching size — not by transfer count.
+                  </small>
+                </button>
               )}
-              <button type="button" className="build-button" onClick={goReview} disabled={detecting}>
+              <button type="button" className="build-button" onClick={() => setStep(5)} disabled={detecting}>
                 Continue to review
               </button>
             </div>
@@ -524,22 +461,16 @@ function UploadFlow() {
                   </strong>{' '}
                   ({sheet.label})
                 </p>
-                <p>Effective DPI: {Math.round(scaled.effectiveDpi)}</p>
                 <p>
-                  Transfers: {transferCount || '—'} ({disagree ? 'manual' : 'auto'})
-                  {cutOut && precutAllowed ? ` · Pre-cut $${cutFee.toFixed(2)}` : ' · No pre-cut'}
+                  Effective DPI: {Math.round(scaled.effectiveDpi)} ({dpiSource})
                 </p>
+                <p>{cutOut && cutEligible ? 'Pre-cut: yes (same size in cart)' : 'Pre-cut: no'}</p>
                 <p className="upload-total">
-                  Estimated total: <strong>${total}</strong>
+                  Gang sheet: <strong>${total}</strong>
+                  {cutOut && cutEligible ? ' + pre-cut size price in cart' : ''}
                 </p>
               </div>
-              {(fileUrl || (detection && detection.ok && detection.previewUrl)) && (
-                <img
-                  className="upload-file-preview"
-                  src={(detection && detection.ok && detection.previewUrl) || fileUrl || ''}
-                  alt="Sheet preview"
-                />
-              )}
+              {fileUrl && <img className="upload-file-preview" src={fileUrl} alt="Sheet preview" />}
               {!built ? (
                 <button
                   type="button"
@@ -584,7 +515,7 @@ function UploadFlow() {
               <strong className="green-text">{sheet?.label ?? '—'}</strong>
             </div>
             <div className="metric">
-              <span>Estimated price</span>
+              <span>Sheet price</span>
               <strong className="green-text">${sheet ? total : '—'}</strong>
             </div>
           </div>
@@ -594,13 +525,12 @@ function UploadFlow() {
                 Source {formatInches(scaled.sourceWidthIn)}×{formatInches(scaled.sourceHeightIn)} in → print{' '}
                 {formatInches(scaled.scaledWidthIn)}×{formatInches(scaled.scaledHeightIn)} in
               </span>
-              {cutOut && precutAllowed && <span>Pre-cut: ${cutFee.toFixed(2)}</span>}
+              {cutOut && cutEligible && <span>Pre-cut: matching size in cart</span>}
             </div>
           )}
-          {sizeConfirmed && detection && detection.ok && (
+          {sizeConfirmed && eligibility && !eligibility.cutEligible && (
             <p className="sublead" style={{ marginTop: 12 }}>
-              Detected {detection.count} transfers
-              {!detection.precutAvailable ? ' (pre-cut unavailable)' : ''}
+              Pre-cut not available for this file
             </p>
           )}
         </aside>
@@ -608,9 +538,8 @@ function UploadFlow() {
 
       <PrecutOfferModal
         open={precutOfferOpen}
-        transfers={transferCount}
-        rateEach={cutRate}
-        precutTotal={offeredCutFee}
+        pricing="size-band"
+        sheetSizeLabel={sheet?.label}
         sheetPrice={sheet?.price ?? 0}
         busy={saving || cartStatus === 'sending'}
         onAccept={() => {
