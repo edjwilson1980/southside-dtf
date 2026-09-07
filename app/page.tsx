@@ -718,7 +718,7 @@ function HomeBuilder() {
               <Check size={18} /> {saving ? (cutOut ? 'Saving to Drive…' : 'Building…') : 'Confirm & Build Gang Sheet'}
             </button>
           )}
-          {embedded && previewing && sheetPreviewUrl && (
+          {embed && previewing && sheetPreviewUrl && (
             <button
               type="button"
               className="confirm-button cart-button"
@@ -729,7 +729,7 @@ function HomeBuilder() {
               {cartStatus === 'sending' || saving ? 'Adding to cart…' : 'Add to Cart'}
             </button>
           )}
-          {embedded && cartStatus === 'error' && cartError && (
+          {embed && cartStatus === 'error' && cartError && (
             <p className="save-error">{cartError}</p>
           )}
           {saveError && <p className="save-error">{saveError}</p>}
