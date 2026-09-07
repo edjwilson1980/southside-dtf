@@ -5,9 +5,9 @@ These are **separate products** that share print/packing libraries. Do not mix t
 ## Customer builder (`/`)
 
 - Public gang sheet builder for customers
-- Upload, size charts, pricing estimate, preview, print PNG download
+- Upload, size charts, pricing estimate, preview, and Add to Cart (no customer file download)
 - **Never** links to shop tools, cutter tests, or PLT downloads
-- When **Pre-cut DTFs** is on and they confirm build: creates a customer folder in Google Drive and uploads the print PNG + cutter PLT
+- When **Pre-cut DTFs** is on and they add to cart: creates a customer folder in Google Drive and uploads the print PNG + cutter PLT
   - PLT is uploaded by the server (not a customer browser download)
   - PNG is proxied through our API when small enough; larger PNGs use a Drive session started with the page Origin (required for browser CORS)
 - Drive uses shop Gmail OAuth (personal Gmail has no Shared drives). Staff connect once at `/shop/connect-drive`

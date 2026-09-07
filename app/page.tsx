@@ -143,7 +143,7 @@ const howToSteps = [
   { id: 'step-2', number: 2, title: 'Upload your design', detail: 'Drop or click to add artwork.' },
   { id: 'step-3', number: 3, title: 'What are you printing?', detail: 'Pick the shirt, hoodie, hat, or custom size.' },
   { id: 'step-4', number: 4, title: 'Set sizes and edit', detail: 'Choose the print size, quantity, and fix the art if needed.' },
-  { id: 'step-5', number: 5, title: 'Preview & download', detail: 'Check the layout, then download your print-ready sheet.' },
+  { id: 'step-5', number: 5, title: 'Review & order', detail: 'Check the layout, then add it to your cart.' },
 ]
 
 function GuideHeading({ number, title, hint }: { number: number; title: string; hint: string }) {
@@ -427,43 +427,6 @@ function HomeBuilder() {
     }
   }
 
-  async function buildAndStore() {
-    if (!customerName.trim() || designs.length === 0 || saving || !previewing) return
-    setSaving(true)
-    setSaveError(null)
-    setDriveFolderUrl(null)
-    try {
-      const stamp = jobStamp || sheetStamp()
-      const label = sheetJobName(customerName.trim(), billedLength, stamp)
-      const fileName = sheetFileName(customerName.trim(), billedLength, stamp)
-      const png = await composeCurrentSheet(sheetPxPerIn(14000, 150), label, true)
-      // Customers always get the print PNG locally.
-      downloadBlob(png, fileName)
-
-      // Pre-cut jobs also land in Google Drive for the shop (PNG + PLT).
-      // The PLT is uploaded by our API (not a customer browser download).
-      if (cutOut) {
-        const pltText = cutPlt(sheetLayout.pieces, printHeight)
-        if (!pltText) throw new Error('Could not build the cutter PLT for this sheet.')
-        const cutName = sheetCutFileName(customerName.trim(), billedLength, stamp)
-        const drive = await uploadJobToGoogleDrive({
-          customerName: customerName.trim(),
-          stamp,
-          files: [{ name: fileName, mimeType: 'image/png', blob: png }],
-          cutterFile: { name: cutName, content: pltText, mimeType: 'text/plain' },
-        })
-        setDriveFolderUrl(drive.folderUrl)
-      }
-
-      setBuilt(true)
-      setSheetPreviewOpen(false)
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Could not build the gang sheet.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   async function addSheetToStoreCart() {
     if (!customerName.trim() || designs.length === 0 || saving || cartStatus === 'sending') return
     setSaving(true)
@@ -622,7 +585,7 @@ function HomeBuilder() {
             totalTransfers={totalTransfers}
             saving={saving}
             onClose={() => setSheetPreviewOpen(false)}
-            onConfirm={() => void buildAndStore()}
+            onConfirm={() => void addSheetToStoreCart()}
             cutBoxes={cutBoxes}
             cutMarks={cutMarks}
             printHeightIn={printHeight}
@@ -637,7 +600,7 @@ function HomeBuilder() {
           <span className="guide-num">5</span>
           <div>
             <h2>Your gang sheet</h2>
-            <p className="order-hint">Preview the layout, add pre-cut if you want, then download your print-ready sheet.</p>
+            <p className="order-hint">Preview the layout, add pre-cut if you want, then add it to your cart.</p>
           </div>
         </div>
         <button
@@ -714,11 +677,6 @@ function HomeBuilder() {
             <Eye size={18} /> {previewBusy ? 'Building preview…' : 'Preview Gang Sheet'}
           </button>
           {previewing && sheetPreviewUrl && (
-            <button className="confirm-button" disabled={saving} onClick={() => void buildAndStore()}>
-              <Check size={18} /> {saving ? (cutOut ? 'Saving to Drive…' : 'Building…') : 'Confirm & Build Gang Sheet'}
-            </button>
-          )}
-          {embed && previewing && sheetPreviewUrl && (
             <button
               type="button"
               className="confirm-button cart-button"
@@ -729,15 +687,15 @@ function HomeBuilder() {
               {cartStatus === 'sending' || saving ? 'Adding to cart…' : 'Add to Cart'}
             </button>
           )}
-          {embed && cartStatus === 'error' && cartError && (
+          {cartStatus === 'error' && cartError && (
             <p className="save-error">{cartError}</p>
           )}
           {saveError && <p className="save-error">{saveError}</p>}
         </div>
         {built && (
           <div className="built-card">
-            <div className="built-title"><span><Check size={21} /></span><strong>Your print file is ready.</strong></div>
-            <p>{sheet.label} · {totalTransfers} transfers · Send this file to South Side DTF to print{cutOut ? ' and cut' : ''}.</p>
+            <div className="built-title"><span><Check size={21} /></span><strong>Added to your cart.</strong></div>
+            <p>{sheet.label} · {totalTransfers} transfers · We will print{cutOut ? ' and cut' : ''} your sheet.</p>
             {driveFolderUrl && (
               <a className="drive-link" href={driveFolderUrl} target="_blank" rel="noreferrer">
                 Open your job folder in Google Drive (print PNG + cutter PLT)
@@ -750,21 +708,6 @@ function HomeBuilder() {
     </div>
 
   </main>
-}
-
-function wait(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms))
-}
-
-function downloadBlob(blob: Blob, fileName: string) {
-  const href = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = href
-  link.download = fileName
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(href), 1000)
 }
 
 function Metric({ label, value, icon, green }: { label: string; value: string | number; icon: React.ReactNode; green?: boolean }) { return <div className="metric"><span>{label}</span><strong className={green ? 'green-text' : ''}>{value}</strong><i>{icon}</i></div> }
