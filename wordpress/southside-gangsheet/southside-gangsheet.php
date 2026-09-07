@@ -2,7 +2,7 @@
 /**
  * Plugin Name: South Side Gang Sheet Builder
  * Description: Embed the South Side DTF customer gang sheet builder and add finished sheets to the WooCommerce cart.
- * Version: 1.02
+ * Version: 1.03
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.02');
+define('SSGS_PLUGIN_VERSION', '1.03');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 
 function ssgs_default_options() {
@@ -85,7 +85,7 @@ function ssgs_render_settings_page() {
           <th scope="row"><label for="ssgs_product_id"><?php esc_html_e('WooCommerce product ID', 'southside-gangsheet'); ?></label></th>
           <td>
             <input name="ssgs_options[product_id]" id="ssgs_product_id" type="number" min="0" step="1" value="<?php echo esc_attr($opts['product_id']); ?>" />
-            <p class="description"><?php esc_html_e('The “Build A Gangsheet” variable product. Leave 0 to auto-detect slug build-a-gangsheet. Sheet height picks the matching variation.', 'southside-gangsheet'); ?></p>
+            <p class="description"><?php esc_html_e('Custom Gang Sheet (Builder) product ID (4365). Leave 0 to auto-detect slug custom-gang-sheet-builder. Sheet height picks the smallest fitting variation.', 'southside-gangsheet'); ?></p>
           </td>
         </tr>
         <tr>
@@ -177,42 +177,64 @@ add_action('wp_enqueue_scripts', function () {
 });
 
 /**
- * Match a variation by sheet height (inches). Prefers attribute values that contain the height.
+ * Smallest variation whose roll length fits the sheet (>= target).
+ * Falls back to the largest only when the sheet exceeds every size.
  */
 function ssgs_find_variation_id($product, $sheet_height_in) {
   if (!$product || !$product->is_type('variable')) {
     return 0;
   }
-  $target = intval(round(floatval($sheet_height_in)));
-  $best_id = 0;
-  $best_delta = PHP_INT_MAX;
 
+  $target = floatval($sheet_height_in);
+  if ($target <= 0) {
+    return 0;
+  }
+
+  $sizes = array();
   foreach ($product->get_children() as $variation_id) {
     $variation = wc_get_product($variation_id);
-    if (!$variation || !$variation->exists()) {
+    if (!$variation || !$variation->exists() || !$variation->is_purchasable()) {
       continue;
     }
+
     $label = implode(' ', $variation->get_attributes());
-    if (preg_match('/(\\d+)\\s*(?:in|")?/i', $label, $match)) {
-      // Prefer the length number when label looks like "22in x 12in"
-      if (preg_match('/x\\s*(\\d+)/i', $label, $length_match)) {
-        $height = intval($length_match[1]);
-      } else {
-        $height = intval($match[1]);
-      }
-      $delta = abs($height - $target);
-      if ($delta < $best_delta) {
-        $best_delta = $delta;
-        $best_id = $variation_id;
-      }
+
+    // "22in x 36in" -> 36 (the second number is the roll length, not the 22in width).
+    if (preg_match('/x\s*([0-9]+(?:\.[0-9]+)?)/i', $label, $match)) {
+      $length = floatval($match[1]);
+    } elseif (preg_match('/([0-9]+(?:\.[0-9]+)?)/', $label, $match)) {
+      $length = floatval($match[1]);
+    } else {
+      continue;
+    }
+
+    if ($length <= 0) {
+      continue;
+    }
+
+    $sizes[] = array('id' => intval($variation_id), 'length' => $length);
+  }
+
+  if (empty($sizes)) {
+    return 0;
+  }
+
+  usort($sizes, function ($a, $b) {
+    return $a['length'] <=> $b['length'];
+  });
+
+  foreach ($sizes as $size) {
+    if ($size['length'] + 0.01 >= $target) {
+      return $size['id'];
     }
   }
 
-  return $best_id;
+  $largest = end($sizes);
+  return $largest['id'];
 }
 
 /**
- * Resolve the Build A Gangsheet product from settings or common slugs.
+ * Resolve the Custom Gang Sheet (Builder) product from settings or its slug.
  */
 function ssgs_resolve_product_id() {
   $opts = ssgs_get_options();
@@ -220,7 +242,7 @@ function ssgs_resolve_product_id() {
   if ($product_id > 0) {
     return $product_id;
   }
-  foreach (array('build-a-gangsheet', 'build-a-gang-sheet', 'upload-gangsheet') as $slug) {
+  foreach (array('custom-gang-sheet-builder') as $slug) {
     $post = get_page_by_path($slug, OBJECT, 'product');
     if ($post && !empty($post->ID)) {
       return intval($post->ID);
@@ -272,6 +294,10 @@ function ssgs_handle_add_to_cart() {
     wp_send_json_error(array('message' => 'Gang sheet product not found.'), 404);
   }
 
+  if (floatval($payload['sheetHeightIn'] ?? 0) <= 0) {
+    wp_send_json_error(array('message' => 'The builder did not send a sheet length.'), 400);
+  }
+
   $variation_id = 0;
   $variation = array();
   if ($product->is_type('variable')) {
@@ -279,8 +305,7 @@ function ssgs_handle_add_to_cart() {
     if ($variation_id <= 0) {
       wp_send_json_error(array('message' => 'No matching sheet length variation for this gang sheet.'), 400);
     }
-    $variation_product = wc_get_product($variation_id);
-    $variation = $variation_product ? $variation_product->get_attributes() : array();
+    $variation = wc_get_product_variation_attributes($variation_id);
   }
 
   $quantity = max(1, intval($payload['quantity'] ?? 1));
@@ -301,16 +326,6 @@ function ssgs_handle_add_to_cart() {
     wp_send_json_error(array('message' => 'WooCommerce could not add this sheet to the cart.'), 500);
   }
 
-  // Optional pre-cut fee as a fee line
-  $precut_total = floatval($payload['precutTotal'] ?? 0);
-  if (!empty($payload['precut']) && $precut_total > 0) {
-    WC()->cart->add_fee(
-      sprintf(__('Pre-cut DTFs (%s)', 'southside-gangsheet'), sanitize_text_field($payload['customerName'] ?? '')),
-      $precut_total,
-      true
-    );
-  }
-
   wp_send_json_success(array(
     'cartUrl' => wc_get_cart_url(),
     'fileUrl' => $upload['url'],
@@ -319,6 +334,31 @@ function ssgs_handle_add_to_cart() {
 
 add_action('wp_ajax_ssgs_add_to_cart', 'ssgs_handle_add_to_cart');
 add_action('wp_ajax_nopriv_ssgs_add_to_cart', 'ssgs_handle_add_to_cart');
+
+add_action('woocommerce_cart_calculate_fees', function ($cart) {
+  if (is_admin() && !defined('DOING_AJAX')) {
+    return;
+  }
+  if (!$cart instanceof WC_Cart) {
+    return;
+  }
+
+  $total = 0.0;
+  foreach ($cart->get_cart() as $cart_item) {
+    if (empty($cart_item['ssgs_precut']) || $cart_item['ssgs_precut'] !== 'yes') {
+      continue;
+    }
+    $amount = floatval(isset($cart_item['ssgs_precut_total']) ? $cart_item['ssgs_precut_total'] : 0);
+    if ($amount <= 0) {
+      continue;
+    }
+    $total += $amount * max(1, intval($cart_item['quantity']));
+  }
+
+  if ($total > 0) {
+    $cart->add_fee(__('Pre-cut transfers', 'southside-gangsheet'), round($total, 2), true);
+  }
+}, 10, 1);
 
 add_filter('woocommerce_get_item_data', function ($item_data, $cart_item) {
   $map = array(
