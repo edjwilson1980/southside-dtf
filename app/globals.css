@@ -261,6 +261,58 @@ button.thumb:disabled { cursor: default; }
 .precut-button-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 800; }
 .precut-button-title em { padding: 2px 7px; border-radius: 999px; background: #087c40; color: #fff; font-size: 11px; font-style: normal; font-weight: 800; }
 .precut-button small { color: var(--muted); font-size: 12px; font-weight: 600; line-height: 1.35; }
+.precut-offer-dialog { width: min(440px, 100%); }
+.precut-offer-math {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 18px;
+  padding: 14px 16px;
+  border: 1px solid #d7e3ea;
+  border-radius: 10px;
+  background: #f7fbfd;
+}
+.precut-offer-math p { margin: 0; color: var(--muted); font-size: 14px; font-weight: 600; }
+.precut-offer-math strong { font-size: 20px; letter-spacing: -.02em; }
+.precut-offer-math span { color: #087c40; font-size: 13px; font-weight: 700; }
+.precut-offer-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.precut-offer-accept,
+.precut-offer-decline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.precut-offer-accept {
+  border: 0;
+  background: #087c40;
+  color: #fff;
+}
+.precut-offer-accept:hover:not(:disabled) { background: #066b37; }
+.precut-offer-decline {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--ink);
+}
+.precut-offer-decline:hover:not(:disabled) { border-color: var(--chicago-blue); background: var(--pale-blue); }
+.precut-offer-accept:disabled,
+.precut-offer-decline:disabled { cursor: not-allowed; opacity: .6; }
+@media (min-width: 701px) {
+  .precut-offer-actions { grid-template-columns: 1fr 1fr; }
+  .precut-offer-accept { order: 0; }
+  .precut-offer-decline { order: 0; }
+}
 .precut-rates { margin: -6px 0 14px; overflow: hidden; border: 1px solid #d7e3ea; border-radius: 10px; background: #fff; }
 .precut-rates table { width: 100%; border-collapse: collapse; }
 .precut-rates th, .precut-rates td { padding: 7px 12px; font-size: 12px; font-weight: 700; text-align: left; }

@@ -7,6 +7,7 @@ import {
   Minus, Plus, Ruler, Scissors, Shirt, Sparkles, Trash2, Upload,
 } from 'lucide-react'
 import { DesignInspector } from '@/components/design-inspector'
+import { PrecutOfferModal } from '@/components/precut-offer-modal'
 import { SheetPreviewModal } from '@/components/sheet-preview-modal'
 import { composeGangSheet, packSheetBestGutter, pieceHeightInches, ART_INSET_IN, CUT_ART_START_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
@@ -198,7 +199,11 @@ function HomeBuilder() {
   const [jobStamp, setJobStamp] = useState('')
   const [cutOut, setCutOut] = useState(false)
   const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null)
+  const [precutOfferOpen, setPrecutOfferOpen] = useState(false)
+  const [precutOfferDeclinedFor, setPrecutOfferDeclinedFor] = useState<string | null>(null)
+  const [pendingCartAfterCut, setPendingCartAfterCut] = useState(false)
   const previewGen = useRef(0)
+  const precutCartKickoff = useRef(false)
 
   useEffect(() => {
     if (!embed) return
@@ -325,6 +330,11 @@ function HomeBuilder() {
     design.customWidth, design.customHeight, design.previewUrl,
     design.pixelWidth, design.pixelHeight,
   ].join(':')).join('|') + `|cut:${cutOut ? '1' : '0'}`
+  const designFingerprint = designs.map((design) => [
+    design.id, design.quantity, design.size, design.placement,
+    design.customWidth, design.customHeight, design.previewUrl,
+    design.pixelWidth, design.pixelHeight,
+  ].join(':')).join('|')
   const sheet = getGangSheet(billableHeightIn)
   const chargeableArtIn = Math.max(0, billableHeightIn - 1.5)
   const lengthLeftIn = Math.max(0, billedLength - chargeableArtIn)
@@ -338,7 +348,8 @@ function HomeBuilder() {
   const sheetCount = Math.max(1, Math.ceil(billedLength / 200))
   const sheetName = customerName.trim() || 'Gang Sheet'
   const cutRate = cuttingFeeEach(totalTransfers)
-  const cutFee = cutOut && totalTransfers > 0 ? cutRate * totalTransfers : 0
+  const offeredCutFee = totalTransfers > 0 ? cutRate * totalTransfers : 0
+  const cutFee = cutOut && totalTransfers > 0 ? offeredCutFee : 0
   const subtotal = sheet.price + cutFee
   const total = subtotal.toFixed(2)
   const currentGuideStep = !customerName.trim() ? 1 : designs.length === 0 ? 2 : !previewing && !built ? 4 : 5
@@ -504,12 +515,54 @@ function HomeBuilder() {
 
       setBuilt(true)
       setSheetPreviewOpen(false)
+      setPrecutOfferOpen(false)
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not add this sheet to the cart.')
+      setPendingCartAfterCut(false)
+      setPrecutOfferOpen(false)
     } finally {
       setSaving(false)
     }
   }
+
+  function requestAddToCart() {
+    if (!customerName.trim() || designs.length === 0 || saving || cartStatus === 'sending' || pendingCartAfterCut) return
+    if (!cutOut && offeredCutFee > 0 && precutOfferDeclinedFor !== designFingerprint) {
+      setPrecutOfferOpen(true)
+      return
+    }
+    void addSheetToStoreCart()
+  }
+
+  function acceptPrecutOffer() {
+    if (saving || cartStatus === 'sending' || pendingCartAfterCut) return
+    setCutOut(true)
+    setPendingCartAfterCut(true)
+  }
+
+  function declinePrecutOffer() {
+    if (saving || cartStatus === 'sending' || pendingCartAfterCut) return
+    setPrecutOfferDeclinedFor(designFingerprint)
+    setPrecutOfferOpen(false)
+    void addSheetToStoreCart()
+  }
+
+  function cancelPrecutOffer() {
+    if (saving || cartStatus === 'sending' || pendingCartAfterCut) return
+    setPrecutOfferOpen(false)
+  }
+
+  useEffect(() => {
+    if (!pendingCartAfterCut || !cutOut || saving || cartStatus === 'sending') return
+    if (precutCartKickoff.current) return
+    precutCartKickoff.current = true
+    setPendingCartAfterCut(false)
+    void addSheetToStoreCart().finally(() => {
+      precutCartKickoff.current = false
+    })
+    // Wait for cutOut layout (layoutKey) before composing the print file.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCartAfterCut, cutOut, layoutKey])
 
   return <main ref={shellRef} className={`builder-shell${embed ? ' embed-mode' : ''}`}>
     {embed ? (
@@ -615,7 +668,7 @@ function HomeBuilder() {
             totalTransfers={totalTransfers}
             saving={saving}
             onClose={() => setSheetPreviewOpen(false)}
-            onConfirm={() => void addSheetToStoreCart()}
+            onConfirm={() => requestAddToCart()}
             cutBoxes={cutBoxes}
             cutMarks={cutMarks}
             printHeightIn={printHeight}
@@ -623,6 +676,17 @@ function HomeBuilder() {
             audience="customer"
           />
         )}
+        <PrecutOfferModal
+          open={precutOfferOpen}
+          transfers={totalTransfers}
+          rateEach={cutRate}
+          precutTotal={offeredCutFee}
+          sheetPrice={sheet.price}
+          busy={saving || cartStatus === 'sending' || pendingCartAfterCut}
+          onAccept={acceptPrecutOffer}
+          onDecline={declinePrecutOffer}
+          onCancel={cancelPrecutOffer}
+        />
       </section>
 
       <aside className="order-panel panel">
@@ -718,11 +782,11 @@ function HomeBuilder() {
             <button
               type="button"
               className="confirm-button cart-button"
-              disabled={saving || cartStatus === 'sending' || designs.length === 0 || !customerName.trim()}
-              onClick={() => void addSheetToStoreCart()}
+              disabled={saving || cartStatus === 'sending' || designs.length === 0 || !customerName.trim() || pendingCartAfterCut}
+              onClick={() => requestAddToCart()}
             >
               <Check size={18} />
-              {cartStatus === 'sending' || saving ? 'Adding to cart…' : 'Add to Cart'}
+              {cartStatus === 'sending' || saving || pendingCartAfterCut ? 'Adding to cart…' : 'Add to Cart'}
             </button>
           )}
           {cartStatus === 'error' && cartError && (
