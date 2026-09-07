@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.1.0');
+define('SSGS_PLUGIN_VERSION', '1.1.1');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 
 function ssgs_default_options() {
@@ -85,7 +85,7 @@ function ssgs_render_settings_page() {
           <th scope="row"><label for="ssgs_product_id"><?php esc_html_e('WooCommerce product ID', 'southside-gangsheet'); ?></label></th>
           <td>
             <input name="ssgs_options[product_id]" id="ssgs_product_id" type="number" min="0" step="1" value="<?php echo esc_attr($opts['product_id']); ?>" />
-            <p class="description"><?php esc_html_e('The “Build A Gangsheet” variable product. Sheet height picks the matching variation.', 'southside-gangsheet'); ?></p>
+            <p class="description"><?php esc_html_e('The “Build A Gangsheet” variable product. Leave 0 to auto-detect slug build-a-gangsheet. Sheet height picks the matching variation.', 'southside-gangsheet'); ?></p>
           </td>
         </tr>
         <tr>
@@ -211,6 +211,24 @@ function ssgs_find_variation_id($product, $sheet_height_in) {
   return $best_id;
 }
 
+/**
+ * Resolve the Build A Gangsheet product from settings or common slugs.
+ */
+function ssgs_resolve_product_id() {
+  $opts = ssgs_get_options();
+  $product_id = intval($opts['product_id']);
+  if ($product_id > 0) {
+    return $product_id;
+  }
+  foreach (array('build-a-gangsheet', 'build-a-gang-sheet', 'upload-gangsheet') as $slug) {
+    $post = get_page_by_path($slug, OBJECT, 'product');
+    if ($post && !empty($post->ID)) {
+      return intval($post->ID);
+    }
+  }
+  return 0;
+}
+
 function ssgs_handle_add_to_cart() {
   if (!check_ajax_referer('ssgs_add_to_cart', 'nonce', false)) {
     wp_send_json_error(array('message' => 'Invalid cart request.'), 403);
@@ -218,11 +236,13 @@ function ssgs_handle_add_to_cart() {
   if (!class_exists('WooCommerce')) {
     wp_send_json_error(array('message' => 'WooCommerce is not active.'), 500);
   }
+  if (is_null(WC()->cart)) {
+    wc_load_cart();
+  }
 
-  $opts = ssgs_get_options();
-  $product_id = intval($opts['product_id']);
+  $product_id = ssgs_resolve_product_id();
   if ($product_id <= 0) {
-    wp_send_json_error(array('message' => 'Set the WooCommerce product ID in Gang Sheet Builder settings.'), 400);
+    wp_send_json_error(array('message' => 'Set the WooCommerce product ID in Gang Sheet Builder settings (Build A Gangsheet).'), 400);
   }
 
   $payload_raw = isset($_POST['payload']) ? wp_unslash($_POST['payload']) : '';
