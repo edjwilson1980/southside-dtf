@@ -6,13 +6,13 @@ Embed the customer builder and **Add to Cart** into WooCommerce on southsidedtf.
 
 Use the ready zip in this repo:
 
-- [`wordpress/southside-gangsheet.zip`](./southside-gangsheet.zip)
+- [`wordpress/southside-gangsheet-1.02.zip`](./southside-gangsheet-1.02.zip)
 
 Or zip the `southside-gangsheet/` folder yourself.
 
 ## Install on WordPress
 
-1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet.zip` → Activate
+1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet-1.02.zip` → Activate
 2. **Settings → Gang Sheet Builder**
    - Builder URL: `https://southside-dtf.vercel.app`
    - WooCommerce product ID: your **Build A Gangsheet** product (or leave `0` to auto-find slug `build-a-gangsheet`)
