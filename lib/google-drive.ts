@@ -178,8 +178,8 @@ export async function createResumableUploadSessions(
 
 /**
  * Upload a small text cutter file (PLT) from the server.
- * Browser → Drive PUTs fail CORS unless the resumable session was started with
- * the page Origin; PLT is small enough to upload here reliably every time.
+ * Uses the same resumable PUT path as PNG (googleapis media body streams
+ * are unreliable on this Node/runtime combo — `body.pipe is not a function`).
  */
 export async function uploadCutterFileToFolder(
   folderId: string,
@@ -190,29 +190,41 @@ export async function uploadCutterFileToFolder(
   if (!name.trim()) throw new Error('Cutter file name is required.')
   if (!content) throw new Error('Cutter file content is empty.')
 
-  const auth = await driveAuth()
-  const drive = google.drive({ version: 'v3', auth })
-  const created = await drive.files.create({
-    requestBody: {
-      name,
-      parents: [folderId],
-      mimeType,
-    },
-    media: {
-      mimeType,
-      body: Buffer.from(content, 'utf8'),
-    },
-    fields: 'id, name, webViewLink',
-    supportsAllDrives: true,
-  })
+  const bytes = Buffer.from(content, 'utf8')
+  const [session] = await createResumableUploadSessions(folderId, [
+    { name, mimeType, size: bytes.length },
+  ])
+  if (!session?.uploadUrl) {
+    throw new Error(`Could not start Google Drive upload for ${name}.`)
+  }
 
-  const fileId = created.data.id
+  const putRes = await fetch(session.uploadUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': mimeType,
+      'Content-Length': String(bytes.length),
+    },
+    body: bytes,
+  })
+  const detail = await putRes.text()
+  if (!putRes.ok) {
+    throw new Error(`Could not upload cutter file ${name}: ${detail || putRes.statusText}`)
+  }
+
+  let parsed: { id?: string; name?: string; webViewLink?: string } = {}
+  try {
+    parsed = detail ? JSON.parse(detail) : {}
+  } catch {
+    parsed = {}
+  }
+
+  const fileId = parsed.id
   if (!fileId) throw new Error(`Google Drive did not return an id for ${name}.`)
 
   return {
     id: fileId,
-    name: created.data.name || name,
-    webViewLink: created.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
+    name: parsed.name || name,
+    webViewLink: parsed.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
   }
 }
 
