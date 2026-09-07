@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Check, Copy, HardDrive } from 'lucide-react'
 
-const PARENT_FOLDER_ID = '1knne_BemsOzP77RToOkLsaXk_qpuu_kl'
+const PARENT_FOLDER_ID = '1Ju6W6SSQR8KJXrTfK-bcARJUyCEKpA5E'
 
 export default function ConnectDrivePage() {
   const params = useSearchParams()
