@@ -634,7 +634,7 @@ export default function Home() {
             <p>{sheet.label} · {totalTransfers} transfers · Send this file to South Side DTF to print{cutOut ? ' and cut' : ''}.</p>
             {driveFolderUrl && (
               <a className="drive-link" href={driveFolderUrl} target="_blank" rel="noreferrer">
-                Open your job folder in Google Drive
+                Open your job folder in Google Drive (print PNG + cutter PLT)
               </a>
             )}
             <button onClick={() => { setBuilt(false); setDriveFolderUrl(null) }}>Build another sheet <span>›</span></button>
