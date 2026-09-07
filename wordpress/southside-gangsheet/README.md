@@ -1,28 +1,23 @@
 # South Side Gang Sheet — WordPress plugin
 
-Embed the customer builder (`https://southside-dtf.vercel.app`) on [southsidedtf.com](https://southsidedtf.com) (or any WordPress / WooCommerce site).
+Embed the customer builder and send finished sheets to the WooCommerce cart.
 
 ## Install
 
-1. Zip this folder as `southside-gangsheet.zip` (must contain `southside-gangsheet.php` at the zip root, or zip the folder itself).
-2. In WordPress: **Plugins → Add New → Upload Plugin** → choose the zip → **Activate**.
-3. **Settings → Gang Sheet Builder** — confirm Builder URL is `https://southside-dtf.vercel.app`.
-4. Edit your **Build A Gangsheet** product (or any page) and add a Shortcode block:
+1. Zip this folder and upload via **Plugins → Add New → Upload Plugin** → Activate.
+2. **Settings → Gang Sheet Builder**
+   - Builder URL: `https://southside-dtf.vercel.app`
+   - WooCommerce product ID: your **Build A Gangsheet** variable product ID
+3. Add shortcode on the product/page:
 
 ```
 [southside_gangsheet]
 ```
 
-Optional:
+4. On Vercel, set `NEXT_PUBLIC_STORE_ORIGIN=https://southsidedtf.com` (all environments) and redeploy.
 
-```
-[southside_gangsheet height="2600" title="Build a Gang Sheet"]
-```
+## How cart handoff works
 
-5. Publish and view the page. The builder loads in an iframe (`/embed`). Pre-cut jobs still upload PNG + PLT to Google Drive.
-
-## Notes
-
-- Only embed the **customer** builder. Do not embed `/shop`.
-- The Next.js app allows framing from `southsidedtf.com` and `sspdtf.com` by default. Other domains: set `EMBED_FRAME_ANCESTORS` on Vercel (space-separated list including `'self'`).
-- Customers can use **Open full page** / **Open in a new tab** if the iframe feels tight on mobile.
+1. Customer builds inside the iframe and clicks **Add to Cart** (only shown when embedded).
+2. The builder `postMessage`s the PNG + payload to this plugin (no cross-origin API calls).
+3. The plugin stores the file, picks the sheet-length variation, adds the WooCommerce cart line, then redirects to the cart.

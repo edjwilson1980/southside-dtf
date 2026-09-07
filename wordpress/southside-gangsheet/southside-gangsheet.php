@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: South Side Gang Sheet Builder
- * Description: Embed the South Side DTF customer gang sheet builder on pages or WooCommerce products.
- * Version: 1.0.0
+ * Description: Embed the South Side DTF customer gang sheet builder and add finished sheets to the WooCommerce cart.
+ * Version: 1.1.0
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,17 +14,15 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.0.0');
+define('SSGS_PLUGIN_VERSION', '1.1.0');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 
-/**
- * Settings
- */
 function ssgs_default_options() {
   return array(
     'builder_url' => SSGS_DEFAULT_BUILDER_URL,
     'default_height' => 2400,
     'min_height' => 900,
+    'product_id' => 0,
   );
 }
 
@@ -59,6 +57,7 @@ function ssgs_sanitize_options($input) {
   $out['builder_url'] = untrailingslashit($url ?: SSGS_DEFAULT_BUILDER_URL);
   $out['default_height'] = max(600, intval($input['default_height'] ?? $out['default_height']));
   $out['min_height'] = max(400, intval($input['min_height'] ?? $out['min_height']));
+  $out['product_id'] = max(0, intval($input['product_id'] ?? 0));
   return $out;
 }
 
@@ -72,7 +71,6 @@ function ssgs_render_settings_page() {
     <h1><?php esc_html_e('South Side Gang Sheet Builder', 'southside-gangsheet'); ?></h1>
     <p><?php esc_html_e('Embed the customer builder on any page or WooCommerce product with the shortcode below.', 'southside-gangsheet'); ?></p>
     <p><code>[southside_gangsheet]</code></p>
-    <p><?php esc_html_e('Optional attributes:', 'southside-gangsheet'); ?> <code>height="2400"</code> <code>title="Build a Gang Sheet"</code></p>
     <form method="post" action="options.php">
       <?php settings_fields('ssgs_options_group'); ?>
       <table class="form-table" role="presentation">
@@ -81,6 +79,13 @@ function ssgs_render_settings_page() {
           <td>
             <input name="ssgs_options[builder_url]" id="ssgs_builder_url" type="url" class="regular-text" value="<?php echo esc_attr($opts['builder_url']); ?>" />
             <p class="description"><?php esc_html_e('Usually https://southside-dtf.vercel.app — no trailing slash.', 'southside-gangsheet'); ?></p>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row"><label for="ssgs_product_id"><?php esc_html_e('WooCommerce product ID', 'southside-gangsheet'); ?></label></th>
+          <td>
+            <input name="ssgs_options[product_id]" id="ssgs_product_id" type="number" min="0" step="1" value="<?php echo esc_attr($opts['product_id']); ?>" />
+            <p class="description"><?php esc_html_e('The “Build A Gangsheet” variable product. Sheet height picks the matching variation.', 'southside-gangsheet'); ?></p>
           </td>
         </tr>
         <tr>
@@ -98,20 +103,10 @@ function ssgs_render_settings_page() {
       </table>
       <?php submit_button(); ?>
     </form>
-    <hr />
-    <h2><?php esc_html_e('WooCommerce tip', 'southside-gangsheet'); ?></h2>
-    <ol>
-      <li><?php esc_html_e('Edit your Build A Gangsheet product (or create a page).', 'southside-gangsheet'); ?></li>
-      <li><?php esc_html_e('Add a Shortcode block with [southside_gangsheet].', 'southside-gangsheet'); ?></li>
-      <li><?php esc_html_e('Publish. Customers build inside your site; pre-cut jobs still go to Google Drive.', 'southside-gangsheet'); ?></li>
-    </ol>
   </div>
   <?php
 }
 
-/**
- * Shortcode: [southside_gangsheet height="2400" title="Build a Gang Sheet"]
- */
 add_shortcode('southside_gangsheet', 'ssgs_render_shortcode');
 
 function ssgs_render_shortcode($atts) {
@@ -136,6 +131,9 @@ function ssgs_render_shortcode($atts) {
   );
   wp_localize_script('southside-gangsheet-embed', 'ssgsEmbed', array(
     'minHeight' => intval($opts['min_height']),
+    'builderOrigin' => $base,
+    'ajaxUrl' => admin_url('admin-ajax.php'),
+    'nonce' => wp_create_nonce('ssgs_add_to_cart'),
   ));
 
   ob_start();
@@ -177,3 +175,160 @@ add_action('wp_enqueue_scripts', function () {
     true
   );
 });
+
+/**
+ * Match a variation by sheet height (inches). Prefers attribute values that contain the height.
+ */
+function ssgs_find_variation_id($product, $sheet_height_in) {
+  if (!$product || !$product->is_type('variable')) {
+    return 0;
+  }
+  $target = intval(round(floatval($sheet_height_in)));
+  $best_id = 0;
+  $best_delta = PHP_INT_MAX;
+
+  foreach ($product->get_children() as $variation_id) {
+    $variation = wc_get_product($variation_id);
+    if (!$variation || !$variation->exists()) {
+      continue;
+    }
+    $label = implode(' ', $variation->get_attributes());
+    if (preg_match('/(\\d+)\\s*(?:in|")?/i', $label, $match)) {
+      // Prefer the length number when label looks like "22in x 12in"
+      if (preg_match('/x\\s*(\\d+)/i', $label, $length_match)) {
+        $height = intval($length_match[1]);
+      } else {
+        $height = intval($match[1]);
+      }
+      $delta = abs($height - $target);
+      if ($delta < $best_delta) {
+        $best_delta = $delta;
+        $best_id = $variation_id;
+      }
+    }
+  }
+
+  return $best_id;
+}
+
+function ssgs_handle_add_to_cart() {
+  if (!check_ajax_referer('ssgs_add_to_cart', 'nonce', false)) {
+    wp_send_json_error(array('message' => 'Invalid cart request.'), 403);
+  }
+  if (!class_exists('WooCommerce')) {
+    wp_send_json_error(array('message' => 'WooCommerce is not active.'), 500);
+  }
+
+  $opts = ssgs_get_options();
+  $product_id = intval($opts['product_id']);
+  if ($product_id <= 0) {
+    wp_send_json_error(array('message' => 'Set the WooCommerce product ID in Gang Sheet Builder settings.'), 400);
+  }
+
+  $payload_raw = isset($_POST['payload']) ? wp_unslash($_POST['payload']) : '';
+  $payload = json_decode($payload_raw, true);
+  if (!is_array($payload)) {
+    wp_send_json_error(array('message' => 'Missing gang sheet cart payload.'), 400);
+  }
+
+  $file_base64 = isset($_POST['fileBase64']) ? preg_replace('/\\s+/', '', (string) wp_unslash($_POST['fileBase64'])) : '';
+  $file_name = sanitize_file_name(isset($_POST['fileName']) ? (string) wp_unslash($_POST['fileName']) : 'gangsheet.png');
+  if ($file_base64 === '') {
+    wp_send_json_error(array('message' => 'Missing gang sheet file.'), 400);
+  }
+
+  $binary = base64_decode($file_base64, true);
+  if ($binary === false || strlen($binary) < 32) {
+    wp_send_json_error(array('message' => 'Gang sheet file was unreadable.'), 400);
+  }
+
+  $upload = wp_upload_bits($file_name, null, $binary);
+  if (!empty($upload['error'])) {
+    wp_send_json_error(array('message' => $upload['error']), 500);
+  }
+
+  $product = wc_get_product($product_id);
+  if (!$product) {
+    wp_send_json_error(array('message' => 'Gang sheet product not found.'), 404);
+  }
+
+  $variation_id = 0;
+  $variation = array();
+  if ($product->is_type('variable')) {
+    $variation_id = ssgs_find_variation_id($product, $payload['sheetHeightIn'] ?? 0);
+    if ($variation_id <= 0) {
+      wp_send_json_error(array('message' => 'No matching sheet length variation for this gang sheet.'), 400);
+    }
+    $variation_product = wc_get_product($variation_id);
+    $variation = $variation_product ? $variation_product->get_attributes() : array();
+  }
+
+  $quantity = max(1, intval($payload['quantity'] ?? 1));
+  $cart_item_data = array(
+    'ssgs_customer_name' => sanitize_text_field($payload['customerName'] ?? ''),
+    'ssgs_sheet_index' => sanitize_text_field($payload['sheetIndex'] ?? ''),
+    'ssgs_designs' => intval($payload['designs'] ?? 0),
+    'ssgs_transfers' => intval($payload['transfers'] ?? 0),
+    'ssgs_precut' => !empty($payload['precut']) ? 'yes' : 'no',
+    'ssgs_precut_total' => floatval($payload['precutTotal'] ?? 0),
+    'ssgs_file_url' => esc_url_raw($payload['fileUrl'] ?? $upload['url']),
+    'ssgs_local_file' => esc_url_raw($upload['url']),
+    'unique_key' => md5($upload['url'] . microtime()),
+  );
+
+  $added = WC()->cart->add_to_cart($product_id, $quantity, $variation_id, $variation, $cart_item_data);
+  if (!$added) {
+    wp_send_json_error(array('message' => 'WooCommerce could not add this sheet to the cart.'), 500);
+  }
+
+  // Optional pre-cut fee as a fee line
+  $precut_total = floatval($payload['precutTotal'] ?? 0);
+  if (!empty($payload['precut']) && $precut_total > 0) {
+    WC()->cart->add_fee(
+      sprintf(__('Pre-cut DTFs (%s)', 'southside-gangsheet'), sanitize_text_field($payload['customerName'] ?? '')),
+      $precut_total,
+      true
+    );
+  }
+
+  wp_send_json_success(array(
+    'cartUrl' => wc_get_cart_url(),
+    'fileUrl' => $upload['url'],
+  ));
+}
+
+add_action('wp_ajax_ssgs_add_to_cart', 'ssgs_handle_add_to_cart');
+add_action('wp_ajax_nopriv_ssgs_add_to_cart', 'ssgs_handle_add_to_cart');
+
+add_filter('woocommerce_get_item_data', function ($item_data, $cart_item) {
+  $map = array(
+    'ssgs_customer_name' => __('Customer', 'southside-gangsheet'),
+    'ssgs_sheet_index' => __('Sheet', 'southside-gangsheet'),
+    'ssgs_designs' => __('Designs', 'southside-gangsheet'),
+    'ssgs_transfers' => __('Transfers', 'southside-gangsheet'),
+    'ssgs_precut' => __('Pre-cut', 'southside-gangsheet'),
+  );
+  foreach ($map as $key => $label) {
+    if (!empty($cart_item[$key])) {
+      $item_data[] = array(
+        'key' => $label,
+        'value' => esc_html((string) $cart_item[$key]),
+      );
+    }
+  }
+  if (!empty($cart_item['ssgs_file_url'])) {
+    $item_data[] = array(
+      'key' => __('File', 'southside-gangsheet'),
+      'value' => esc_url($cart_item['ssgs_file_url']),
+    );
+  }
+  return $item_data;
+}, 10, 2);
+
+add_action('woocommerce_checkout_create_order_line_item', function ($item, $cart_item_key, $values) {
+  foreach (array('ssgs_customer_name', 'ssgs_sheet_index', 'ssgs_designs', 'ssgs_transfers', 'ssgs_precut', 'ssgs_precut_total', 'ssgs_file_url', 'ssgs_local_file') as $key) {
+    if (isset($values[$key])) {
+      $item->add_meta_data($key, $values[$key], true);
+    }
+  }
+}, 10, 3);
