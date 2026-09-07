@@ -27,9 +27,6 @@ export type GangSheetCartPayload = {
   scaleFactor?: number
   effectiveDpi?: number
   dpiSource?: 'file' | 'assumed' | 'customer'
-  /** Shop-only detection count — never used for pricing on uploads. */
-  detectedCount?: number
-  cutEligible?: boolean
 }
 
 export type StoreBridgeStatus = 'idle' | 'sending' | 'error' | 'sent'

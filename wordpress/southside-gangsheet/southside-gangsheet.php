@@ -2,7 +2,7 @@
 /**
  * Plugin Name: South Side Gang Sheet Builder
  * Description: Embed the South Side DTF customer gang sheet builder and add finished sheets to the WooCommerce cart.
- * Version: 1.08
+ * Version: 1.09
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.08');
+define('SSGS_PLUGIN_VERSION', '1.09');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 
 function ssgs_default_options() {
@@ -25,7 +25,6 @@ function ssgs_default_options() {
     'product_id' => 0,
     'precut_product_id' => 0,
     'upload_product_id' => 0,
-    'upload_precut_product_id' => 0,
   );
 }
 
@@ -63,7 +62,6 @@ function ssgs_sanitize_options($input) {
   $out['product_id'] = max(0, intval($input['product_id'] ?? 0));
   $out['precut_product_id'] = max(0, intval($input['precut_product_id'] ?? 0));
   $out['upload_product_id'] = max(0, intval($input['upload_product_id'] ?? 0));
-  $out['upload_precut_product_id'] = max(0, intval($input['upload_precut_product_id'] ?? 0));
   return $out;
 }
 
@@ -107,13 +105,6 @@ function ssgs_render_settings_page() {
           <td>
             <input name="ssgs_options[upload_product_id]" id="ssgs_upload_product_id" type="number" min="0" step="1" value="<?php echo esc_attr($opts['upload_product_id']); ?>" />
             <p class="description"><?php esc_html_e('The product for customer-uploaded gang sheets. Leave 0 to use the main gang sheet product.', 'southside-gangsheet'); ?></p>
-          </td>
-        </tr>
-        <tr>
-          <th scope="row"><label for="ssgs_upload_precut_product_id"><?php esc_html_e('Upload pre-cut product ID', 'southside-gangsheet'); ?></label></th>
-          <td>
-            <input name="ssgs_options[upload_precut_product_id]" id="ssgs_upload_precut_product_id" type="number" min="0" step="1" value="<?php echo esc_attr($opts['upload_precut_product_id']); ?>" />
-            <p class="description"><?php esc_html_e('Variable product with the same size attributes as the upload sheet. Pre-cut is priced by size from the catalogue (not by transfer count). Leave 0 to skip upload pre-cut charging.', 'southside-gangsheet'); ?></p>
           </td>
         </tr>
         <tr>
@@ -372,8 +363,6 @@ function ssgs_handle_add_to_cart() {
     'ssgs_scale_factor' => isset($payload['scaleFactor']) ? floatval($payload['scaleFactor']) : '',
     'ssgs_effective_dpi' => isset($payload['effectiveDpi']) ? floatval($payload['effectiveDpi']) : '',
     'ssgs_dpi_source' => sanitize_text_field($payload['dpiSource'] ?? ''),
-    'ssgs_detected_count' => isset($payload['detectedCount']) ? intval($payload['detectedCount']) : '',
-    'ssgs_cut_eligible' => isset($payload['cutEligible']) ? (!empty($payload['cutEligible']) ? 'yes' : 'no') : '',
     'ssgs_file_url' => esc_url_raw($payload['fileUrl'] ?? $upload['url']),
     'ssgs_local_file' => esc_url_raw($upload['url']),
     'unique_key' => md5($upload['url'] . microtime()),
@@ -386,45 +375,16 @@ function ssgs_handle_add_to_cart() {
 
   $precut_total = floatval($payload['precutTotal'] ?? 0);
   $precut_id = intval($opts['precut_product_id']);
-  $upload_precut_id = intval($opts['upload_precut_product_id']);
 
-  if (!empty($payload['precut']) && $added) {
-    if ($is_upload && $upload_precut_id > 0) {
-      // Upload path: catalogue-priced variable product matched by billable length.
-      $precut_product = wc_get_product($upload_precut_id);
-      $precut_variation_id = 0;
-      $precut_variation = array();
-      if ($precut_product && $precut_product->is_type('variable')) {
-        $precut_variation_id = ssgs_find_variation_id($precut_product, $billable_height);
-        if ($precut_variation_id > 0) {
-          $precut_variation = wc_get_product_variation_attributes($precut_variation_id);
-        }
-      }
-      if ($precut_variation_id > 0 || ($precut_product && !$precut_product->is_type('variable'))) {
-        WC()->cart->add_to_cart(
-          $upload_precut_id,
-          $quantity,
-          $precut_variation_id,
-          $precut_variation,
-          array(
-            'ssgs_precut_for' => $cart_item_data['unique_key'],
-            'ssgs_precut_sheet' => sanitize_text_field($payload['sheetIndex'] ?? ''),
-            'ssgs_sheet_type' => 'uploaded',
-            'ssgs_detected_count' => isset($payload['detectedCount']) ? intval($payload['detectedCount']) : '',
-            'unique_key' => md5('precut' . $cart_item_data['unique_key']),
-          )
-        );
-      }
-    } elseif (!$is_upload && $precut_total > 0 && $precut_id > 0) {
-      // Builder path: custom per-transfer amount (Fix 2).
-      WC()->cart->add_to_cart($precut_id, $quantity, 0, array(), array(
-        'ssgs_precut_amount' => $precut_total,
-        'ssgs_precut_for' => $cart_item_data['unique_key'],
-        'ssgs_precut_sheet' => sanitize_text_field($payload['sheetIndex'] ?? ''),
-        'ssgs_transfers' => intval($payload['transfers'] ?? 0),
-        'unique_key' => md5('precut' . $cart_item_data['unique_key']),
-      ));
-    }
+  // Upload flow never sells pre-cut (precut is always false). Builder still uses Fix 2.
+  if (!empty($payload['precut']) && $added && !$is_upload && $precut_total > 0 && $precut_id > 0) {
+    WC()->cart->add_to_cart($precut_id, $quantity, 0, array(), array(
+      'ssgs_precut_amount' => $precut_total,
+      'ssgs_precut_for' => $cart_item_data['unique_key'],
+      'ssgs_precut_sheet' => sanitize_text_field($payload['sheetIndex'] ?? ''),
+      'ssgs_transfers' => intval($payload['transfers'] ?? 0),
+      'unique_key' => md5('precut' . $cart_item_data['unique_key']),
+    ));
   }
 
   wp_send_json_success(array(
@@ -498,8 +458,6 @@ add_filter('woocommerce_get_item_data', function ($item_data, $cart_item) {
     'ssgs_scale_factor' => __('Scale factor', 'southside-gangsheet'),
     'ssgs_effective_dpi' => __('Effective DPI', 'southside-gangsheet'),
     'ssgs_dpi_source' => __('DPI source', 'southside-gangsheet'),
-    'ssgs_detected_count' => __('Detected transfers (shop)', 'southside-gangsheet'),
-    'ssgs_cut_eligible' => __('Cut eligible', 'southside-gangsheet'),
   );
   foreach ($map as $key => $label) {
     if (!empty($cart_item[$key]) && empty($cart_item['ssgs_precut_for'])) {
@@ -557,8 +515,6 @@ add_action('woocommerce_checkout_create_order_line_item', function ($item, $cart
     'ssgs_scale_factor',
     'ssgs_effective_dpi',
     'ssgs_dpi_source',
-    'ssgs_detected_count',
-    'ssgs_cut_eligible',
     'ssgs_file_url',
     'ssgs_local_file',
   ) as $key) {

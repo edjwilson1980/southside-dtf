@@ -1,31 +1,16 @@
 'use client'
 
 import { useEffect, useId, useRef } from 'react'
-import { Scissors, X } from 'lucide-react'
+import { X } from 'lucide-react'
 
-type PrecutOfferModalProps = {
+const BUILDER_URL = 'https://southsidedtf.com/build-my-gangsheet/'
+
+type CutOutNoteModalProps = {
   open: boolean
-  sheetPrice: number
-  busy?: boolean
-  onAccept: () => void
-  onDecline: () => void
-  onCancel: () => void
-  transfers?: number
-  rateEach?: number
-  precutTotal?: number
+  onContinue: () => void
 }
 
-export function PrecutOfferModal({
-  open,
-  sheetPrice,
-  busy = false,
-  onAccept,
-  onDecline,
-  onCancel,
-  transfers = 0,
-  rateEach = 0,
-  precutTotal = 0,
-}: PrecutOfferModalProps) {
+export function CutOutNoteModal({ open, onContinue }: CutOutNoteModalProps) {
   const titleId = useId()
   const dialogRef = useRef<HTMLElement>(null)
   const previouslyFocused = useRef<HTMLElement | null>(null)
@@ -51,9 +36,8 @@ export function PrecutOfferModal({
     if (!open) return
     function onKey(event: KeyboardEvent) {
       if (event.key === 'Escape') {
-        if (busy) return
         event.preventDefault()
-        onCancel()
+        onContinue()
         return
       }
       if (event.key !== 'Tab' || !dialogRef.current) return
@@ -75,66 +59,61 @@ export function PrecutOfferModal({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, busy, onCancel])
+  }, [open, onContinue])
 
   if (!open) return null
 
-  const sheetLabel = sheetPrice.toFixed(2)
-  const totalLabel = precutTotal.toFixed(2)
-  const acceptLabel = busy ? 'Adding pre-cut…' : `Add pre-cut — $${totalLabel}`
-
   return (
     <div
-      className="size-popup-backdrop precut-offer-backdrop"
+      className="size-popup-backdrop cut-out-note-backdrop"
       role="presentation"
       onMouseDown={(event) => {
-        if (busy) return
-        if (event.target === event.currentTarget) onCancel()
+        if (event.target === event.currentTarget) onContinue()
       }}
     >
       <section
         ref={dialogRef}
-        className="size-popup precut-offer-dialog"
+        className="size-popup cut-out-note-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
       >
         <div className="size-popup-header">
           <div>
-            <span className="eyebrow">Optional add-on</span>
-            <h2 id={titleId}>Want us to cut them out for you?</h2>
+            <h2 id={titleId}>Want your transfers cut out?</h2>
             <p>
-              Pre-cut means we cut each transfer out individually, so there is no trimming by hand
-              when your order arrives.
+              We cut sheets that are laid out in our builder — that&apos;s how we know where each
+              transfer sits and can leave room for the blade. Uploaded sheets print as one piece.
+            </p>
+            <p>
+              If you&apos;d like your transfers cut and ready to press, build your sheet with Build A
+              Gang Sheet instead.
             </p>
           </div>
           <button
             type="button"
             className="size-popup-close"
-            aria-label="Cancel and return to builder"
-            disabled={busy}
-            onClick={onCancel}
+            aria-label="Continue with my upload"
+            onClick={onContinue}
           >
             <X size={22} />
           </button>
         </div>
 
-        <div className="precut-offer-math">
-          <p>
-            {transfers} transfer{transfers === 1 ? '' : 's'} × ${rateEach.toFixed(2)} each
-          </p>
-          <strong>Add pre-cut for ${totalLabel}</strong>
-          <span>Your gang sheet price stays the same — ${sheetLabel}.</span>
-        </div>
-
-        <div className="precut-offer-actions">
-          <button type="button" className="precut-offer-accept" disabled={busy} onClick={onAccept}>
-            <Scissors size={18} />
-            {acceptLabel}
+        <div className="cut-out-note-actions">
+          <button type="button" className="cut-out-note-continue" onClick={onContinue}>
+            Continue with my upload
           </button>
-          <button type="button" className="precut-offer-decline" disabled={busy} onClick={onDecline}>
-            No thanks, continue
-          </button>
+          <a
+            className="cut-out-note-builder"
+            href={BUILDER_URL}
+            target="_top"
+            rel="noopener noreferrer"
+            title="Leaves this page — your upload will not carry over"
+          >
+            Try Build A Gang Sheet
+            <small>Leaves this page — your upload won&apos;t carry over</small>
+          </a>
         </div>
       </section>
     </div>
