@@ -8,7 +8,10 @@ export const DEFAULT_STORE_ORIGIN = 'https://southsidedtf.com'
 export type GangSheetCartPayload = {
   customerName: string
   sheetWidthIn: number
+  /** Actual printed film length (includes pre-cut spacing when on). */
   sheetHeightIn: number
+  /** Length priced / variation-matched as if pre-cut were off. */
+  billableHeightIn: number
   quantity: number
   designs: number
   transfers: number

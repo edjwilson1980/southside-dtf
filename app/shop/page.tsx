@@ -256,24 +256,29 @@ export default function Home() {
     pixelHeight: design.pixelHeight,
     widthIn: getDesignWidth(design),
   })
-  const artStart = cutOut ? CUT_ART_START_IN : ART_INSET_IN
-  const packWidth = cutOut ? SHEET_WIDTH_IN - MARK_CLEARANCE_IN * 2 : SHEET_WIDTH_IN
-  const sheetLayout = packSheetBestGutter(
-    previewPieces.map((design) => ({
-      previewUrl: design.previewUrl,
-      widthIn: getDesignWidth(design),
-      heightIn: getDesignHeight(design),
-    })),
-    cutOut
-      ? {
-          packWidthIn: packWidth,
-          startYIn: CUT_ART_START_IN,
-          sideInsetIn: MARK_CLEARANCE_IN,
-          minGutterIn: CUT_GUTTER_IN,
-        }
-      : { packWidthIn: packWidth, startYIn: ART_INSET_IN },
-  )
-  const packedHeight = Math.max(0, sheetLayout.contentEndY - artStart)
+  const pieceInputs = previewPieces.map((design) => ({
+    previewUrl: design.previewUrl,
+    widthIn: getDesignWidth(design),
+    heightIn: getDesignHeight(design),
+  }))
+  // Billable packing ignores pre-cut gutters/insets — pre-cut must not inflate sheet price.
+  const billableLayout = packSheetBestGutter(pieceInputs, {
+    packWidthIn: SHEET_WIDTH_IN,
+    startYIn: ART_INSET_IN,
+  })
+  const sheetLayout = cutOut
+    ? packSheetBestGutter(pieceInputs, {
+        packWidthIn: SHEET_WIDTH_IN - MARK_CLEARANCE_IN * 2,
+        startYIn: CUT_ART_START_IN,
+        sideInsetIn: MARK_CLEARANCE_IN,
+        minGutterIn: CUT_GUTTER_IN,
+      })
+    : billableLayout
+  const billableHeightIn = Math.max(0, billableLayout.contentEndY - ART_INSET_IN)
+  const printedHeightIn = cutOut
+    ? Math.max(0, sheetLayout.contentEndY - CUT_ART_START_IN)
+    : billableHeightIn
+  // Full film length for PNG / PLT / overlays (leading + trailing insets).
   const printHeight = cutOut
     ? sheetLayout.contentEndY + CUT_ART_START_IN
     : sheetLayout.contentEndY + ART_INSET_IN
@@ -281,7 +286,7 @@ export default function Home() {
   const cutMarks = cutOut ? registrationMarkBounds(printHeight, SHEET_WIDTH_IN, sheetLayout.pieces) : []
   const startArrow = cutMarks.find((mark) => mark.first)
   const startArrowPoints = startArrow ? startMarkArrowPoints(startArrow) : []
-  const billedLength = billedSheetLength(packedHeight)
+  const billedLength = billedSheetLength(billableHeightIn)
   const cutBoxes = cutOut ? cutPreviewBoxes(sheetLayout.pieces, SHEET_WIDTH_IN, printHeight) : []
   const cutTooTall = cutOut && sheetLayout.pieces.some((piece) => piece.heightIn + CUT_MARGIN_IN * 2 > MARK_SECTION_IN)
   const layoutKey = designs.map((design) => [
@@ -289,7 +294,16 @@ export default function Home() {
     design.customWidth, design.customHeight, design.previewUrl,
     design.pixelWidth, design.pixelHeight,
   ].join(':')).join('|') + `|cut:${cutOut ? '1' : '0'}`
-  const sheet = getGangSheet(packedHeight)
+  const sheet = getGangSheet(billableHeightIn)
+  const chargeableArtIn = Math.max(0, billableHeightIn - 1.5)
+  const lengthLeftIn = Math.max(0, billedLength - chargeableArtIn)
+  const fillPercent = billedLength > 0 ? Math.min(100, Math.round((chargeableArtIn / billedLength) * 100)) : 0
+  const sheetFillMessage =
+    designs.length === 0
+      ? null
+      : lengthLeftIn <= 1
+        ? 'Sheet is full — more designs will start a second sheet'
+        : `Sheet is ${fillPercent}% full, about ${lengthLeftIn < 10 ? lengthLeftIn.toFixed(1).replace(/\.0$/, '') : Math.round(lengthLeftIn)}in of length left`
   const sheetCount = Math.max(1, Math.ceil(billedLength / 200))
   const sheetName = customerName.trim() || 'Gang Sheet'
   const cutRate = cuttingFeeEach(totalTransfers)
@@ -601,6 +615,14 @@ export default function Home() {
           </div>
         </div>
         <div className="preview-heading"><strong>Gang sheet</strong></div>
+        {sheetFillMessage && (
+          <p className="sheet-fill-readout" aria-live="polite">
+            {sheetFillMessage}
+            <span className="sheet-fill-bar" aria-hidden="true">
+              <span style={{ width: `${fillPercent}%` }} />
+            </span>
+          </p>
+        )}
         <div className="sheet-preview">
           <span className="dimension horizontal">22 in</span>
           {sheetPreviewUrl ? (
