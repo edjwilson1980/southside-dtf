@@ -132,12 +132,15 @@ export async function createCustomerDriveFolder(customerName: string, stamp: str
 export async function createResumableUploadSessions(
   folderId: string,
   files: DriveUploadSpec[],
+  /** Browser origin so Google includes CORS headers on later client PUTs. */
+  browserOrigin?: string,
 ): Promise<DriveUploadSession[]> {
   const auth = await driveAuth()
   const token = await auth.getAccessToken()
   const accessToken = typeof token === 'string' ? token : token?.token
   if (!accessToken) throw new Error('Could not authorize Google Drive uploads.')
 
+  const origin = browserOrigin?.trim()
   const sessions: DriveUploadSession[] = []
   for (const file of files) {
     if (!file.name || file.size <= 0) {
@@ -152,6 +155,9 @@ export async function createResumableUploadSessions(
           'Content-Type': 'application/json; charset=UTF-8',
           'X-Upload-Content-Type': file.mimeType,
           'X-Upload-Content-Length': String(file.size),
+          // Required when the browser will PUT the bytes; without this, Google
+          // omits Access-Control-Allow-Origin on the upload response (CORS fail).
+          ...(origin ? { Origin: origin } : {}),
         },
         body: JSON.stringify({
           name: file.name,
@@ -168,6 +174,46 @@ export async function createResumableUploadSessions(
     sessions.push({ name: file.name, uploadUrl })
   }
   return sessions
+}
+
+/**
+ * Upload a small text cutter file (PLT) from the server.
+ * Browser → Drive PUTs fail CORS unless the resumable session was started with
+ * the page Origin; PLT is small enough to upload here reliably every time.
+ */
+export async function uploadCutterFileToFolder(
+  folderId: string,
+  name: string,
+  content: string,
+  mimeType = 'text/plain',
+) {
+  if (!name.trim()) throw new Error('Cutter file name is required.')
+  if (!content) throw new Error('Cutter file content is empty.')
+
+  const auth = await driveAuth()
+  const drive = google.drive({ version: 'v3', auth })
+  const created = await drive.files.create({
+    requestBody: {
+      name,
+      parents: [folderId],
+      mimeType,
+    },
+    media: {
+      mimeType,
+      body: Buffer.from(content, 'utf8'),
+    },
+    fields: 'id, name, webViewLink',
+    supportsAllDrives: true,
+  })
+
+  const fileId = created.data.id
+  if (!fileId) throw new Error(`Google Drive did not return an id for ${name}.`)
+
+  return {
+    id: fileId,
+    name: created.data.name || name,
+    webViewLink: created.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
+  }
 }
 
 /** Smoke-test: create a tiny folder then delete it. */

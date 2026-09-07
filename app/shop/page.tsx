@@ -13,6 +13,7 @@ import { CUT_GUTTER_IN, CUT_MARGIN_IN, MARK_CLEARANCE_IN, MARK_SECTION_IN, cutPl
 import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
+import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 
 type Design = {
   id: number
@@ -174,6 +175,7 @@ export default function Home() {
   const [inspectId, setInspectId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null)
   const [sheetPreviewUrl, setSheetPreviewUrl] = useState<string | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const [previewBusy, setPreviewBusy] = useState(false)
@@ -397,6 +399,7 @@ export default function Home() {
     if (!customerName.trim() || designs.length === 0 || saving || !previewing) return
     setSaving(true)
     setSaveError(null)
+    setDriveFolderUrl(null)
     try {
       const stamp = jobStamp || sheetStamp()
       const label = sheetJobName(customerName.trim(), billedLength, stamp)
@@ -405,13 +408,18 @@ export default function Home() {
       downloadBlob(png, fileName)
       if (cutOut) {
         const plt = cutPlt(sheetLayout.pieces, printHeight)
-        if (plt) {
-          await wait(200)
-          downloadBlob(
-            new Blob([plt], { type: 'application/vnd.hp-hpgl' }),
-            sheetCutFileName(customerName.trim(), billedLength, stamp),
-          )
-        }
+        if (!plt) throw new Error('Could not build the cutter PLT for this sheet.')
+        const cutName = sheetCutFileName(customerName.trim(), billedLength, stamp)
+        // Shop still downloads PLT locally for the cutter PC.
+        await wait(200)
+        downloadBlob(new Blob([plt], { type: 'text/plain' }), cutName)
+        const drive = await uploadJobToGoogleDrive({
+          customerName: customerName.trim(),
+          stamp,
+          files: [{ name: fileName, mimeType: 'image/png', blob: png }],
+          cutterFile: { name: cutName, content: plt, mimeType: 'text/plain' },
+        })
+        setDriveFolderUrl(drive.folderUrl)
       }
 
       setBuilt(true)
@@ -618,7 +626,7 @@ export default function Home() {
           </button>
           {previewing && sheetPreviewUrl && (
             <button className="confirm-button" disabled={saving} onClick={() => void buildAndStore()}>
-              <Check size={18} /> {saving ? 'Building…' : 'Confirm & Build Gang Sheet'}
+              <Check size={18} /> {saving ? (cutOut ? 'Saving to Drive…' : 'Building…') : 'Confirm & Build Gang Sheet'}
             </button>
           )}
           {saveError && <p className="save-error">{saveError}</p>}
@@ -627,7 +635,12 @@ export default function Home() {
           <div className="built-card">
             <div className="built-title"><span><Check size={21} /></span><strong>Your gang sheet is built.</strong></div>
             <p>{sheet.label} · {totalTransfers} transfers · Ready to review</p>
-            <button onClick={() => setBuilt(false)}>Review &amp; Add to Cart <span>›</span></button>
+            {driveFolderUrl && (
+              <a className="drive-link" href={driveFolderUrl} target="_blank" rel="noreferrer">
+                Open job folder in Google Drive (print PNG + cutter PLT)
+              </a>
+            )}
+            <button onClick={() => { setBuilt(false); setDriveFolderUrl(null) }}>Review &amp; Add to Cart <span>›</span></button>
           </div>
         )}
       </aside>

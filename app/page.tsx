@@ -410,7 +410,7 @@ export default function Home() {
       downloadBlob(png, fileName)
 
       // Pre-cut jobs also land in Google Drive for the shop (PNG + PLT).
-      // The PLT is not offered as a customer download.
+      // The PLT is uploaded by our API (not a customer browser download).
       if (cutOut) {
         const pltText = cutPlt(sheetLayout.pieces, printHeight)
         if (!pltText) throw new Error('Could not build the cutter PLT for this sheet.')
@@ -418,10 +418,8 @@ export default function Home() {
         const drive = await uploadJobToGoogleDrive({
           customerName: customerName.trim(),
           stamp,
-          files: [
-            { name: fileName, mimeType: 'image/png', blob: png },
-            { name: cutName, mimeType: 'application/vnd.hp-hpgl', blob: new Blob([pltText], { type: 'application/vnd.hp-hpgl' }) },
-          ],
+          files: [{ name: fileName, mimeType: 'image/png', blob: png }],
+          cutterFile: { name: cutName, content: pltText, mimeType: 'text/plain' },
         })
         setDriveFolderUrl(drive.folderUrl)
       }
@@ -636,7 +634,7 @@ export default function Home() {
             <p>{sheet.label} · {totalTransfers} transfers · Send this file to South Side DTF to print{cutOut ? ' and cut' : ''}.</p>
             {driveFolderUrl && (
               <a className="drive-link" href={driveFolderUrl} target="_blank" rel="noreferrer">
-                Open your job folder in Google Drive
+                Open your job folder in Google Drive (print PNG + cutter PLT)
               </a>
             )}
             <button onClick={() => { setBuilt(false); setDriveFolderUrl(null) }}>Build another sheet <span>›</span></button>
