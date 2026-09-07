@@ -15,6 +15,11 @@ export type DriveUploadResult = {
   folderName: string
   folderUrl: string
   cutterFileName?: string
+  /** Drive file id for the first (print) upload — used as cart fileUrl. */
+  fileId?: string
+  /** Direct Drive link for the print PNG (https://drive.google.com/file/d/…/view). */
+  fileUrl?: string
+  webViewLink?: string
 }
 
 /** Stay under typical serverless request body limits when proxying through our API. */
@@ -74,27 +79,42 @@ export async function uploadJobToGoogleDrive(options: {
   }
 
   const uploads = sessionJson.uploads ?? []
+  let printFile: { id?: string; name?: string; webViewLink?: string } | null = null
   for (const file of options.files) {
     const session = uploads.find((item) => item.name === file.name)
     if (!session?.uploadUrl) {
       throw new Error(`Missing Google Drive upload session for ${file.name}.`)
     }
-    await putDriveFile(file, session.uploadUrl)
+    const uploaded = await putDriveFile(file, session.uploadUrl)
+    if (!printFile) printFile = uploaded
   }
 
   if (!sessionJson.folderId || !sessionJson.folderUrl) {
     throw new Error('Google Drive did not return a folder link.')
   }
 
+  const fileId = printFile?.id
+  if (!fileId) {
+    throw new Error('Could not save your sheet to our print queue. Please try again.')
+  }
+  const webViewLink =
+    printFile?.webViewLink || `https://drive.google.com/file/d/${fileId}/view`
+
   return {
     folderId: sessionJson.folderId,
     folderName: sessionJson.folderName || options.customerName,
     folderUrl: sessionJson.folderUrl,
     cutterFileName: sessionJson.cutter?.name,
+    fileId,
+    fileUrl: webViewLink,
+    webViewLink,
   }
 }
 
-async function putDriveFile(file: DriveFileUpload, googleUploadUrl: string) {
+async function putDriveFile(
+  file: DriveFileUpload,
+  googleUploadUrl: string,
+): Promise<{ id?: string; name?: string; webViewLink?: string }> {
   // Prefer same-origin proxy so the browser never talks to googleapis (no CORS).
   if (file.blob.size <= PROXY_MAX_BYTES) {
     const proxyRes = await fetch('/api/drive/upload', {
@@ -105,7 +125,21 @@ async function putDriveFile(file: DriveFileUpload, googleUploadUrl: string) {
       },
       body: file.blob,
     })
-    if (proxyRes.ok) return
+    if (proxyRes.ok) {
+      const proxyJson = (await proxyRes.json().catch(() => ({}))) as {
+        id?: string
+        name?: string
+        webViewLink?: string
+      }
+      const id = proxyJson.id
+      return {
+        id,
+        name: proxyJson.name || file.name,
+        webViewLink:
+          proxyJson.webViewLink ||
+          (id ? `https://drive.google.com/file/d/${id}/view` : undefined),
+      }
+    }
     const proxyJson = (await proxyRes.json().catch(() => ({}))) as { error?: string }
     // Fall through to direct PUT when proxy cannot accept the body.
     if (proxyRes.status !== 413 && proxyRes.status < 500) {
@@ -121,8 +155,21 @@ async function putDriveFile(file: DriveFileUpload, googleUploadUrl: string) {
     },
     body: file.blob,
   })
+  const detail = await putRes.text()
   if (!putRes.ok) {
-    const detail = await putRes.text()
     throw new Error(`Could not upload ${file.name} to Google Drive: ${detail || putRes.statusText}`)
+  }
+  let parsed: { id?: string; name?: string; webViewLink?: string } = {}
+  try {
+    parsed = detail ? JSON.parse(detail) : {}
+  } catch {
+    parsed = {}
+  }
+  const id = parsed.id
+  return {
+    id,
+    name: parsed.name || file.name,
+    webViewLink:
+      parsed.webViewLink || (id ? `https://drive.google.com/file/d/${id}/view` : undefined),
   }
 }

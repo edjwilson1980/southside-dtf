@@ -431,26 +431,41 @@ function HomeBuilder() {
     if (!customerName.trim() || designs.length === 0 || saving || cartStatus === 'sending') return
     setSaving(true)
     setSaveError(null)
+    setDriveFolderUrl(null)
     try {
       const stamp = jobStamp || sheetStamp()
       const label = sheetJobName(customerName.trim(), billedLength, stamp)
-      const fileName = `${slugify(customerName.trim())}-gangsheet.png`
+      const printName = sheetFileName(customerName.trim(), billedLength, stamp)
+      const cartFileName = `${slugify(customerName.trim())}-gangsheet.png`
       const png = await composeCurrentSheet(sheetPxPerIn(14000, 150), label, true)
 
-      let driveFileUrl: string | undefined
+      // Always upload to Drive before cart — fail closed if we get no Drive file link.
+      let cutterFile: { name: string; content: string; mimeType: string } | undefined
       if (cutOut) {
         const pltText = cutPlt(sheetLayout.pieces, printHeight)
         if (!pltText) throw new Error('Could not build the cutter PLT for this sheet.')
-        const printName = sheetFileName(customerName.trim(), billedLength, stamp)
-        const cutName = sheetCutFileName(customerName.trim(), billedLength, stamp)
-        const drive = await uploadJobToGoogleDrive({
-          customerName: customerName.trim(),
-          stamp,
-          files: [{ name: printName, mimeType: 'image/png', blob: png }],
-          cutterFile: { name: cutName, content: pltText, mimeType: 'text/plain' },
-        })
-        setDriveFolderUrl(drive.folderUrl)
-        driveFileUrl = drive.folderUrl
+        cutterFile = {
+          name: sheetCutFileName(customerName.trim(), billedLength, stamp),
+          content: pltText,
+          mimeType: 'text/plain',
+        }
+      }
+
+      const drive = await uploadJobToGoogleDrive({
+        customerName: customerName.trim(),
+        stamp,
+        files: [{ name: printName, mimeType: 'image/png', blob: png }],
+        cutterFile,
+      })
+      setDriveFolderUrl(drive.folderUrl)
+
+      const driveLink =
+        drive.webViewLink ??
+        drive.fileUrl ??
+        (drive.fileId ? `https://drive.google.com/file/d/${drive.fileId}/view` : null)
+
+      if (!driveLink) {
+        throw new Error('Could not save your sheet to our print queue. Please try again.')
       }
 
       // One print-ready export covers the full packed sheet; sheetCount is the roll billing split.
@@ -464,8 +479,8 @@ function HomeBuilder() {
           transfers: totalTransfers,
           precut: cutOut,
           precutTotal: cutFee,
-          fileName: sheetCount > 1 ? fileName.replace(/\.png$/i, `-${index + 1}.png`) : fileName,
-          fileUrl: driveFileUrl,
+          fileName: sheetCount > 1 ? cartFileName.replace(/\.png$/i, `-${index + 1}.png`) : cartFileName,
+          fileUrl: driveLink,
           sheetIndex: `${index + 1} of ${sheetCount}`,
         }
         const result = await addToCart(png, payload)

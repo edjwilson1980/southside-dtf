@@ -44,10 +44,14 @@ export async function PUT(req: Request) {
       file = null
     }
 
+    const id = file?.id as string | undefined
     return NextResponse.json({
       ok: true,
-      id: file?.id,
+      id,
       name: file?.name,
+      webViewLink:
+        (file?.webViewLink as string | undefined) ||
+        (id ? `https://drive.google.com/file/d/${id}/view` : undefined),
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Could not proxy Google Drive upload.'
