@@ -17,10 +17,14 @@ export type DriveUploadResult = {
   cutterFileName?: string
 }
 
+/** Stay under typical serverless request body limits when proxying through our API. */
+const PROXY_MAX_BYTES = 3_500_000
+
 /**
  * Creates a customer folder in the shop Google Drive and uploads the given files.
- * Large PNGs use resumable sessions (client PUT to Google).
- * Cutter PLT files are uploaded by our API (small text; more reliable than browser PUT).
+ * - Cutter PLT: uploaded by our API (small text).
+ * - Print PNG: proxied through our API when small enough; otherwise direct to Google
+ *   using a resumable session initiated with this page's Origin (required for CORS).
  */
 export async function uploadJobToGoogleDrive(options: {
   customerName: string
@@ -28,12 +32,15 @@ export async function uploadJobToGoogleDrive(options: {
   files: DriveFileUpload[]
   cutterFile?: DriveCutterUpload
 }): Promise<DriveUploadResult> {
+  const origin = typeof window !== 'undefined' ? window.location.origin : undefined
+
   const sessionRes = await fetch('/api/drive/session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       customerName: options.customerName,
       stamp: options.stamp,
+      origin,
       files: options.files.map((file) => ({
         name: file.name,
         mimeType: file.mimeType,
@@ -72,18 +79,7 @@ export async function uploadJobToGoogleDrive(options: {
     if (!session?.uploadUrl) {
       throw new Error(`Missing Google Drive upload session for ${file.name}.`)
     }
-    // Do not set Content-Length — browsers treat it as a forbidden header.
-    const putRes = await fetch(session.uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': file.mimeType,
-      },
-      body: file.blob,
-    })
-    if (!putRes.ok) {
-      const detail = await putRes.text()
-      throw new Error(`Could not upload ${file.name} to Google Drive: ${detail || putRes.statusText}`)
-    }
+    await putDriveFile(file, session.uploadUrl)
   }
 
   if (!sessionJson.folderId || !sessionJson.folderUrl) {
@@ -95,5 +91,38 @@ export async function uploadJobToGoogleDrive(options: {
     folderName: sessionJson.folderName || options.customerName,
     folderUrl: sessionJson.folderUrl,
     cutterFileName: sessionJson.cutter?.name,
+  }
+}
+
+async function putDriveFile(file: DriveFileUpload, googleUploadUrl: string) {
+  // Prefer same-origin proxy so the browser never talks to googleapis (no CORS).
+  if (file.blob.size <= PROXY_MAX_BYTES) {
+    const proxyRes = await fetch('/api/drive/upload', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': file.mimeType,
+        'X-Drive-Upload-Url': googleUploadUrl,
+      },
+      body: file.blob,
+    })
+    if (proxyRes.ok) return
+    const proxyJson = (await proxyRes.json().catch(() => ({}))) as { error?: string }
+    // Fall through to direct PUT when proxy cannot accept the body.
+    if (proxyRes.status !== 413 && proxyRes.status < 500) {
+      throw new Error(proxyJson.error || `Could not upload ${file.name} to Google Drive.`)
+    }
+  }
+
+  // Direct browser → Google (session must have been started with this Origin).
+  const putRes = await fetch(googleUploadUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': file.mimeType,
+    },
+    body: file.blob,
+  })
+  if (!putRes.ok) {
+    const detail = await putRes.text()
+    throw new Error(`Could not upload ${file.name} to Google Drive: ${detail || putRes.statusText}`)
   }
 }

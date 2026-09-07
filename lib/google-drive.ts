@@ -132,12 +132,15 @@ export async function createCustomerDriveFolder(customerName: string, stamp: str
 export async function createResumableUploadSessions(
   folderId: string,
   files: DriveUploadSpec[],
+  /** Browser origin so Google includes CORS headers on later client PUTs. */
+  browserOrigin?: string,
 ): Promise<DriveUploadSession[]> {
   const auth = await driveAuth()
   const token = await auth.getAccessToken()
   const accessToken = typeof token === 'string' ? token : token?.token
   if (!accessToken) throw new Error('Could not authorize Google Drive uploads.')
 
+  const origin = browserOrigin?.trim()
   const sessions: DriveUploadSession[] = []
   for (const file of files) {
     if (!file.name || file.size <= 0) {
@@ -152,6 +155,9 @@ export async function createResumableUploadSessions(
           'Content-Type': 'application/json; charset=UTF-8',
           'X-Upload-Content-Type': file.mimeType,
           'X-Upload-Content-Length': String(file.size),
+          // Required when the browser will PUT the bytes; without this, Google
+          // omits Access-Control-Allow-Origin on the upload response (CORS fail).
+          ...(origin ? { Origin: origin } : {}),
         },
         body: JSON.stringify({
           name: file.name,
@@ -172,8 +178,8 @@ export async function createResumableUploadSessions(
 
 /**
  * Upload a small text cutter file (PLT) from the server.
- * Browser → Drive resumable PUTs are reliable for PNG, but PLT uploads have
- * failed for customers in practice; server-side media upload is tiny and stable.
+ * Browser → Drive PUTs fail CORS unless the resumable session was started with
+ * the page Origin; PLT is small enough to upload here reliably every time.
  */
 export async function uploadCutterFileToFolder(
   folderId: string,

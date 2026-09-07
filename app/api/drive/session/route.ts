@@ -14,6 +14,8 @@ type SessionBody = {
   customerName?: string
   stamp?: string
   files?: DriveUploadSpec[]
+  /** window.location.origin — required for browser PUTs to Google (CORS). */
+  origin?: string
   /** Small PLT text uploaded by the server into the same job folder. */
   cutterFile?: {
     name?: string
@@ -38,6 +40,10 @@ export async function POST(req: Request) {
     const customerName = String(body.customerName ?? '').trim()
     const stamp = String(body.stamp ?? '').trim()
     const files = Array.isArray(body.files) ? body.files : []
+    const browserOrigin =
+      String(body.origin ?? '').trim() ||
+      req.headers.get('origin')?.trim() ||
+      undefined
     const cutterName = String(body.cutterFile?.name ?? '').trim()
     const cutterContent = String(body.cutterFile?.content ?? '')
     const cutterMime = String(body.cutterFile?.mimeType ?? 'text/plain').trim() || 'text/plain'
@@ -62,7 +68,10 @@ export async function POST(req: Request) {
     }
 
     const folder = await createCustomerDriveFolder(customerName, stamp)
-    const uploads = files.length > 0 ? await createResumableUploadSessions(folder.folderId, files) : []
+    const uploads =
+      files.length > 0
+        ? await createResumableUploadSessions(folder.folderId, files, browserOrigin)
+        : []
 
     let cutter = null
     if (wantsCutter) {
