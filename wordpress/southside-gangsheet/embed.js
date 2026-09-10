@@ -41,6 +41,31 @@
     );
   }
 
+  /**
+   * The builder iframe is rendered at full content height, so it has no scrollbar
+   * of its own — scrolling has to happen on this page. The builder sends the
+   * offset of the element it wants shown, measured from the top of its document.
+   */
+  function scrollToInFrame(event, data) {
+    var top = Number(data.top);
+    if (!isFinite(top) || top < 0) return;
+    var frames = document.querySelectorAll('iframe.ssgs-embed-frame');
+    for (var i = 0; i < frames.length; i++) {
+      var frame = frames[i];
+      try {
+        if (event.source && frame.contentWindow !== event.source) continue;
+      } catch (e) {}
+      var frameTop = frame.getBoundingClientRect().top + (window.pageYOffset || document.documentElement.scrollTop || 0);
+      var target = Math.max(0, frameTop + top - 90);
+      try {
+        window.scrollTo({ top: target, behavior: 'smooth' });
+      } catch (e) {
+        window.scrollTo(0, target);
+      }
+      return;
+    }
+  }
+
   function addToCart(event, data) {
     if (!ajaxUrl || !nonce) {
       reply(event.source, data.requestId, {
@@ -107,6 +132,11 @@
       var height = Number(data.height);
       if (!isFinite(height) || height < 1) return;
       resizeFrames(event, height);
+      return;
+    }
+
+    if (data.type === 'scroll-to') {
+      scrollToInFrame(event, data);
       return;
     }
 

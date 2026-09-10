@@ -6,13 +6,13 @@ Embed the customer builder and **Add to Cart** into WooCommerce on southsidedtf.
 
 Use the ready zip in this repo:
 
-- [`wordpress/southside-gangsheet-1.11.zip`](./southside-gangsheet-1.11.zip)
+- [`wordpress/southside-gangsheet-1.15.zip`](./southside-gangsheet-1.15.zip)
 
 Or zip the `southside-gangsheet/` folder yourself.
 
 ## Install on WordPress
 
-1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet-1.11.zip` → Activate
+1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet-1.15.zip` → Activate
 2. **Settings → Gang Sheet Builder**
    - Builder URL: `https://southside-dtf.vercel.app`
    - WooCommerce product ID: **4365** (or leave `0` for slug `custom-gang-sheet-builder`)
@@ -35,3 +35,8 @@ Or zip the `southside-gangsheet/` folder yourself.
 - Cart/order lines store the Drive file id + link only.
 - After payment, WordPress may call `/api/drive/finalize` to prepend the order number to the Drive filename.
 - Abandoned-cart files are left in Drive on purpose — no cleanup job.
+
+## Upload confirmation (v1.15+)
+
+- Builder shows a green notice under the dropzone when designs are added.
+- Embed posts `scroll-to` so the store page scrolls the design list into view (iframe is full-height with no own scrollbar).
