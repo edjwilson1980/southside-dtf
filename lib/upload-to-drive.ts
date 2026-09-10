@@ -10,6 +10,13 @@ export type DriveCutterUpload = {
   mimeType?: string
 }
 
+export type DriveUploadedFile = {
+  /** Name the file was uploaded under (matches DriveFileUpload.name). */
+  name: string
+  id: string
+  webViewLink: string
+}
+
 export type DriveUploadResult = {
   folderId: string
   folderName: string
@@ -20,6 +27,8 @@ export type DriveUploadResult = {
   /** Direct Drive link for the print PNG (https://drive.google.com/file/d/…/view). */
   fileUrl?: string
   webViewLink?: string
+  /** Every uploaded print file, in the order given. One cart line per entry. */
+  files: DriveUploadedFile[]
 }
 
 /** 8 MB chunks — resumable PUT direct to Google (never through Vercel body limits). */
@@ -82,6 +91,7 @@ export async function uploadJobToGoogleDrive(options: {
   const totalBytes = options.files.reduce((sum, file) => sum + file.blob.size, 0)
   let uploadedBytes = 0
   let printFile: { id?: string; name?: string; webViewLink?: string } | null = null
+  const uploadedFiles: DriveUploadedFile[] = []
 
   for (const file of options.files) {
     const session = uploads.find((item) => item.name === file.name)
@@ -94,6 +104,14 @@ export async function uploadJobToGoogleDrive(options: {
     })
     uploadedBytes += file.blob.size
     options.onProgress?.(totalBytes > 0 ? Math.min(1, uploadedBytes / totalBytes) : 1)
+    if (!uploaded.id) {
+      throw new Error(`Could not save ${file.name} to our print queue. Please try again.`)
+    }
+    uploadedFiles.push({
+      name: file.name,
+      id: uploaded.id,
+      webViewLink: uploaded.webViewLink || `https://drive.google.com/file/d/${uploaded.id}/view`,
+    })
     if (!printFile) printFile = uploaded
   }
 
@@ -116,6 +134,7 @@ export async function uploadJobToGoogleDrive(options: {
     fileId,
     fileUrl: webViewLink,
     webViewLink,
+    files: uploadedFiles,
   }
 }
 
