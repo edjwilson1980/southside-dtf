@@ -547,7 +547,7 @@ function HomeBuilder() {
           customerName: customerName.trim(),
           sheetWidthIn: SHEET_WIDTH_IN,
           sheetHeightIn: printedHeightIn,
-          billableHeightIn,
+          billableHeightIn: billedLength,
           quantity: 1,
           designs: designs.length,
           transfers: totalTransfers,

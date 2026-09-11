@@ -6,13 +6,13 @@ Embed the customer builder and **Add to Cart** into WooCommerce on southsidedtf.
 
 Use the ready zip in this repo:
 
-- [`wordpress/southside-gangsheet-1.15.zip`](./southside-gangsheet-1.15.zip)
+- [`wordpress/southside-gangsheet-1.16.zip`](./southside-gangsheet-1.16.zip)
 
 Or zip the `southside-gangsheet/` folder yourself.
 
 ## Install on WordPress
 
-1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet-1.15.zip` → Activate
+1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet-1.16.zip` → Activate
 2. **Settings → Gang Sheet Builder**
    - Builder URL: `https://southside-dtf.vercel.app`
    - WooCommerce product ID: **4365** (or leave `0` for slug `custom-gang-sheet-builder`)
@@ -40,3 +40,7 @@ Or zip the `southside-gangsheet/` folder yourself.
 
 - Builder shows a green notice under the dropzone when designs are added.
 - Embed posts `scroll-to` so the store page scrolls the design list into view (iframe is full-height with no own scrollbar).
+
+## Sheet length matching (v1.16+)
+
+- Variation matching floors the billable length so a 36.49 in print still selects a **36 in** product instead of jumping to a larger size.

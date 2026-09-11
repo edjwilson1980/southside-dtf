@@ -310,7 +310,9 @@ function UploadFlow() {
           customerName: customerName.trim(),
           sheetWidthIn: SAFETY_WIDTH_IN,
           sheetHeightIn: job.scaled.scaledHeightIn,
-          billableHeightIn: job.scaled.scaledHeightIn,
+          // Send the billed tier (e.g. 36), not the raw float — WooCommerce picks the
+          // smallest variation >= this value, so 36.49 would skip a 36 in product.
+          billableHeightIn: job.item.sheet?.length ?? job.scaled.scaledHeightIn,
           quantity: 1,
           designs: 1,
           transfers: 0,
@@ -507,13 +509,13 @@ function UploadFlow() {
                             : ''}
                           .
                         </p>
-                        {scaled && Math.abs(scaled.scaleFactor - 1) > 0.001 && (
+                        {scaled && scaled.scaleFactor < 0.999 && (
                           <p>
-                            We will scale it to{' '}
+                            We will scale it down to{' '}
                             <strong>
                               {formatInches(scaled.scaledWidthIn)} × {formatInches(scaled.scaledHeightIn)} in
                             </strong>{' '}
-                            to fit the {SAFETY_WIDTH_IN} in printable width.
+                            so it fits the {SAFETY_WIDTH_IN} in printable width.
                           </p>
                         )}
                         {sheet && gate?.ok && (

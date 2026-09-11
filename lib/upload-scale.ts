@@ -11,7 +11,13 @@ export type ScaledSheet = {
   pixelHeight: number
 }
 
-/** Fit the measured sheet onto the 22.3in printable width (scale up or down). */
+/**
+ * Fit a finished gang sheet to the printable roll width.
+ *
+ * Only scale DOWN when the file is wider than 22.3 in. Never scale up — a sheet
+ * that is already 22 × 36 in must stay ~36 in long. Stretching a narrower sheet
+ * up to full width (e.g. 8.9 × 36 → 22.3 × 90) quietly inflates the order.
+ */
 export function scaleToSafetyWidth(options: {
   widthIn: number
   heightIn: number
@@ -23,10 +29,12 @@ export function scaleToSafetyWidth(options: {
   if (!(sourceWidthIn > 0) || !(sourceHeightIn > 0)) {
     throw new Error('Sheet size must be greater than zero.')
   }
-  const scaleFactor = SAFETY_WIDTH_IN / sourceWidthIn
-  const scaledWidthIn = SAFETY_WIDTH_IN
+
+  const scaleFactor = sourceWidthIn > SAFETY_WIDTH_IN ? SAFETY_WIDTH_IN / sourceWidthIn : 1
+  const scaledWidthIn = sourceWidthIn * scaleFactor
   const scaledHeightIn = sourceHeightIn * scaleFactor
   const effectiveDpi = options.pixelWidth / scaledWidthIn
+
   return {
     sourceWidthIn,
     sourceHeightIn,
