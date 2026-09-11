@@ -621,7 +621,6 @@ function HomeBuilder() {
     {embed ? (
       <div className="embed-bar">
         <strong>Build your gang sheet</strong>
-        <a href="/" target="_blank" rel="noreferrer">Open full page</a>
       </div>
     ) : (
       <div className="builder-topbar">

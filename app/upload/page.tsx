@@ -354,9 +354,6 @@ function UploadFlow() {
       {embed ? (
         <div className="embed-bar">
           <strong>Upload your gang sheets</strong>
-          <a href="/upload" target="_blank" rel="noreferrer">
-            Open full page
-          </a>
         </div>
       ) : (
         <div className="builder-topbar">
