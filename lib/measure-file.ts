@@ -4,7 +4,7 @@
  */
 
 export type MeasuredFile = {
-  kind: 'png' | 'jpeg' | 'tiff' | 'pdf' | 'unknown'
+  kind: 'png' | 'jpeg' | 'tiff' | 'pdf' | 'svg' | 'unknown'
   pixelWidth: number
   pixelHeight: number
   dpiX: number
@@ -235,6 +235,65 @@ function measurePdf(bytes: Uint8Array): Pick<MeasuredFile, 'pixelWidth' | 'pixel
   }
 }
 
+
+function measureSvg(bytes: Uint8Array): Pick<MeasuredFile, 'pixelWidth' | 'pixelHeight' | 'dpiX' | 'dpiY' | 'dpiAssumed' | 'widthIn' | 'heightIn'> {
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+  if (!/<svg\b/i.test(text)) {
+    throw new Error('This SVG file could not be read.')
+  }
+
+  const parseLength = (raw: string | undefined, fallbackPx: number) => {
+    if (!raw) return { inches: fallbackPx / DEFAULT_DPI, px: fallbackPx }
+    const value = raw.trim().toLowerCase()
+    const match = /^([0-9.]+)\s*(px|pt|in|cm|mm)?$/.exec(value)
+    if (!match) return { inches: fallbackPx / DEFAULT_DPI, px: fallbackPx }
+    const n = Number(match[1])
+    const unit = match[2] || 'px'
+    if (!Number.isFinite(n) || n <= 0) return { inches: fallbackPx / DEFAULT_DPI, px: fallbackPx }
+    if (unit === 'in') return { inches: n, px: Math.round(n * DEFAULT_DPI) }
+    if (unit === 'cm') return { inches: n / 2.54, px: Math.round((n / 2.54) * DEFAULT_DPI) }
+    if (unit === 'mm') return { inches: n / 25.4, px: Math.round((n / 25.4) * DEFAULT_DPI) }
+    if (unit === 'pt') return { inches: n / 72, px: Math.round((n / 72) * DEFAULT_DPI) }
+    // px — treat as CSS pixels at 96dpi for physical size, render at DEFAULT_DPI
+    const inches = n / 96
+    return { inches, px: Math.round(inches * DEFAULT_DPI) }
+  }
+
+  const viewBox = /viewBox\s*=\s*["']\s*([0-9.+-eE]+)\s+([0-9.+-eE]+)\s+([0-9.+-eE]+)\s+([0-9.+-eE]+)\s*["']/i.exec(text)
+  const widthAttr = /\bwidth\s*=\s*["']([^"']+)["']/i.exec(text)?.[1]
+  const heightAttr = /\bheight\s*=\s*["']([^"']+)["']/i.exec(text)?.[1]
+
+  let vbW = 0
+  let vbH = 0
+  if (viewBox) {
+    vbW = Math.abs(Number(viewBox[3]))
+    vbH = Math.abs(Number(viewBox[4]))
+  }
+
+  const width = parseLength(widthAttr, vbW || 3000)
+  const height = parseLength(heightAttr, vbH || 3000)
+
+  // Prefer explicit width/height; if only viewBox, treat viewBox units as px @ 96dpi.
+  const widthIn = widthAttr ? width.inches : vbW > 0 ? vbW / 96 : width.inches
+  const heightIn = heightAttr ? height.inches : vbH > 0 ? vbH / 96 : height.inches
+  const pixelWidth = Math.max(1, Math.round(widthIn * DEFAULT_DPI))
+  const pixelHeight = Math.max(1, Math.round(heightIn * DEFAULT_DPI))
+
+  if (!(widthIn > 0) || !(heightIn > 0)) {
+    throw new Error('Could not determine the size of this SVG. Add a width/height or viewBox.')
+  }
+
+  return {
+    pixelWidth,
+    pixelHeight,
+    dpiX: DEFAULT_DPI,
+    dpiY: DEFAULT_DPI,
+    dpiAssumed: true,
+    widthIn,
+    heightIn,
+  }
+}
+
 function sniffKind(file: File, bytes: Uint8Array): MeasuredFile['kind'] {
   const name = file.name.toLowerCase()
   const type = (file.type || '').toLowerCase()
@@ -246,6 +305,11 @@ function sniffKind(file: File, bytes: Uint8Array): MeasuredFile['kind'] {
   if (type.includes('jpeg') || type.includes('jpg') || name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'jpeg'
   if (type.includes('tif') || name.endsWith('.tif') || name.endsWith('.tiff')) return 'tiff'
   if (type.includes('pdf') || name.endsWith('.pdf')) return 'pdf'
+  if (type.includes('svg') || name.endsWith('.svg')) return 'svg'
+  if (bytes.length >= 4) {
+    const head = new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(0, Math.min(bytes.length, 2048)))
+    if (/<svg\b/i.test(head)) return 'svg'
+  }
   return 'unknown'
 }
 
@@ -257,14 +321,14 @@ async function readPrefix(file: File, maxBytes: number) {
 
 export async function measureUploadFile(file: File): Promise<MeasuredFile> {
   if (!file || file.size <= 0) {
-    throw new Error('Choose a PNG, PDF, or TIFF gang sheet to upload.')
+    throw new Error('Choose a PNG, JPG, PDF, SVG, or TIFF file to upload.')
   }
 
-  // 4 MB covers PNG/JPEG/TIFF headers and most PDF MediaBox locations.
+  // 4 MB covers PNG/JPEG/TIFF headers, SVG sources, and most PDF MediaBox locations.
   const bytes = await readPrefix(file, 4_000_000)
   const kind = sniffKind(file, bytes)
   if (kind === 'unknown') {
-    throw new Error('Upload a PNG (transparent), PDF, or TIFF gang sheet.')
+    throw new Error('Upload a PNG, JPG, PDF, SVG, or TIFF file.')
   }
 
   let measured: Pick<MeasuredFile, 'pixelWidth' | 'pixelHeight' | 'dpiX' | 'dpiY' | 'dpiAssumed'> & {
@@ -275,6 +339,7 @@ export async function measureUploadFile(file: File): Promise<MeasuredFile> {
   if (kind === 'png') measured = measurePng(bytes)
   else if (kind === 'jpeg') measured = measureJpeg(bytes)
   else if (kind === 'tiff') measured = measureTiff(bytes)
+  else if (kind === 'svg') measured = measureSvg(bytes)
   else measured = measurePdf(bytes)
 
   const dpiX = Math.max(1, measured.dpiX || DEFAULT_DPI)
@@ -295,7 +360,7 @@ export async function measureUploadFile(file: File): Promise<MeasuredFile> {
     dpiAssumed: measured.dpiAssumed,
     widthIn,
     heightIn,
-    mimeType: file.type || (kind === 'png' ? 'image/png' : kind === 'jpeg' ? 'image/jpeg' : kind === 'tiff' ? 'image/tiff' : 'application/pdf'),
+    mimeType: file.type || (kind === 'png' ? 'image/png' : kind === 'jpeg' ? 'image/jpeg' : kind === 'tiff' ? 'image/tiff' : kind === 'svg' ? 'image/svg+xml' : 'application/pdf'),
     fileName: file.name,
     byteLength: file.size,
   }

@@ -48,6 +48,7 @@ function guessMime(name: string, contentType: string | null) {
   if (lower.endsWith('.png')) return 'image/png'
   if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
   if (lower.endsWith('.pdf')) return 'application/pdf'
+  if (lower.endsWith('.svg')) return 'image/svg+xml'
   if (lower.endsWith('.tif') || lower.endsWith('.tiff')) return 'image/tiff'
   if (lower.endsWith('.plt')) return 'text/plain'
   return 'application/octet-stream'

@@ -17,6 +17,8 @@ import {
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
 import { sheetStamp } from '@/lib/sheet-name'
+import { SHEET_ACCEPT, SHEET_ACCEPT_LABEL, isAcceptedSheetFile } from '@/lib/accepted-uploads'
+import { prepareEditableUpload } from '@/lib/rasterize-upload'
 
 const logoUrl =
   'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/SSP%20Logo%20%28Black%20Outline%29-A5PrDBPZRDhydxNxRumbsTUFufpLv9.png'
@@ -209,23 +211,35 @@ function UploadFlow() {
         )
         continue
       }
+      if (!isAcceptedSheetFile(next)) {
+        problems.push(`${next.name}: upload a ${SHEET_ACCEPT_LABEL.replace(/ · /g, ', ')}.`)
+        continue
+      }
       try {
         const info = await measureUploadFile(next)
         if (info.kind === 'jpeg') {
           problems.push(
-            `${next.name} has a solid background. DTF prints white ink, so a white background prints as a white rectangle. Export a transparent PNG or TIFF.`,
+            `${next.name}: JPEG accepted — if it has a white background, that background will print as white ink. Transparent PNG is safer.`,
           )
-          continue
+        }
+        let fileUrl = URL.createObjectURL(next)
+        let measured = info
+        // PDF/SVG cannot preview in <img>; rasterize a PNG preview while keeping the original for Drive.
+        if (info.kind === 'pdf' || info.kind === 'svg') {
+          const prepared = await prepareEditableUpload(next)
+          URL.revokeObjectURL(fileUrl)
+          fileUrl = prepared.editUrl
+          measured = prepared.measured
         }
         accepted.push({
           id: makeEntryId(),
           file: next,
-          fileUrl: URL.createObjectURL(next),
-          measured: info,
+          fileUrl,
+          measured,
           overrideMode: false,
-          overrideWidth: formatInches(info.widthIn),
-          overrideHeight: formatInches(info.heightIn),
-          overrideDpi: String(Math.round(info.dpiX)),
+          overrideWidth: formatInches(measured.widthIn),
+          overrideHeight: formatInches(measured.heightIn),
+          overrideDpi: String(Math.round(measured.dpiX)),
         })
       } catch (err) {
         problems.push(`${next.name}: ${err instanceof Error ? err.message : 'could not read that file.'}`)
@@ -426,7 +440,7 @@ function UploadFlow() {
                 <div>
                   <h2>Upload your gang sheets</h2>
                   <p>
-                    One or more files: transparent PNG, PDF, or TIFF. Max {formatBytes(MAX_UPLOAD_BYTES)} each, up to{' '}
+                    One or more files: PNG, JPG, PDF, SVG, or TIFF. Max {formatBytes(MAX_UPLOAD_BYTES)} each, up to{' '}
                     {MAX_SHEETS} sheets.
                   </p>
                 </div>
@@ -436,7 +450,7 @@ function UploadFlow() {
                 className="sr-only"
                 type="file"
                 multiple
-                accept="image/png,image/tiff,image/tif,application/pdf,.png,.tif,.tiff,.pdf"
+                accept={SHEET_ACCEPT}
                 onChange={(e) => void onPickFiles(e.target.files)}
               />
               <button
@@ -452,7 +466,7 @@ function UploadFlow() {
                 <Upload size={28} />
                 <strong>Drop your gang sheets here</strong>
                 <span>or click to choose files — you can pick several at once</span>
-                <small>PNG · PDF · TIFF · Max {formatBytes(MAX_UPLOAD_BYTES)} each, up to {MAX_SHEETS} sheets</small>
+                <small>{SHEET_ACCEPT_LABEL} · Max {formatBytes(MAX_UPLOAD_BYTES)} each, up to {MAX_SHEETS} sheets</small>
               </button>
               {reading && <p className="sublead">Reading files…</p>}
               {measureError && <p className="save-error">{measureError}</p>}
