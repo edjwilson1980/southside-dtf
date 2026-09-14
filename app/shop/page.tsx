@@ -455,6 +455,7 @@ export default function Home() {
       </div>
       <nav className="shop-nav" aria-label="Shop tools">
         <a className="shop-nav-link" href="/">Customer builder</a>
+        <a className="shop-nav-link" href="/shop/halftone">Halftone generator</a>
         <a className="shop-nav-link" href="/shop/cutter-test">Cutter test</a>
         <a className="shop-nav-link" href="/shop/connect-drive">Connect Drive</a>
       </nav>

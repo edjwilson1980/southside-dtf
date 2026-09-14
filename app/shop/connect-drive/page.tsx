@@ -49,6 +49,9 @@ export default function ConnectDrivePage() {
         <a className="shop-nav-link" href="/">
           Customer builder
         </a>
+        <a className="shop-nav-link" href="/shop/halftone">
+          Halftone generator
+        </a>
       </nav>
 
       <h1>
