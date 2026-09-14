@@ -43,6 +43,7 @@ export default function HalftonePage() {
   const [sourceUrl, setSourceUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const [coverage, setCoverage] = useState<number | null>(null)
   const [settings, setSettings] = useState<HalftoneSettings>(DEFAULT_HALFTONE)
 
@@ -222,10 +223,35 @@ export default function HalftonePage() {
             accept={DESIGN_ACCEPT}
             onChange={(e) => void onPick(e.target.files)}
           />
-          <button type="button" className="dropzone" onClick={() => inputRef.current?.click()}>
+          <button
+            type="button"
+            className={`dropzone${dragging ? ' dragging' : ''}`}
+            onClick={() => inputRef.current?.click()}
+            onDragEnter={(e) => {
+              e.preventDefault()
+              setDragging(true)
+            }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'copy'
+              setDragging(true)
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault()
+              // Ignore leave events that stay inside the dropzone (child nodes).
+              if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+              setDragging(false)
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDragging(false)
+              void onPick(e.dataTransfer.files)
+            }}
+          >
             <Upload size={26} />
-            <strong>{file ? file.name : 'Choose artwork'}</strong>
+            <strong>{file ? file.name : dragging ? 'Drop artwork to screen' : 'Drop artwork here'}</strong>
             <span>{DESIGN_ACCEPT_LABEL}</span>
+            <small>or click to choose a file</small>
           </button>
 
           {measured && (
