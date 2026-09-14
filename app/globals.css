@@ -745,3 +745,38 @@ button.thumb:disabled { cursor: default; }
 }
 .halftone-controls .build-button:disabled { cursor: not-allowed; opacity: .6; }
 .halftone-controls .build-button:hover:not(:disabled) { background: #008db8; }
+
+.halftone-hint { margin: 0; color: var(--muted); font-size: 12px; font-weight: 600; line-height: 1.4; }
+.halftone-swatches { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.halftone-swatch {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 2px solid #c9d4de;
+  border-radius: 7px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%);
+}
+.halftone-swatch.active { border-color: var(--chicago-blue); box-shadow: 0 0 0 2px #cfeef8; }
+.halftone-color-picker {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 2px dashed #98a2b3;
+  border-radius: 7px;
+  overflow: hidden;
+  cursor: pointer;
+  background: #fff;
+}
+.halftone-color-picker input[type="color"] {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transform: scale(1.4);
+}
+.halftone-canvas-wrap.knockout-bg { background-image: none; }
+

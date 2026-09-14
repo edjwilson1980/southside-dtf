@@ -6,10 +6,13 @@ import { canvasToPngBlob, loadImage } from '@/lib/image-utils'
 import { formatInches, measureUploadFile, type MeasuredFile } from '@/lib/measure-file'
 import {
   DEFAULT_HALFTONE,
+  KNOCKOUT_BG_PRESETS,
   LPI_PRESETS,
   grayLevels,
   halfToneImage,
+  hexToRgb,
   minDotMicrons,
+  rgbToHex,
   type DotShape,
   type HalftoneMode,
   type HalftoneSettings,
@@ -322,6 +325,48 @@ export default function HalftonePage() {
                   suffix="%"
                 />
               )}
+              <div className="halftone-field">
+                <span className="halftone-label">
+                  Background colour
+                  <b>{rgbToHex(settings.knockoutBgColor)}</b>
+                </span>
+                <p className="halftone-hint">
+                  Shirt colour shown through the punched holes in the preview. Export stays transparent for film.
+                </p>
+                <div className="halftone-swatches" role="listbox" aria-label="Knockout background presets">
+                  {KNOCKOUT_BG_PRESETS.map((preset) => {
+                    const active =
+                      preset.color.r === settings.knockoutBgColor.r &&
+                      preset.color.g === settings.knockoutBgColor.g &&
+                      preset.color.b === settings.knockoutBgColor.b
+                    return (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        role="option"
+                        aria-selected={active}
+                        title={preset.name}
+                        className={`halftone-swatch${active ? ' active' : ''}`}
+                        style={{ background: rgbToHex(preset.color) }}
+                        onClick={() => set('knockoutBgColor', { ...preset.color })}
+                      >
+                        <span className="sr-only">{preset.name}</span>
+                      </button>
+                    )
+                  })}
+                  <label className="halftone-color-picker" title="Custom background colour">
+                    <span className="sr-only">Custom background colour</span>
+                    <input
+                      type="color"
+                      value={rgbToHex(settings.knockoutBgColor)}
+                      onChange={(e) => {
+                        const next = hexToRgb(e.target.value)
+                        if (next) set('knockoutBgColor', next)
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
             </>
           )}
 
@@ -375,7 +420,17 @@ export default function HalftonePage() {
           ))}
           {error && <p className="save-error">{error}</p>}
 
-          <div className={`halftone-canvas-wrap${busy ? ' busy' : ''}`}>
+          <div
+            className={`halftone-canvas-wrap${busy ? ' busy' : ''}${settings.mode === 'knockout' ? ' knockout-bg' : ''}`}
+            style={
+              settings.mode === 'knockout'
+                ? {
+                    background: rgbToHex(settings.knockoutBgColor),
+                    backgroundImage: 'none',
+                  }
+                : undefined
+            }
+          >
             {measured ? (
               <canvas ref={previewRef} className="halftone-canvas" />
             ) : (
