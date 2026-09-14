@@ -1,5 +1,7 @@
 'use client'
 
+import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/accepted-uploads'
+import { prepareEditableUpload } from '@/lib/rasterize-upload'
 import { useEffect, useRef, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
@@ -247,7 +249,7 @@ function HomeBuilder() {
     window.parent.postMessage({ source: 'southside-gangsheet', type: 'scroll-to', top }, '*')
   }
 
-  function addFiles(list: FileList | File[]) {
+  async function addFiles(list: FileList | File[]) {
     const incoming = Array.from(list)
     if (incoming.length === 0) return
     setAddNotice(null)
@@ -255,23 +257,33 @@ function HomeBuilder() {
       setAddError('Enter your name in step 1 first, then drop your artwork here.')
       return
     }
-    const accepted = incoming.filter((file) => file.type.startsWith('image/') || file.type === 'application/pdf')
+    const accepted = incoming.filter((file) => isAcceptedDesignFile(file))
     const skipped = incoming.length - accepted.length
     if (accepted.length === 0) {
-      setAddError('That file type will not print. Upload a PNG, JPG, or PDF.')
+      setAddError(`That file type will not print. Upload a ${DESIGN_ACCEPT_LABEL.replace(/ · /g, ', ')}.`)
       return
     }
     setAddError(
       skipped > 0
-        ? `${skipped} file${skipped === 1 ? '' : 's'} skipped — only PNG, JPG, and PDF can be printed.`
+        ? `${skipped} file${skipped === 1 ? '' : 's'} skipped — only ${DESIGN_ACCEPT_LABEL} can be printed.`
         : null,
     )
-    const additions = accepted.map((file, index) => {
-      const originalUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : ''
+
+    const prepared = []
+    for (const file of accepted) {
+      try {
+        prepared.push(await prepareEditableUpload(file))
+      } catch (err) {
+        setAddError(err instanceof Error ? err.message : `Could not read ${file.name}.`)
+      }
+    }
+    if (prepared.length === 0) return
+
+    const additions = prepared.map((item, index) => {
       return {
         id: Date.now() + index,
         designNumber: 0,
-        name: file.name,
+        name: item.sourceFile.name,
         placement,
         size: recommendedSize(placement),
         customWidth: '',
@@ -279,11 +291,11 @@ function HomeBuilder() {
         quantity: 1,
         notes: '',
         color: index % 2 ? 'red' : 'blue',
-        originalUrl,
-        previewUrl: originalUrl,
+        originalUrl: item.editUrl,
+        previewUrl: item.editUrl,
         enhanced: false,
-        pixelWidth: 0,
-        pixelHeight: 0,
+        pixelWidth: item.measured.pixelWidth,
+        pixelHeight: item.measured.pixelHeight,
       } satisfies Design
     })
 
@@ -693,10 +705,10 @@ function HomeBuilder() {
           <label className="customer-name-field workspace-customer-name">Your name <span className="required-field">Required</span><input required type="text" maxLength={80} placeholder="Enter your name before uploading" value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></label>
         </div>
         <div id="step-2" className="guide-block">
-          <GuideHeading number={2} title="Upload your design" hint="Drop a PNG or JPG here, or click to choose a file from your computer." />
+          <GuideHeading number={2} title="Upload your design" hint="Drop a PNG, JPG, PDF, or SVG here, or click to choose a file from your computer." />
         </div>
-        <button className={`dropzone ${dragging ? 'dragging' : ''} ${!customerName.trim() ? 'customer-required-disabled' : ''}`} aria-disabled={!customerName.trim()} title={!customerName.trim() ? 'Enter a customer name first' : undefined} onClick={() => { if (customerName.trim()) inputRef.current?.click() }} onDragOver={(e) => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={(e) => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files) }}><Upload size={48} strokeWidth={1.7} /><strong>Drop your artwork here</strong><span>PNG · JPG · JPEG</span><small>Click a design to blow it up, check quality, and upscale it</small></button>
-        <input ref={inputRef} className="sr-only" type="file" multiple accept="image/png,image/jpeg,application/pdf" onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }} />
+        <button className={`dropzone ${dragging ? 'dragging' : ''} ${!customerName.trim() ? 'customer-required-disabled' : ''}`} aria-disabled={!customerName.trim()} title={!customerName.trim() ? 'Enter a customer name first' : undefined} onClick={() => { if (customerName.trim()) inputRef.current?.click() }} onDragOver={(e) => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={(e) => { e.preventDefault(); setDragging(false); void addFiles(e.dataTransfer.files) }}><Upload size={48} strokeWidth={1.7} /><strong>Drop your artwork here</strong><span>{DESIGN_ACCEPT_LABEL}</span><small>Click a design to blow it up, check quality, and upscale it</small></button>
+        <input ref={inputRef} className="sr-only" type="file" multiple accept={DESIGN_ACCEPT} onChange={(e) => { if (e.target.files) void addFiles(e.target.files); e.target.value = '' }} />
         {addError && <p className="upload-notice-error" role="alert">{addError}</p>}
         {addNotice && (
           <div className="upload-notice" role="status" aria-live="polite">

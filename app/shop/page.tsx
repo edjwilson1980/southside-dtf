@@ -14,6 +14,8 @@ import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
+import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/accepted-uploads'
+import { prepareEditableUpload } from '@/lib/rasterize-upload'
 
 type Design = {
   id: number
@@ -184,15 +186,28 @@ export default function Home() {
   const [cutOut, setCutOut] = useState(false)
   const previewGen = useRef(0)
 
-  function addFiles(list: FileList | File[]) {
+  async function addFiles(list: FileList | File[]) {
     if (!customerName.trim()) return
-    const accepted = Array.from(list).filter((file) => file.type.startsWith('image/') || file.type === 'application/pdf')
-    const additions = accepted.map((file, index) => {
-      const originalUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : ''
+    const incoming = Array.from(list)
+    const accepted = incoming.filter((file) => isAcceptedDesignFile(file))
+    if (accepted.length === 0) return
+
+    const prepared = []
+    for (const file of accepted) {
+      try {
+        prepared.push(await prepareEditableUpload(file))
+      } catch {
+        // Skip unreadable files quietly in the shop tool.
+      }
+    }
+    if (prepared.length === 0) return
+
+    const additions = prepared.map((item, index) => {
+      const originalUrl = item.editUrl
       return {
         id: Date.now() + index,
         designNumber: 0,
-        name: file.name,
+        name: item.sourceFile.name,
         placement,
         size: recommendedSize(placement),
         customWidth: '',
@@ -203,8 +218,8 @@ export default function Home() {
         originalUrl,
         previewUrl: originalUrl,
         enhanced: false,
-        pixelWidth: 0,
-        pixelHeight: 0,
+        pixelWidth: item.measured.pixelWidth,
+        pixelHeight: item.measured.pixelHeight,
       } satisfies Design
     })
 
@@ -521,10 +536,10 @@ export default function Home() {
           <label className="customer-name-field workspace-customer-name">Customer name <span className="required-field">Required</span><input required type="text" maxLength={80} placeholder="Enter customer name before uploading" value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></label>
         </div>
         <div id="step-2" className="guide-block">
-          <GuideHeading number={2} title="Upload your design" hint="Drop a PNG or JPG here, or click to choose a file from your computer." />
+          <GuideHeading number={2} title="Upload your design" hint="Drop a PNG, JPG, PDF, or SVG here, or click to choose a file from your computer." />
         </div>
-        <button className={`dropzone ${dragging ? 'dragging' : ''} ${!customerName.trim() ? 'customer-required-disabled' : ''}`} aria-disabled={!customerName.trim()} title={!customerName.trim() ? 'Enter a customer name first' : undefined} onClick={() => { if (customerName.trim()) inputRef.current?.click() }} onDragOver={(e) => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={(e) => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files) }}><Upload size={48} strokeWidth={1.7} /><strong>Drop your artwork here</strong><span>PNG · JPG · JPEG</span><small>Click a design to blow it up, check quality, and upscale it</small></button>
-        <input ref={inputRef} className="sr-only" type="file" multiple accept="image/png,image/jpeg,application/pdf" onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }} />
+        <button className={`dropzone ${dragging ? 'dragging' : ''} ${!customerName.trim() ? 'customer-required-disabled' : ''}`} aria-disabled={!customerName.trim()} title={!customerName.trim() ? 'Enter a customer name first' : undefined} onClick={() => { if (customerName.trim()) inputRef.current?.click() }} onDragOver={(e) => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={(e) => { e.preventDefault(); setDragging(false); void addFiles(e.dataTransfer.files) }}><Upload size={48} strokeWidth={1.7} /><strong>Drop your artwork here</strong><span>{DESIGN_ACCEPT_LABEL}</span><small>Click a design to blow it up, check quality, and upscale it</small></button>
+        <input ref={inputRef} className="sr-only" type="file" multiple accept={DESIGN_ACCEPT} onChange={(e) => { if (e.target.files) void addFiles(e.target.files); e.target.value = '' }} />
         <div className="divider" />
         <div id="step-3" className="guide-block">
           <GuideHeading number={3} title="What are you printing?" hint="Tap the garment or placement that matches this design." />

@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Upload } from 'lucide-react'
 import { canvasToPngBlob, loadImage } from '@/lib/image-utils'
-import { formatInches, measureUploadFile, type MeasuredFile } from '@/lib/measure-file'
+import { formatInches, type MeasuredFile } from '@/lib/measure-file'
+import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/accepted-uploads'
+import { prepareEditableUpload } from '@/lib/rasterize-upload'
 import {
   DEFAULT_HALFTONE,
   KNOCKOUT_BG_PRESETS,
@@ -86,17 +88,18 @@ export default function HalftonePage() {
     const next = list?.[0]
     if (!next) return
     setError(null)
+    if (!isAcceptedDesignFile(next)) {
+      setError(`Upload a ${DESIGN_ACCEPT_LABEL.replace(/ · /g, ', ')} file.`)
+      if (inputRef.current) inputRef.current.value = ''
+      return
+    }
     try {
-      const info = await measureUploadFile(next)
-      if (info.kind === 'pdf') {
-        setError('PDFs cannot be screened here. Export the art as a transparent PNG or TIFF first.')
-        return
-      }
-      setFile(next)
-      setMeasured(info)
+      const prepared = await prepareEditableUpload(next)
+      setFile(prepared.editFile)
+      setMeasured(prepared.measured)
       setSourceUrl((url) => {
         if (url) URL.revokeObjectURL(url)
-        return URL.createObjectURL(next)
+        return prepared.editUrl
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not read that file.')
@@ -216,13 +219,13 @@ export default function HalftonePage() {
             ref={inputRef}
             className="sr-only"
             type="file"
-            accept="image/png,image/tiff,image/tif,.png,.tif,.tiff"
+            accept={DESIGN_ACCEPT}
             onChange={(e) => void onPick(e.target.files)}
           />
           <button type="button" className="dropzone" onClick={() => inputRef.current?.click()}>
             <Upload size={26} />
             <strong>{file ? file.name : 'Choose artwork'}</strong>
-            <span>Transparent PNG or TIFF</span>
+            <span>{DESIGN_ACCEPT_LABEL}</span>
           </button>
 
           {measured && (
