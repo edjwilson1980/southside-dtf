@@ -191,6 +191,9 @@ export default function HalftonePage() {
         <a className="shop-nav-link" href="/">
           Customer builder
         </a>
+        <a className="shop-nav-link" href="/shop/halftone" aria-current="page">
+          Halftone generator
+        </a>
       </nav>
 
       <div className="builder-topbar">
