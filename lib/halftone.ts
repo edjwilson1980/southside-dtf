@@ -44,6 +44,11 @@ export type HalftoneSettings = {
   knockoutAmountPct: number
   /** Knockout only: drive hole size from image tone instead of a flat amount. */
   useImageTone: boolean
+  /**
+   * Knockout only: garment / background colour shown through the punched holes
+   * in the preview (and optionally baked into the export).
+   */
+  knockoutBgColor: { r: number; g: number; b: number }
   /** Keep the source colours. When false every dot is inkColor. */
   preserveColor: boolean
   inkColor: { r: number; g: number; b: number }
@@ -65,10 +70,37 @@ export const DEFAULT_HALFTONE: HalftoneSettings = {
   maxDotPct: 92,
   knockoutAmountPct: 50,
   useImageTone: false,
+  knockoutBgColor: { r: 17, g: 17, b: 17 },
   preserveColor: true,
   inkColor: { r: 0, g: 0, b: 0 },
   samples: 2,
   invert: false,
+}
+
+/** Common shirt colours for knockout preview. */
+export const KNOCKOUT_BG_PRESETS = [
+  { name: 'Black', color: { r: 17, g: 17, b: 17 } },
+  { name: 'White', color: { r: 245, g: 245, b: 245 } },
+  { name: 'Heather', color: { r: 156, g: 163, b: 175 } },
+  { name: 'Navy', color: { r: 30, g: 58, b: 95 } },
+  { name: 'Red', color: { r: 185, g: 28, b: 28 } },
+  { name: 'Forest', color: { r: 20, g: 83, b: 45 } },
+] as const
+
+export function rgbToHex(color: { r: number; g: number; b: number }) {
+  const hex = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0')
+  return `#${hex(color.r)}${hex(color.g)}${hex(color.b)}`
+}
+
+export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!match) return null
+  const value = match[1]!
+  return {
+    r: parseInt(value.slice(0, 2), 16),
+    g: parseInt(value.slice(2, 4), 16),
+    b: parseInt(value.slice(4, 6), 16),
+  }
 }
 
 /** Style presets from DTF practice. Vintage is the soft, open, faded look. */
