@@ -212,11 +212,6 @@ export default function HalftonePage() {
     setPan({ x: widthIn / 2, y: heightIn / 2 })
   }, [crop, widthIn, heightIn])
 
-  // Re-clamp after zoom so the window stays inside the art as the view shrinks.
-  useEffect(() => {
-    setPan((current) => clampPan(current))
-  }, [zoom, clampPan])
-
   /** Keep the window inside the artwork. */
   const clampPan = useCallback(
     (next: { x: number; y: number }) => ({
@@ -225,6 +220,11 @@ export default function HalftonePage() {
     }),
     [viewWIn, viewHIn, widthIn, heightIn],
   )
+
+  // Re-clamp after zoom so the window stays inside the art as the view shrinks.
+  useEffect(() => {
+    setPan((current) => clampPan(current))
+  }, [zoom, clampPan])
 
   async function onPick(list: FileList | null) {
     const next = list?.[0]
@@ -1182,7 +1182,6 @@ export default function HalftonePage() {
               garment === null || view === 'alpha' ? ' checkered' : ''
             }`}
             style={view === 'alpha' || garment === null ? undefined : { background: garment }}
-            onWheel={onWheel}
           >
             {measured && cropMode && crop ? (
               <div className="halftone-crop-stage">
