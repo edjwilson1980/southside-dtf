@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Brush, Crop, Download, Eraser, Maximize2, MousePointerClick, Pipette, Scan, Trash2, Upload, ZoomIn, ZoomOut } from 'lucide-react'
 import { CropOverlay } from '@/components/crop-overlay'
 import { contentBounds, normalizeCrop, type CropRect } from '@/lib/crop-image'
+import { refineEdges } from '@/lib/edge-refine'
 import { colorFromHex, hexFromRgb } from '@/lib/color-knockout'
 import { canvasToPngBlob, loadImage } from '@/lib/image-utils'
 import { formatInches, type MeasuredFile } from '@/lib/measure-file'
@@ -35,6 +36,24 @@ const MASK_LONG_EDGE = 1200
 /** Supersample the viewport so dots stay crisp when zoomed. */
 const VIEW_SUPERSAMPLE = 2
 const ZOOM_STEPS = [1, 2, 4, 8, 16]
+/** Stop doubling before intermediate canvases get silly. */
+const MAX_STEP_EDGE = 8192
+
+type UpscaleMode = 'smooth' | 'stepped' | 'crisp'
+
+const UPSCALE_MODES: { value: UpscaleMode; label: string; hint: string }[] = [
+  { value: 'smooth', label: 'Smooth', hint: 'One resample. Best for photographs and soft art.' },
+  {
+    value: 'stepped',
+    label: 'Stepped',
+    hint: 'Doubles repeatedly instead of one big jump. Holds detail better past about 3×.',
+  },
+  {
+    value: 'crisp',
+    label: 'Crisp edges',
+    hint: 'Re-hardens the alpha edge after resampling. For logos, text and cut-out art.',
+  },
+]
 
 /** Garment colours to preview the film against. */
 const GARMENTS: { label: string; hex: string }[] = [
@@ -117,7 +136,8 @@ export default function HalftonePage() {
   const [printW, setPrintW] = useState(0)
   const [printH, setPrintH] = useState(0)
   const [lockAspect, setLockAspect] = useState(true)
-  const [enhance, setEnhance] = useState(true)
+  const [upscaleMode, setUpscaleMode] = useState<UpscaleMode>('stepped')
+  const [upscaleSharpen, setUpscaleSharpen] = useState(65)
   const [zoom, setZoom] = useState(1)
   /** Centre of the visible window, in printed inches. */
   const [pan, setPan] = useState({ x: 0, y: 0 })
@@ -247,7 +267,6 @@ export default function HalftonePage() {
       setProtectedPct(0)
       setMaskVersion((v) => v + 1)
       setZoom(1)
-      setPan({ x: 0, y: 0 })
       setSourceUrl((url) => {
         if (url) URL.revokeObjectURL(url)
         return prepared.editUrl
@@ -257,6 +276,85 @@ export default function HalftonePage() {
     }
     if (inputRef.current) inputRef.current.value = ''
   }
+
+  /**
+   * Draw a slice of the source at the requested size, applying the upscale
+   * treatment when the target is larger than the pixels available. Used by both
+   * the preview window and the export, so what you judge is what you get.
+   */
+  const renderArt = useCallback(
+    (
+      image: HTMLImageElement,
+      sx: number,
+      sy: number,
+      sw: number,
+      sh: number,
+      outW: number,
+      outH: number,
+    ): ImageData => {
+      const factor = sw > 0 ? outW / sw : 1
+      let canvas = document.createElement('canvas')
+      let ctx: CanvasRenderingContext2D | null
+
+      if (upscaleMode === 'stepped' && factor > 2) {
+        // Repeated doubling keeps more edge detail than one large jump.
+        let curW = Math.max(1, Math.round(sw))
+        let curH = Math.max(1, Math.round(sh))
+        canvas.width = curW
+        canvas.height = curH
+        ctx = canvas.getContext('2d', { willReadFrequently: true })
+        if (!ctx) throw new Error('Could not open a canvas.')
+        ctx.imageSmoothingQuality = 'high'
+        ctx.drawImage(image, sx, sy, sw, sh, 0, 0, curW, curH)
+
+        while (curW * 2 < outW && curW * 2 <= MAX_STEP_EDGE && curH * 2 <= MAX_STEP_EDGE) {
+          const next = document.createElement('canvas')
+          next.width = curW * 2
+          next.height = curH * 2
+          const nextCtx = next.getContext('2d')
+          if (!nextCtx) break
+          nextCtx.imageSmoothingQuality = 'high'
+          nextCtx.drawImage(canvas, 0, 0, next.width, next.height)
+          canvas = next
+          curW = next.width
+          curH = next.height
+        }
+
+        const final = document.createElement('canvas')
+        final.width = outW
+        final.height = outH
+        const finalCtx = final.getContext('2d', { willReadFrequently: true })
+        if (!finalCtx) throw new Error('Could not open a canvas.')
+        finalCtx.imageSmoothingQuality = 'high'
+        finalCtx.drawImage(canvas, 0, 0, outW, outH)
+        canvas = final
+        ctx = finalCtx
+      } else {
+        canvas.width = outW
+        canvas.height = outH
+        ctx = canvas.getContext('2d', { willReadFrequently: true })
+        if (!ctx) throw new Error('Could not open a canvas.')
+        ctx.imageSmoothingQuality = 'high'
+        ctx.drawImage(image, sx, sy, sw, sh, 0, 0, outW, outH)
+      }
+
+      let pixels = ctx.getImageData(0, 0, outW, outH)
+      if (factor > 1.02) {
+        if (upscaleMode === 'crisp') {
+          pixels = refineEdges(pixels, { choke: 0, crisp: 60, smooth: 0 })
+        }
+        if (upscaleSharpen > 0) {
+          const sharpened = unsharpBuffer(
+            { data: pixels.data, width: outW, height: outH },
+            upscaleSharpen / 100,
+          )
+          pixels = new ImageData(sharpened.data, outW, outH)
+        }
+      }
+      return pixels
+    },
+    [upscaleMode, upscaleSharpen],
+  )
 
   /** Build the mask-space reference for the current crop: the cropped art at a
    *  fixed resolution, independent of zoom. */
@@ -334,13 +432,7 @@ export default function HalftonePage() {
         const sh = (viewHIn / Math.max(0.0001, heightIn)) * area.height
 
         ctx.clearRect(0, 0, w, h)
-        ctx.imageSmoothingQuality = 'high'
-        ctx.drawImage(image, sx, sy, sw, sh, 0, 0, w, h)
-        let source = ctx.getImageData(0, 0, w, h)
-        if (enhance && sw > 0 && w > sw) {
-          const sharpened = unsharpBuffer({ data: source.data, width: w, height: h })
-          source = new ImageData(sharpened.data, w, h)
-        }
+        const source = renderArt(image, sx, sy, sw, sh, w, h)
 
         // Pull the matching slice out of the mask so it tracks zoom and pan.
         const dims = maskDimsRef.current
@@ -363,6 +455,8 @@ export default function HalftonePage() {
             : null
 
         if (view === 'original') {
+          // renderArt draws offscreen, so paint it before overlaying the mask.
+          ctx.putImageData(source, 0, 0)
           if (showProtection && windowMask) paintProtectionOverlay(ctx, windowMask, w, h)
           setCoverage(null)
           setKnockedOut(null)
@@ -405,13 +499,15 @@ export default function HalftonePage() {
     cropMode,
     widthIn,
     heightIn,
-    enhance,
+    upscaleMode,
+    upscaleSharpen,
     zoom,
     pan,
     viewWIn,
     viewHIn,
     renderPpi,
     buildMaskSpace,
+    renderArt,
   ])
 
   function applyPrintWidth(value: number) {
@@ -642,13 +738,7 @@ export default function HalftonePage() {
       if (!ctx) throw new Error('Could not open a canvas for export.')
       const area = crop ?? { x: 0, y: 0, width: measured.pixelWidth, height: measured.pixelHeight }
       ctx.clearRect(0, 0, exportW, exportH)
-      ctx.imageSmoothingQuality = 'high'
-      ctx.drawImage(image, area.x, area.y, area.width, area.height, 0, 0, exportW, exportH)
-      let source = ctx.getImageData(0, 0, exportW, exportH)
-      if (enhance && exportW > area.width) {
-        const sharpened = unsharpBuffer({ data: source.data, width: exportW, height: exportH })
-        source = new ImageData(sharpened.data, exportW, exportH)
-      }
+      const source = renderArt(image, area.x, area.y, area.width, area.height, exportW, exportH)
       const mask = protectRef.current
       const dims = maskDimsRef.current
       const exportMask =
@@ -808,10 +898,36 @@ export default function HalftonePage() {
               </p>
 
               {upscaleFactor > 1.02 && (
-                <label className="halftone-check">
-                  <input type="checkbox" checked={enhance} onChange={(e) => setEnhance(e.target.checked)} />
-                  Sharpen when upscaling
-                </label>
+                <div className="halftone-upscale">
+                  <span className="halftone-label">
+                    Upscale
+                    <b>{upscaleFactor.toFixed(1)}×</b>
+                  </span>
+                  <div className="halftone-segment halftone-tools">
+                    {UPSCALE_MODES.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={upscaleMode === option.value ? 'active' : ''}
+                        onClick={() => setUpscaleMode(option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="halftone-hint">
+                    {UPSCALE_MODES.find((option) => option.value === upscaleMode)?.hint}
+                  </p>
+                  <Slider
+                    label="Sharpen"
+                    min={0}
+                    max={150}
+                    step={5}
+                    value={upscaleSharpen}
+                    onChange={setUpscaleSharpen}
+                    suffix="%"
+                  />
+                </div>
               )}
             </div>
           )}

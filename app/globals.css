@@ -699,6 +699,15 @@ button.thumb:disabled { cursor: default; }
 @media (min-width: 720px) { .halftone-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .halftone-stats .metric strong { font-size: 17px; }
 .halftone-warn-text { color: #9a3412; }
+.halftone-upscale {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px dashed #c3cedb;
+  border-radius: 9px;
+  background: #fff;
+}
 .halftone-view-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
 .halftone-zoom { flex: 0 0 auto; align-items: center; }
 .halftone-zoom button { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; padding: 8px 11px; }
@@ -829,6 +838,7 @@ button.thumb:disabled { cursor: default; }
 .halftone-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (min-width: 900px) { .halftone-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 
+.halftone-shell .shop-nav { margin: 0 0 18px; }
 .halftone-controls { padding: 18px; }
 .halftone-preview { padding: 18px; }
 .halftone-stats .metric {
