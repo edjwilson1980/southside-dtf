@@ -212,6 +212,11 @@ export default function HalftonePage() {
     setPan({ x: widthIn / 2, y: heightIn / 2 })
   }, [crop, widthIn, heightIn])
 
+  // Re-clamp after zoom so the window stays inside the art as the view shrinks.
+  useEffect(() => {
+    setPan((current) => clampPan(current))
+  }, [zoom, clampPan])
+
   /** Keep the window inside the artwork. */
   const clampPan = useCallback(
     (next: { x: number; y: number }) => ({
@@ -559,11 +564,26 @@ export default function HalftonePage() {
     setPan((current) => clampPan(current))
   }
 
-  function onWheel(event: React.WheelEvent<HTMLDivElement>) {
-    if (cropMode) return
-    event.preventDefault()
-    zoomTo(zoom * (event.deltaY < 0 ? 1.25 : 0.8))
-  }
+  // Wheel listeners are passive by default in the browser; attach our own so
+  // preventDefault actually stops the page from scrolling while zooming.
+  useEffect(() => {
+    const node = viewportRef.current
+    if (!node) return
+    const handle = (event: WheelEvent) => {
+      if (cropMode) return
+      event.preventDefault()
+      setZoom((current) => {
+        const next = Math.min(
+          ZOOM_STEPS[ZOOM_STEPS.length - 1],
+          Math.max(1, current * (event.deltaY < 0 ? 1.25 : 0.8)),
+        )
+        return next
+      })
+      setPan((current) => clampPan(current))
+    }
+    node.addEventListener('wheel', handle, { passive: false })
+    return () => node.removeEventListener('wheel', handle)
+  }, [cropMode, clampPan])
 
   function onCanvasDown(event: React.MouseEvent<HTMLCanvasElement>) {
     if (picking) {
