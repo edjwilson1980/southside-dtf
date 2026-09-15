@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Brush, Crop, Download, Eraser, MousePointerClick, Pipette, Scan, Trash2, Upload } from 'lucide-react'
+import { Brush, Crop, Download, Eraser, Maximize2, MousePointerClick, Pipette, Scan, Trash2, Upload, ZoomIn, ZoomOut } from 'lucide-react'
 import { CropOverlay } from '@/components/crop-overlay'
 import { contentBounds, normalizeCrop, type CropRect } from '@/lib/crop-image'
 import { colorFromHex, hexFromRgb } from '@/lib/color-knockout'
@@ -17,6 +17,7 @@ import {
   minDotMicrons,
   effectiveDpi,
   processArtwork,
+  sampleMaskRegion,
   scaleMask,
   selectRegion,
   unsharpBuffer,
@@ -28,6 +29,22 @@ import {
 /** Browsers cap canvas area; stay well under it. */
 const MAX_EXPORT_PX = 14000
 const MAX_PREVIEW_PX = 1100
+/** The protect mask lives in its own space covering the crop, so zoom and pan
+ *  never move it. 1200 px on the long edge is plenty for brush work. */
+const MASK_LONG_EDGE = 1200
+/** Supersample the viewport so dots stay crisp when zoomed. */
+const VIEW_SUPERSAMPLE = 2
+const ZOOM_STEPS = [1, 2, 4, 8, 16]
+
+/** Garment colours to preview the film against. */
+const GARMENTS: { label: string; hex: string }[] = [
+  { label: 'White tee', hex: '#ffffff' },
+  { label: 'Sand', hex: '#d8cbb4' },
+  { label: 'Heather', hex: '#9aa3ab' },
+  { label: 'Red', hex: '#a3242b' },
+  { label: 'Navy', hex: '#1e2a44' },
+  { label: 'Black tee', hex: '#141416' },
+]
 
 type View = 'original' | 'print' | 'alpha'
 /** Protection tools keep parts of the art out of the knockout. */
@@ -69,7 +86,13 @@ export default function HalftonePage() {
   const sourcePixelsRef = useRef<ImageData | null>(null)
   /** Protection mask at preview resolution. 255 = never knock this out. */
   const protectRef = useRef<Uint8Array | null>(null)
+  const maskDimsRef = useRef({ width: 0, height: 0 })
+  /** Cropped art rendered at mask resolution — the reference for picking and
+   *  region select, so those stay correct at any zoom. */
+  const maskSourceRef = useRef<ImageData | null>(null)
   const paintingRef = useRef(false)
+  const panningRef = useRef<{ x: number; y: number; pan: { x: number; y: number } } | null>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
 
   const [file, setFile] = useState<File | null>(null)
   const [measured, setMeasured] = useState<MeasuredFile | null>(null)
@@ -95,6 +118,11 @@ export default function HalftonePage() {
   const [printH, setPrintH] = useState(0)
   const [lockAspect, setLockAspect] = useState(true)
   const [enhance, setEnhance] = useState(true)
+  const [zoom, setZoom] = useState(1)
+  /** Centre of the visible window, in printed inches. */
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [garment, setGarment] = useState<string | null>(null)
+  const [viewport, setViewport] = useState({ width: 900, height: 620 })
   const [settings, setSettings] = useState<HalftoneSettings>(DEFAULT_HALFTONE)
 
   const set = useCallback(<K extends keyof HalftoneSettings>(key: K, value: HalftoneSettings[K]) => {
@@ -115,6 +143,18 @@ export default function HalftonePage() {
   const exportW = Math.round(widthIn * settings.dpi)
   const exportH = Math.round(heightIn * settings.dpi)
   const tooBig = exportW > MAX_EXPORT_PX || exportH > MAX_EXPORT_PX
+
+  // Pixels per printed inch needed to fit the whole design in the viewport.
+  const fitPpi =
+    widthIn > 0 && heightIn > 0
+      ? Math.min(viewport.width / widthIn, viewport.height / heightIn)
+      : 0
+  const screenPpi = fitPpi * zoom
+  const viewWIn = screenPpi > 0 ? Math.min(widthIn, viewport.width / screenPpi) : widthIn
+  const viewHIn = screenPpi > 0 ? Math.min(heightIn, viewport.height / screenPpi) : heightIn
+  // Render above screen resolution so dots stay crisp, but never past export DPI.
+  const renderPpi = Math.min(settings.dpi, Math.max(1, screenPpi * VIEW_SUPERSAMPLE))
+  const atFullDetail = renderPpi >= settings.dpi - 0.5
 
   const warnings = useMemo(() => {
     const list: string[] = []
@@ -151,6 +191,41 @@ export default function HalftonePage() {
     }
   }, [sourceUrl])
 
+  useEffect(() => {
+    const node = viewportRef.current
+    if (!node || typeof ResizeObserver === 'undefined') return
+    const measure = () => {
+      const rect = node.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        setViewport({ width: Math.round(rect.width), height: Math.round(rect.height) })
+      }
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+
+  /** Reset the view whenever the framing changes. */
+  useEffect(() => {
+    setZoom(1)
+    setPan({ x: widthIn / 2, y: heightIn / 2 })
+  }, [crop, widthIn, heightIn])
+
+  /** Keep the window inside the artwork. */
+  const clampPan = useCallback(
+    (next: { x: number; y: number }) => ({
+      x: Math.min(Math.max(next.x, viewWIn / 2), Math.max(viewWIn / 2, widthIn - viewWIn / 2)),
+      y: Math.min(Math.max(next.y, viewHIn / 2), Math.max(viewHIn / 2, heightIn - viewHIn / 2)),
+    }),
+    [viewWIn, viewHIn, widthIn, heightIn],
+  )
+
+  // Re-clamp after zoom so the window stays inside the art as the view shrinks.
+  useEffect(() => {
+    setPan((current) => clampPan(current))
+  }, [zoom, clampPan])
+
   async function onPick(list: FileList | null) {
     const next = list?.[0]
     if (!next) return
@@ -171,6 +246,8 @@ export default function HalftonePage() {
       protectRef.current = null
       setProtectedPct(0)
       setMaskVersion((v) => v + 1)
+      setZoom(1)
+      setPan({ x: 0, y: 0 })
       setSourceUrl((url) => {
         if (url) URL.revokeObjectURL(url)
         return prepared.editUrl
@@ -181,7 +258,37 @@ export default function HalftonePage() {
     if (inputRef.current) inputRef.current.value = ''
   }
 
-  /** Screen at a preview DPI so dot density matches what the art will print at. */
+  /** Build the mask-space reference for the current crop: the cropped art at a
+   *  fixed resolution, independent of zoom. */
+  const buildMaskSpace = useCallback(
+    async (image: HTMLImageElement, area: CropRect) => {
+      const long = Math.max(area.width, area.height)
+      const scale = Math.min(1, MASK_LONG_EDGE / Math.max(1, long))
+      const w = Math.max(1, Math.round(area.width * scale))
+      const h = Math.max(1, Math.round(area.height * scale))
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })
+      if (!ctx) return
+      ctx.clearRect(0, 0, w, h)
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(image, area.x, area.y, area.width, area.height, 0, 0, w, h)
+      maskSourceRef.current = ctx.getImageData(0, 0, w, h)
+      if (!protectRef.current || maskDimsRef.current.width !== w || maskDimsRef.current.height !== h) {
+        protectRef.current = new Uint8Array(w * h)
+        maskDimsRef.current = { width: w, height: h }
+      }
+    },
+    [],
+  )
+
+  /**
+   * Render only the visible window. Zooming raises the render DPI and narrows
+   * the window, so magnifying reveals real dot structure instead of blowing up
+   * preview pixels — up to the export DPI, past which there is nothing more to
+   * show.
+   */
   useEffect(() => {
     if (!sourceUrl || !measured) return
     let cancelled = false
@@ -192,8 +299,10 @@ export default function HalftonePage() {
       try {
         const image = await loadImage(sourceUrl)
         if (cancelled) return
-        const area =
-          crop ?? { x: 0, y: 0, width: measured.pixelWidth, height: measured.pixelHeight }
+        const area = crop ?? { x: 0, y: 0, width: measured.pixelWidth, height: measured.pixelHeight }
+        await buildMaskSpace(image, area)
+        if (cancelled) return
+
         const ctx = canvas.getContext('2d', { willReadFrequently: true })
         if (!ctx) return
 
@@ -211,26 +320,50 @@ export default function HalftonePage() {
           return
         }
 
-        const previewDpi = Math.min(settings.dpi, MAX_PREVIEW_PX / Math.max(0.01, widthIn))
-        const w = Math.max(1, Math.round(widthIn * previewDpi))
-        const h = Math.max(1, Math.round(heightIn * previewDpi))
+        // Visible window in printed inches, then the matching slice of the source.
+        const x0 = Math.min(Math.max(pan.x - viewWIn / 2, 0), Math.max(0, widthIn - viewWIn))
+        const y0 = Math.min(Math.max(pan.y - viewHIn / 2, 0), Math.max(0, heightIn - viewHIn))
+        const w = Math.max(1, Math.round(viewWIn * renderPpi))
+        const h = Math.max(1, Math.round(viewHIn * renderPpi))
         canvas.width = w
         canvas.height = h
+
+        const sx = area.x + (x0 / Math.max(0.0001, widthIn)) * area.width
+        const sy = area.y + (y0 / Math.max(0.0001, heightIn)) * area.height
+        const sw = (viewWIn / Math.max(0.0001, widthIn)) * area.width
+        const sh = (viewHIn / Math.max(0.0001, heightIn)) * area.height
+
         ctx.clearRect(0, 0, w, h)
         ctx.imageSmoothingQuality = 'high'
-        ctx.drawImage(image, area.x, area.y, area.width, area.height, 0, 0, w, h)
+        ctx.drawImage(image, sx, sy, sw, sh, 0, 0, w, h)
         let source = ctx.getImageData(0, 0, w, h)
-        if (enhance && area.width > 0 && w > area.width) {
+        if (enhance && sw > 0 && w > sw) {
           const sharpened = unsharpBuffer({ data: source.data, width: w, height: h })
           source = new ImageData(sharpened.data, w, h)
         }
-        sourcePixelsRef.current = new ImageData(new Uint8ClampedArray(source.data), w, h)
-        if (!protectRef.current || protectRef.current.length !== w * h) {
-          protectRef.current = new Uint8Array(w * h)
-        }
+
+        // Pull the matching slice out of the mask so it tracks zoom and pan.
+        const dims = maskDimsRef.current
+        const mask = protectRef.current
+        const windowMask =
+          mask && dims.width > 0
+            ? sampleMaskRegion(
+                mask,
+                dims.width,
+                dims.height,
+                {
+                  x: (x0 / Math.max(0.0001, widthIn)) * dims.width,
+                  y: (y0 / Math.max(0.0001, heightIn)) * dims.height,
+                  width: (viewWIn / Math.max(0.0001, widthIn)) * dims.width,
+                  height: (viewHIn / Math.max(0.0001, heightIn)) * dims.height,
+                },
+                w,
+                h,
+              )
+            : null
 
         if (view === 'original') {
-          if (showProtection) paintProtectionOverlay(ctx, protectRef.current, w, h)
+          if (showProtection && windowMask) paintProtectionOverlay(ctx, windowMask, w, h)
           setCoverage(null)
           setKnockedOut(null)
           return
@@ -238,12 +371,12 @@ export default function HalftonePage() {
 
         const { image: out, stats } = processArtwork(
           source,
-          { ...settings, dpi: previewDpi },
-          { protectMask: protectRef.current },
+          { ...settings, dpi: renderPpi },
+          { protectMask: windowMask },
         )
         const shown = view === 'alpha' ? alphaMatte(out) : out
         ctx.putImageData(new ImageData(shown.data, shown.width, shown.height), 0, 0)
-        if (showProtection && erases) paintProtectionOverlay(ctx, protectRef.current, w, h)
+        if (showProtection && erases && windowMask) paintProtectionOverlay(ctx, windowMask, w, h)
         if (!cancelled) {
           setCoverage(stats.coverage)
           setKnockedOut(stats.knockedOut)
@@ -273,6 +406,12 @@ export default function HalftonePage() {
     widthIn,
     heightIn,
     enhance,
+    zoom,
+    pan,
+    viewWIn,
+    viewHIn,
+    renderPpi,
+    buildMaskSpace,
   ])
 
   function applyPrintWidth(value: number) {
@@ -336,16 +475,24 @@ export default function HalftonePage() {
     return mask.length > 0 ? painted / mask.length : 0
   }
 
-  /** Translate a mouse event into mask pixel coordinates. */
+  /** Viewport pixel -> mask-space pixel, via printed inches. */
   function maskPoint(event: React.MouseEvent<HTMLCanvasElement>) {
     const canvas = previewRef.current
-    const pixels = sourcePixelsRef.current
-    if (!canvas || !pixels) return null
+    const dims = maskDimsRef.current
+    if (!canvas || dims.width === 0) return null
     const rect = canvas.getBoundingClientRect()
-    const x = Math.floor(((event.clientX - rect.left) / rect.width) * pixels.width)
-    const y = Math.floor(((event.clientY - rect.top) / rect.height) * pixels.height)
-    if (x < 0 || y < 0 || x >= pixels.width || y >= pixels.height) return null
-    return { x, y, width: pixels.width, height: pixels.height }
+    const fx = (event.clientX - rect.left) / rect.width
+    const fy = (event.clientY - rect.top) / rect.height
+    if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return null
+
+    const x0 = Math.min(Math.max(pan.x - viewWIn / 2, 0), Math.max(0, widthIn - viewWIn))
+    const y0 = Math.min(Math.max(pan.y - viewHIn / 2, 0), Math.max(0, heightIn - viewHIn))
+    const inchX = x0 + fx * viewWIn
+    const inchY = y0 + fy * viewHIn
+    const x = Math.floor((inchX / Math.max(0.0001, widthIn)) * dims.width)
+    const y = Math.floor((inchY / Math.max(0.0001, heightIn)) * dims.height)
+    if (x < 0 || y < 0 || x >= dims.width || y >= dims.height) return null
+    return { x, y, width: dims.width, height: dims.height }
   }
 
   function paintAt(event: React.MouseEvent<HTMLCanvasElement>) {
@@ -353,7 +500,11 @@ export default function HalftonePage() {
     const point = maskPoint(event)
     if (!mask || !point) return
     const value = tool === 'erase' ? 0 : 255
-    const radius = Math.max(1, Math.round((brushSize / 100) * Math.max(point.width, point.height) * 0.25))
+    // Brush size is in screen terms, so it feels the same at every zoom.
+    const radius = Math.max(
+      1,
+      Math.round(((brushSize / 100) * 0.25 * point.width * viewWIn) / Math.max(0.0001, widthIn)),
+    )
     const radiusSq = radius * radius
     for (let dy = -radius; dy <= radius; dy += 1) {
       const y = point.y + dy
@@ -372,7 +523,7 @@ export default function HalftonePage() {
   /** One click shields a whole enclosed shape — an eye, the hole in an O. */
   function protectRegionAt(event: React.MouseEvent<HTMLCanvasElement>) {
     const mask = protectRef.current
-    const pixels = sourcePixelsRef.current
+    const pixels = maskSourceRef.current
     const point = maskPoint(event)
     if (!mask || !pixels || !point) return
     const region = selectRegion(
@@ -393,6 +544,47 @@ export default function HalftonePage() {
     setMaskVersion((v) => v + 1)
   }
 
+  /** Eyedropper reads the untouched art, not whatever is currently drawn. */
+  function sampleColor(event: React.MouseEvent<HTMLCanvasElement>) {
+    const pixels = maskSourceRef.current
+    const point = maskPoint(event)
+    if (!pixels || !point) return
+    const index = (point.y * pixels.width + point.x) * 4
+    set('knockoutColor', {
+      r: pixels.data[index],
+      g: pixels.data[index + 1],
+      b: pixels.data[index + 2],
+    })
+    setPicking(false)
+  }
+
+  function zoomTo(next: number) {
+    const clamped = Math.min(ZOOM_STEPS[ZOOM_STEPS.length - 1], Math.max(1, next))
+    setZoom(clamped)
+    setPan((current) => clampPan(current))
+  }
+
+  // Wheel listeners are passive by default in the browser; attach our own so
+  // preventDefault actually stops the page from scrolling while zooming.
+  useEffect(() => {
+    const node = viewportRef.current
+    if (!node) return
+    const handle = (event: WheelEvent) => {
+      if (cropMode) return
+      event.preventDefault()
+      setZoom((current) => {
+        const next = Math.min(
+          ZOOM_STEPS[ZOOM_STEPS.length - 1],
+          Math.max(1, current * (event.deltaY < 0 ? 1.25 : 0.8)),
+        )
+        return next
+      })
+      setPan((current) => clampPan(current))
+    }
+    node.addEventListener('wheel', handle, { passive: false })
+    return () => node.removeEventListener('wheel', handle)
+  }, [cropMode, clampPan])
+
   function onCanvasDown(event: React.MouseEvent<HTMLCanvasElement>) {
     if (picking) {
       sampleColor(event)
@@ -405,30 +597,36 @@ export default function HalftonePage() {
     if (tool === 'brush' || tool === 'erase') {
       paintingRef.current = true
       paintAt(event)
+      return
+    }
+    if (zoom > 1) {
+      panningRef.current = { x: event.clientX, y: event.clientY, pan }
     }
   }
 
   function onCanvasMove(event: React.MouseEvent<HTMLCanvasElement>) {
-    if (!paintingRef.current) return
-    paintAt(event)
+    if (paintingRef.current) {
+      paintAt(event)
+      return
+    }
+    const drag = panningRef.current
+    if (!drag) return
+    const canvas = previewRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const perPxX = viewWIn / Math.max(1, rect.width)
+    const perPxY = viewHIn / Math.max(1, rect.height)
+    setPan(
+      clampPan({
+        x: drag.pan.x - (event.clientX - drag.x) * perPxX,
+        y: drag.pan.y - (event.clientY - drag.y) * perPxY,
+      }),
+    )
   }
 
-  /** Eyedropper reads the untouched pixels, not whatever is currently drawn. */
-  function sampleColor(event: React.MouseEvent<HTMLCanvasElement>) {
-    const canvas = previewRef.current
-    const pixels = sourcePixelsRef.current
-    if (!picking || !canvas || !pixels) return
-    const rect = canvas.getBoundingClientRect()
-    const x = Math.floor(((event.clientX - rect.left) / rect.width) * pixels.width)
-    const y = Math.floor(((event.clientY - rect.top) / rect.height) * pixels.height)
-    if (x < 0 || y < 0 || x >= pixels.width || y >= pixels.height) return
-    const index = (y * pixels.width + x) * 4
-    set('knockoutColor', {
-      r: pixels.data[index],
-      g: pixels.data[index + 1],
-      b: pixels.data[index + 2],
-    })
-    setPicking(false)
+  function endPointer() {
+    paintingRef.current = false
+    panningRef.current = null
   }
 
   async function exportPng() {
@@ -452,9 +650,9 @@ export default function HalftonePage() {
         source = new ImageData(sharpened.data, exportW, exportH)
       }
       const mask = protectRef.current
-      const preview = sourcePixelsRef.current
+      const dims = maskDimsRef.current
       const exportMask =
-        mask && preview ? scaleMask(mask, preview.width, preview.height, exportW, exportH) : null
+        mask && dims.width > 0 ? scaleMask(mask, dims.width, dims.height, exportW, exportH) : null
       const { image: out } = processArtwork(source, settings, { protectMask: exportMask })
       ctx.putImageData(new ImageData(out.data, out.width, out.height), 0, 0)
 
@@ -933,7 +1131,58 @@ export default function HalftonePage() {
           ))}
           {error && <p className="save-error">{error}</p>}
 
-          <div className={`halftone-canvas-wrap${busy ? ' busy' : ''}${view === 'alpha' ? ' alpha-view' : ''}`}>
+          <div className="halftone-view-tools">
+            <div className="halftone-segment halftone-zoom">
+              <button type="button" onClick={() => zoomTo(zoom / 2)} disabled={cropMode || zoom <= 1} aria-label="Zoom out">
+                <ZoomOut size={14} />
+              </button>
+              <button type="button" onClick={() => zoomTo(zoom * 2)} disabled={cropMode} aria-label="Zoom in">
+                <ZoomIn size={14} />
+              </button>
+              <button type="button" onClick={() => { setZoom(1); setPan({ x: widthIn / 2, y: heightIn / 2 }) }} disabled={cropMode}>
+                <Maximize2 size={14} /> Fit
+              </button>
+              <span className="halftone-zoom-readout">
+                {zoom.toFixed(zoom < 10 ? 1 : 0)}×{atFullDetail ? ' · full detail' : ''}
+              </span>
+            </div>
+
+            <div className="halftone-garments" role="group" aria-label="Preview on garment">
+              <button
+                type="button"
+                className={garment === null ? 'active' : ''}
+                onClick={() => setGarment(null)}
+                title="Transparent"
+              >
+                <span className="halftone-swatch checker" />
+              </button>
+              {GARMENTS.map((option) => (
+                <button
+                  key={option.hex}
+                  type="button"
+                  className={garment === option.hex ? 'active' : ''}
+                  onClick={() => setGarment(option.hex)}
+                  title={option.label}
+                >
+                  <span className="halftone-swatch" style={{ background: option.hex }} />
+                </button>
+              ))}
+              <input
+                type="color"
+                aria-label="Custom garment colour"
+                value={garment ?? '#141416'}
+                onChange={(e) => setGarment(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div
+            ref={viewportRef}
+            className={`halftone-viewport${busy ? ' busy' : ''}${view === 'alpha' ? ' alpha-view' : ''}${
+              garment === null || view === 'alpha' ? ' checkered' : ''
+            }`}
+            style={view === 'alpha' || garment === null ? undefined : { background: garment }}
+          >
             {measured && cropMode && crop ? (
               <div className="halftone-crop-stage">
                 <canvas ref={previewRef} className="halftone-canvas" />
@@ -947,15 +1196,14 @@ export default function HalftonePage() {
             ) : measured ? (
               <canvas
                 ref={previewRef}
-                className={`halftone-canvas${picking || tool !== 'none' ? ' picking' : ''}`}
+                className={`halftone-canvas${
+                  picking || tool !== 'none' ? ' picking' : zoom > 1 ? ' grabbable' : ''
+                }`}
+                style={{ width: `${Math.round(viewWIn * fitPpi * zoom)}px` }}
                 onMouseDown={onCanvasDown}
                 onMouseMove={onCanvasMove}
-                onMouseUp={() => {
-                  paintingRef.current = false
-                }}
-                onMouseLeave={() => {
-                  paintingRef.current = false
-                }}
+                onMouseUp={endPointer}
+                onMouseLeave={endPointer}
               />
             ) : (
               <div className="empty-designs">
@@ -966,7 +1214,9 @@ export default function HalftonePage() {
           <p className="sublead">
             {measured ? `Export: ${exportW} × ${exportH} px. ` : ''}
             Preview is screened at the same dots per inch of artwork as the export, so what you see is the dot density
-            you will print. Always pull a film test before running a full sheet.
+            you will print. Zooming raises the render resolution rather than magnifying preview pixels, so the dots you
+            inspect are the real ones — up to {settings.dpi} DPI, after which there is nothing further to show. Scroll
+            to zoom, drag to pan. Always pull a film test before running a full sheet.
           </p>
         </section>
       </div>

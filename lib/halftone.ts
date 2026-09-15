@@ -488,6 +488,36 @@ export function selectRegion(
   return mask
 }
 
+/**
+ * Sample a rectangle out of a mask at a new resolution. The protect mask lives in
+ * its own fixed space covering the crop, so a zoomed preview can pull just the
+ * visible window out of it without the mask shifting when you zoom or pan.
+ */
+export function sampleMaskRegion(
+  mask: Uint8Array,
+  maskWidth: number,
+  maskHeight: number,
+  region: { x: number; y: number; width: number; height: number },
+  outWidth: number,
+  outHeight: number,
+): Uint8Array {
+  const out = new Uint8Array(outWidth * outHeight)
+  for (let y = 0; y < outHeight; y += 1) {
+    const sy = Math.min(
+      maskHeight - 1,
+      Math.max(0, Math.floor(region.y + ((y + 0.5) / outHeight) * region.height)),
+    )
+    for (let x = 0; x < outWidth; x += 1) {
+      const sx = Math.min(
+        maskWidth - 1,
+        Math.max(0, Math.floor(region.x + ((x + 0.5) / outWidth) * region.width)),
+      )
+      out[y * outWidth + x] = mask[sy * maskWidth + sx]
+    }
+  }
+  return out
+}
+
 /** Nearest-neighbour resize, for reusing a preview-resolution mask at export size. */
 export function scaleMask(
   mask: Uint8Array,
