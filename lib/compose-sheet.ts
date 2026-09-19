@@ -42,6 +42,12 @@ export type PackItem = {
   heightIn: number
   /** Set false to keep a design upright — otherwise the packer may turn it. */
   allowRotate?: boolean
+  /**
+   * The customer turned this one by hand in the preview. A manual turn is a
+   * decision, not an optimisation, so it holds under every rotate policy —
+   * including the 'none' baseline used to measure what turning saved.
+   */
+  forceRotate?: boolean
 }
 
 type FreeRect = { xIn: number; yIn: number; widthIn: number; heightIn: number }
@@ -218,13 +224,17 @@ export function packSheetPieces<T extends PackItem>(
   let free: FreeRect[] = [{ xIn: 0, yIn: startYIn, widthIn: stripWidth, heightIn: openHeight }]
   const placed: Array<T & { xIn: number; yIn: number; rotated: boolean }> = []
 
+  const fitsTurned = (item: PackItem) =>
+    Math.abs(item.widthIn - item.heightIn) > EPS && item.heightIn <= opts.packWidthIn + EPS
+  const isTurned = (item: PackItem) => Boolean(item.forceRotate) && fitsTurned(item)
   const canTurn = (item: PackItem) =>
+    !isTurned(item) &&
     policy !== 'none' &&
     item.allowRotate !== false &&
-    Math.abs(item.widthIn - item.heightIn) > EPS &&
-    item.heightIn <= opts.packWidthIn + EPS
+    fitsTurned(item)
   /** Longest edge first: with rotation in play, that orders better than height. */
-  const orderKey = (item: T) => (canTurn(item) ? Math.max(item.widthIn, item.heightIn) : item.heightIn)
+  const orderKey = (item: T) =>
+    isTurned(item) ? item.widthIn : canTurn(item) ? Math.max(item.widthIn, item.heightIn) : item.heightIn
 
   const ordered = items
     .map((item, index) => ({ item, index }))
@@ -242,8 +252,14 @@ export function packSheetPieces<T extends PackItem>(
     const upright = { widthIn: item.widthIn, heightIn: item.heightIn, rotated: false }
     const turned = { widthIn: item.heightIn, heightIn: item.widthIn, rotated: true }
     // Upright first so it wins ties — only turn the design when it pays.
-    const orientations: Array<{ widthIn: number; heightIn: number; rotated: boolean }> =
-      policy === 'all' && canTurn(item) ? [turned] : canTurn(item) ? [upright, turned] : [upright]
+    // A forced hand-turn always uses the turned orientation when it still fits.
+    const orientations: Array<{ widthIn: number; heightIn: number; rotated: boolean }> = isTurned(item)
+      ? [turned]
+      : policy === 'all' && canTurn(item)
+        ? [turned]
+        : canTurn(item)
+          ? [upright, turned]
+          : [upright]
 
     let bestRect: FreeRect | undefined
     let bestY = Infinity

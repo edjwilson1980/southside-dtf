@@ -12,6 +12,8 @@ import { DesignInspector } from '@/components/design-inspector'
 import { PrecutOfferModal } from '@/components/precut-offer-modal'
 import { SheetPreviewModal } from '@/components/sheet-preview-modal'
 import { composeGangSheet, packSheetBestGutter, piecePrintSize, ART_INSET_IN, CUT_ART_START_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
+import { pieceKey, type LayoutPiece } from '@/components/sheet-layout-overlay'
+import { BUILDER_VERSION } from '@/lib/version'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
 import { CUT_GUTTER_IN, CUT_MARGIN_IN, MARK_CLEARANCE_IN, MARK_SECTION_IN, cutPlt, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, startMarkArrowPoints } from '@/lib/cut-layout'
 import { trimEmptySpace } from '@/lib/crop-image'
@@ -38,6 +40,8 @@ type Design = {
   pixelWidth: number
   pixelHeight: number
   keepUpright: boolean
+  turned: boolean
+  preset?: { placement: string; size: string; customWidth: string; customHeight: string }
 }
 const logoUrl = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/SSP%20Logo%20%28Black%20Outline%29-A5PrDBPZRDhydxNxRumbsTUFufpLv9.png'
 const sizeGuideUrl = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/DTF%20size%20chart%20%20front2-SIpj1XrVDRyRDtQhaACxzNHj5geNxv.png'
@@ -196,6 +200,8 @@ function HomeBuilder() {
   const [built, setBuilt] = useState(false)
   const [duplicateTargetId, setDuplicateTargetId] = useState<number | null>(null)
   const [replaceTargetId, setReplaceTargetId] = useState<number | null>(null)
+  const [adjustFocusKey, setAdjustFocusKey] = useState<string | null>(null)
+  const [previewRefreshing, setPreviewRefreshing] = useState(false)
   const [sizeGuidePlacement, setSizeGuidePlacement] = useState<string | null>(null)
   const [customerName, setCustomerName] = useState('')
   const [inspectId, setInspectId] = useState<number | null>(null)
@@ -213,6 +219,7 @@ function HomeBuilder() {
   const [precutOfferDeclinedFor, setPrecutOfferDeclinedFor] = useState<string | null>(null)
   const [pendingCartAfterCut, setPendingCartAfterCut] = useState(false)
   const previewGen = useRef(0)
+  const adjustingRef = useRef(false)
   const precutCartKickoff = useRef(false)
 
   useEffect(() => {
@@ -300,6 +307,7 @@ function HomeBuilder() {
         pixelWidth: item.measured.pixelWidth,
         pixelHeight: item.measured.pixelHeight,
         keepUpright: false,
+        turned: false,
       } satisfies Design
     })
 
@@ -346,7 +354,13 @@ function HomeBuilder() {
     }
   }
   const totalTransfers = designs.reduce((sum, design) => sum + design.quantity, 0)
-  const previewPieces = designs.flatMap((design) => Array.from({ length: design.quantity }, () => design))
+  const previewPieces = designs.flatMap((design) =>
+    Array.from({ length: design.quantity }, (_, copyIndex) => ({
+      ...design,
+      designId: design.id,
+      copyIndex,
+    })),
+  )
   /**
    * The chosen size is the box the design may fill. The printed size is the
    * artwork fitted inside it, so nothing is ever stretched and the packer only
@@ -365,10 +379,14 @@ function HomeBuilder() {
   const getDesignWidth = (design: Design) => getDesignSize(design).widthIn
   const getDesignHeight = (design: Design) => getDesignSize(design).heightIn
   const pieceInputs = previewPieces.map((design) => ({
+    designId: design.designId,
+    copyIndex: design.copyIndex,
+    name: design.name,
     previewUrl: design.previewUrl,
     widthIn: getDesignWidth(design),
     heightIn: getDesignHeight(design),
     allowRotate: !design.keepUpright,
+    forceRotate: design.turned,
   }))
   /** What the sheet would cost with nothing turned — for the saving readout. */
   const uprightLayout = packSheetBestGutter(pieceInputs, {
@@ -404,6 +422,16 @@ function HomeBuilder() {
   const billedLength = billedSheetLength(billableHeightIn)
   const cutBoxes = cutOut ? cutPreviewBoxes(sheetLayout.pieces, SHEET_WIDTH_IN, printHeight) : []
   const cutTooTall = cutOut && sheetLayout.pieces.some((piece) => piece.heightIn + CUT_MARGIN_IN * 2 > MARK_SECTION_IN)
+  const layoutPieces: LayoutPiece[] = sheetLayout.pieces.map((piece) => ({
+    designId: piece.designId,
+    copyIndex: piece.copyIndex,
+    name: piece.name,
+    xIn: piece.xIn,
+    yIn: piece.yIn,
+    widthIn: piece.widthIn,
+    heightIn: piece.heightIn,
+    rotated: piece.rotated,
+  }))
   const rotatedCount = sheetLayout.rotatedCount
   const filmSavedIn = Math.max(0, uprightLayout.contentBottom - billableLayout.contentBottom)
   const rotateSaveMessage =
@@ -411,12 +439,12 @@ function HomeBuilder() {
       ? `Turned ${rotatedCount} design${rotatedCount === 1 ? '' : 's'} a quarter turn to fit more across — saves ${filmSavedIn.toFixed(1)} in of film.`
       : null
   const layoutKey = designs.map((design) => [
-    design.id, design.quantity, design.size, design.placement, design.keepUpright,
+    design.id, design.quantity, design.size, design.placement, design.keepUpright, design.turned,
     design.customWidth, design.customHeight, design.previewUrl,
     design.pixelWidth, design.pixelHeight,
   ].join(':')).join('|') + `|cut:${cutOut ? '1' : '0'}`
   const designFingerprint = designs.map((design) => [
-    design.id, design.quantity, design.size, design.placement,
+    design.id, design.quantity, design.size, design.placement, design.turned,
     design.customWidth, design.customHeight, design.previewUrl,
     design.pixelWidth, design.pixelHeight,
   ].join(':')).join('|')
@@ -517,17 +545,146 @@ function HomeBuilder() {
     replaceInputRef.current?.click()
   }
 
+
+  function rememberPreset(design: Design): Design {
+    if (design.preset) return design
+    return {
+      ...design,
+      preset: {
+        placement: design.placement,
+        size: design.size,
+        customWidth: design.customWidth,
+        customHeight: design.customHeight,
+      },
+    }
+  }
+
+  function clampScaledSize(widthIn: number, heightIn: number, factor: number) {
+    const aspect = widthIn > 0 ? heightIn / widthIn : 1
+    let nextW = widthIn * factor
+    let nextH = heightIn * factor
+    if (nextW > SHEET_WIDTH_IN) {
+      nextW = SHEET_WIDTH_IN
+      nextH = nextW * aspect
+    }
+    if (nextH > 199) {
+      nextH = 199
+      nextW = aspect > 0 ? nextH / aspect : nextW
+    }
+    if (nextW < 0.5) {
+      nextW = 0.5
+      nextH = nextW * aspect
+    }
+    if (nextH < 0.5) {
+      nextH = 0.5
+      nextW = aspect > 0 ? nextH / aspect : nextW
+    }
+    if (nextW > SHEET_WIDTH_IN) {
+      nextW = SHEET_WIDTH_IN
+      nextH = nextW * aspect
+    }
+    return {
+      widthIn: Math.round(nextW * 100) / 100,
+      heightIn: Math.round(nextH * 100) / 100,
+    }
+  }
+
+  function applyCustomSize(design: Design, widthIn: number, heightIn: number): Design {
+    const width = String(widthIn)
+    const height = String(heightIn)
+    return {
+      ...rememberPreset(design),
+      placement: 'Custom',
+      customWidth: width,
+      customHeight: height,
+      size: `${width} × ${height} in`,
+    }
+  }
+
+
+  function adjustCopy(designId: number, _copyIndex: number, mutate: (design: Design) => Design) {
+    adjustingRef.current = true
+    let focusKey: string | null = null
+    setDesigns((items) => {
+      const source = items.find((item) => item.id === designId)
+      if (!source) {
+        adjustingRef.current = false
+        return items
+      }
+      if (source.quantity <= 1) {
+        const next = mutate(rememberPreset(source))
+        focusKey = pieceKey({ designId: next.id, copyIndex: 0 })
+        return items.map((item) => (item.id === designId ? next : item))
+      }
+      const nextId = Math.max(0, ...items.map((item) => item.id)) + 1
+      const edited = mutate({
+        ...rememberPreset(source),
+        id: nextId,
+        quantity: 1,
+        designNumber: source.designNumber,
+      })
+      focusKey = pieceKey({ designId: nextId, copyIndex: 0 })
+      return items.flatMap((item) => {
+        if (item.id !== designId) return [item]
+        return [{ ...item, quantity: item.quantity - 1 }, edited]
+      })
+    })
+    if (focusKey) setAdjustFocusKey(focusKey)
+  }
+
+  function resizePiece(designId: number, copyIndex: number, factor: number) {
+    adjustCopy(designId, copyIndex, (design) => {
+      const size = getDesignSize(design)
+      const next = clampScaledSize(size.widthIn, size.heightIn, factor)
+      return applyCustomSize(design, next.widthIn, next.heightIn)
+    })
+  }
+
+  function turnPiece(designId: number, copyIndex: number, rotated: boolean) {
+    adjustCopy(designId, copyIndex, (design) => ({
+      ...rememberPreset(design),
+      turned: rotated,
+      keepUpright: rotated ? false : true,
+    }))
+  }
+
+  function resetPiece(designId: number, copyIndex: number) {
+    adjustCopy(designId, copyIndex, (design) => {
+      const preset = design.preset
+      if (!preset) {
+        return { ...design, turned: false, keepUpright: false }
+      }
+      return {
+        ...design,
+        placement: preset.placement,
+        size: preset.size,
+        customWidth: preset.customWidth,
+        customHeight: preset.customHeight,
+        turned: false,
+        keepUpright: false,
+        preset: undefined,
+      }
+    })
+  }
+
   const duplicateLatestDesign = () => {
     const latest = designs[designs.length - 1]
     if (latest) setDuplicateTargetId(latest.id)
   }
 
   useEffect(() => {
+    if (adjustingRef.current) {
+      const timer = window.setTimeout(() => {
+        void redrawSheetPreview()
+      }, 260)
+      return () => window.clearTimeout(timer)
+    }
     previewGen.current += 1
     setPreviewing(false)
     setSheetPreviewOpen(false)
     setJobStamp('')
     setBuilt(false)
+    setAdjustFocusKey(null)
     setSheetPreviewUrl((url) => {
       if (url) URL.revokeObjectURL(url)
       return null
@@ -549,6 +706,36 @@ function HomeBuilder() {
       marks: cutOut ? cutMarkRects : [],
       startArrow: cutOut ? startArrowPoints : [],
     })
+  }
+
+
+  async function redrawSheetPreview() {
+    if (!customerName.trim() || designs.length === 0) {
+      adjustingRef.current = false
+      return
+    }
+    const stamp = jobStamp || sheetStamp()
+    const label = sheetJobName(customerName.trim(), billedLength, stamp)
+    const gen = ++previewGen.current
+    setPreviewRefreshing(true)
+    try {
+      const blob = await composeCurrentSheet(sheetPxPerIn(3600, 72), label)
+      if (gen !== previewGen.current) return
+      setSheetPreviewUrl((url) => {
+        if (url) URL.revokeObjectURL(url)
+        return URL.createObjectURL(blob)
+      })
+      setPreviewing(true)
+      setSheetPreviewOpen(true)
+    } catch (err) {
+      if (gen !== previewGen.current) return
+      setSaveError(err instanceof Error ? err.message : 'Could not preview the gang sheet.')
+    } finally {
+      if (gen === previewGen.current) {
+        setPreviewRefreshing(false)
+        adjustingRef.current = false
+      }
+    }
   }
 
   async function previewGangSheet() {
@@ -804,7 +991,7 @@ function HomeBuilder() {
           <h2 className="design-count">Your designs ({designs.length})</h2>
         </div>
         {designs.length === 0 && <div className="empty-designs"><FileImage size={24} /><span>Your uploaded designs will appear here.</span></div>}
-        <div className="design-list" ref={designListRef}>{designs.map((design) => <div className="design-row" key={design.id}><div className="drag-handle">⋮<br />⋮</div><button type="button" className={`thumb ${design.previewUrl ? 'has-art' : design.color}`} disabled={!design.previewUrl} onClick={() => design.previewUrl && setInspectId(design.id)} aria-label={`Inspect ${design.name}`}>{design.previewUrl ? <img src={design.previewUrl} alt="" /> : <><ImageIcon size={24} /><small>ARTWORK</small></>}<span className="thumb-status">Click to inspect</span></button><div className="design-name"><strong>{design.name}</strong>{(() => { const dpi = printDpi(design.pixelWidth, getDesignWidth(design)); const quality = qualityFromDpi(dpi); return <span className={quality.tone === 'good' ? 'quality' : quality.tone === 'poor' ? 'quality-warn' : 'transparent'}>{quality.tone === 'good' ? <Check size={13} /> : null}{dpi ? `${dpi} DPI · ${quality.label}` : 'Click art to check quality'}</span> })()}{design.enhanced && <span className="quality">Upscaled</span>}<button type="button" className="compare-link" disabled={!design.previewUrl} onClick={() => setInspectId(design.id)}>View large · Upscale</button></div><label className="object-type">What are you printing?<select aria-label={`What are you printing for ${design.name}`} value={design.placement} onChange={(e) => { const nextPlacement = e.target.value; updateDesign(design.id, { placement: nextPlacement, size: nextPlacement === 'Custom' ? '0 × 0 in' : (sizeOptions[nextPlacement as keyof typeof sizeOptions] ?? sizeOptions.default)[0], customWidth: nextPlacement === 'Custom' ? '' : design.customWidth, customHeight: nextPlacement === 'Custom' ? '' : design.customHeight }) }}>{placements.map((option) => <option key={option}>{option}</option>)}</select></label>{design.placement === 'Custom' ? <div className="custom-dimensions"><span>Custom image size (max {SHEET_WIDTH_IN} in wide × 199 in high)</span><div><label>Width (in)<input aria-label={`Custom width for ${design.name}`} type="number" min="0.25" max={SHEET_WIDTH_IN} step="0.25" placeholder="Width" value={design.customWidth} onChange={(e) => { const width = Math.min(SHEET_WIDTH_IN, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(width); updateDesign(design.id, { customWidth: value, size: `${value || '0'} × ${design.customHeight || '0'} in` }) }} /></label><label>Height (in)<input aria-label={`Custom height for ${design.name}`} type="number" min="0.25" max="199" step="0.25" placeholder="Height" value={design.customHeight} onChange={(e) => { const height = Math.min(199, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(height); updateDesign(design.id, { customHeight: value, size: `${design.customWidth || '0'} × ${value || '0'} in` }) }} /></label></div></div> : <label>Size<select aria-label={`Print size for ${design.name}`} value={design.size} onChange={(e) => updateDesign(design.id, { size: e.target.value })}>{(sizeOptions[design.placement as keyof typeof sizeOptions] ?? sizeOptions.default).map((option) => <option key={option}>{option}</option>)}</select></label>}<label>Quantity<div className="number-input"><button aria-label="Decrease design quantity" onClick={() => updateDesign(design.id, { quantity: Math.max(1, design.quantity - 1) })}><Minus size={13} /></button><input aria-label={`Quantity for ${design.name}`} type="number" min="1" step="1" value={design.quantity} onChange={(event) => updateDesign(design.id, { quantity: Math.max(1, Math.floor(Number(event.target.value) || 1)) })} /><button aria-label="Increase design quantity" onClick={() => updateDesign(design.id, { quantity: design.quantity + 1 })}><Plus size={13} /></button></div></label><div className="design-actions-stack"><button type="button" className="row-action" title="Replace artwork" aria-label={`Replace artwork for ${design.name}`} onClick={() => startReplace(design.id)}><Replace size={15} /></button><button type="button" className="row-action" title="Duplicate this design" aria-label={`Duplicate ${design.name}`} onClick={() => setDuplicateTargetId(design.id)}><Copy size={15} /></button><button type="button" className={`row-action${design.keepUpright ? " upright" : ""}`} aria-pressed={design.keepUpright} title={design.keepUpright ? "Keep this design upright" : "Allow turning to fit more across"} aria-label={design.keepUpright ? `Keep ${design.name} upright` : `Allow turning ${design.name}`} onClick={() => updateDesign(design.id, { keepUpright: !design.keepUpright })}><RotateCw size={15} /></button><button type="button" className="row-action danger" title="Remove design" aria-label={`Remove ${design.name}`} onClick={() => removeDesign(design.id)}><Trash2 size={15} /></button></div></div>)}</div>
+        <div className="design-list" ref={designListRef}>{designs.map((design) => <div className="design-row" key={design.id}><div className="drag-handle">⋮<br />⋮</div><button type="button" className={`thumb ${design.previewUrl ? 'has-art' : design.color}`} disabled={!design.previewUrl} onClick={() => design.previewUrl && setInspectId(design.id)} aria-label={`Inspect ${design.name}`}>{design.previewUrl ? <img src={design.previewUrl} alt="" /> : <><ImageIcon size={24} /><small>ARTWORK</small></>}<span className="thumb-status">Click to inspect</span></button><div className="design-name"><strong>{design.name}</strong>{(() => { const dpi = printDpi(design.pixelWidth, getDesignWidth(design)); const quality = qualityFromDpi(dpi); return <span className={quality.tone === 'good' ? 'quality' : quality.tone === 'poor' ? 'quality-warn' : 'transparent'}>{quality.tone === 'good' ? <Check size={13} /> : null}{dpi ? `${dpi} DPI · ${quality.label}` : 'Click art to check quality'}</span> })()}{design.enhanced && <span className="quality">Upscaled</span>}<button type="button" className="compare-link" disabled={!design.previewUrl} onClick={() => setInspectId(design.id)}>View large · Upscale</button></div><label className="object-type">What are you printing?<select aria-label={`What are you printing for ${design.name}`} value={design.placement} onChange={(e) => { const nextPlacement = e.target.value; updateDesign(design.id, { placement: nextPlacement, size: nextPlacement === 'Custom' ? '0 × 0 in' : (sizeOptions[nextPlacement as keyof typeof sizeOptions] ?? sizeOptions.default)[0], customWidth: nextPlacement === 'Custom' ? '' : design.customWidth, customHeight: nextPlacement === 'Custom' ? '' : design.customHeight }) }}>{placements.map((option) => <option key={option}>{option}</option>)}</select></label>{design.placement === 'Custom' ? <div className="custom-dimensions"><span>Custom image size (max {SHEET_WIDTH_IN} in wide × 199 in high)</span><div><label>Width (in)<input aria-label={`Custom width for ${design.name}`} type="number" min="0.25" max={SHEET_WIDTH_IN} step="0.25" placeholder="Width" value={design.customWidth} onChange={(e) => { const width = Math.min(SHEET_WIDTH_IN, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(width); updateDesign(design.id, { customWidth: value, size: `${value || '0'} × ${design.customHeight || '0'} in` }) }} /></label><label>Height (in)<input aria-label={`Custom height for ${design.name}`} type="number" min="0.25" max="199" step="0.25" placeholder="Height" value={design.customHeight} onChange={(e) => { const height = Math.min(199, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(height); updateDesign(design.id, { customHeight: value, size: `${design.customWidth || '0'} × ${value || '0'} in` }) }} /></label></div></div> : <label>Size<select aria-label={`Print size for ${design.name}`} value={design.size} onChange={(e) => updateDesign(design.id, { size: e.target.value })}>{(sizeOptions[design.placement as keyof typeof sizeOptions] ?? sizeOptions.default).map((option) => <option key={option}>{option}</option>)}</select></label>}<label>Quantity<div className="number-input"><button aria-label="Decrease design quantity" onClick={() => updateDesign(design.id, { quantity: Math.max(1, design.quantity - 1) })}><Minus size={13} /></button><input aria-label={`Quantity for ${design.name}`} type="number" min="1" step="1" value={design.quantity} onChange={(event) => updateDesign(design.id, { quantity: Math.max(1, Math.floor(Number(event.target.value) || 1)) })} /><button aria-label="Increase design quantity" onClick={() => updateDesign(design.id, { quantity: design.quantity + 1 })}><Plus size={13} /></button></div></label><div className="design-actions-stack"><button type="button" className="row-action" title="Replace artwork" aria-label={`Replace artwork for ${design.name}`} onClick={() => startReplace(design.id)}><Replace size={15} /></button><button type="button" className="row-action" title="Duplicate this design" aria-label={`Duplicate ${design.name}`} onClick={() => setDuplicateTargetId(design.id)}><Copy size={15} /></button><button type="button" className={`row-action${design.keepUpright ? " upright" : ""}`} aria-pressed={design.keepUpright} title={design.keepUpright ? "Keep this design upright" : "Allow turning to fit more across"} aria-label={design.keepUpright ? `Keep ${design.name} upright` : `Allow turning ${design.name}`} onClick={() => updateDesign(design.id, { keepUpright: !design.keepUpright, turned: design.keepUpright ? design.turned : false })}><RotateCw size={15} /></button><button type="button" className="row-action danger" title="Remove design" aria-label={`Remove ${design.name}`} onClick={() => removeDesign(design.id)}><Trash2 size={15} /></button></div></div>)}</div>
         <div className="design-footer-actions"><button className="add-design" disabled={!customerName.trim()} onClick={() => { if (customerName.trim()) inputRef.current?.click() }}><Plus size={20} /> Add Another Design</button><button className="duplicate-design" disabled={designs.length === 0} onClick={duplicateLatestDesign}><Copy size={18} /> Duplicate Design</button></div>
         {duplicateTargetId !== null && <div className="duplicate-picker"><div><strong>What are you printing?</strong><span>Choose the garment or placement for this copy.</span></div><div className="duplicate-picker-options">{placements.map((item) => <button key={item} type="button" onClick={() => duplicateDesign(duplicateTargetId, item)}><PlacementIcon placement={item} /><span>{item}</span></button>)}</div><button className="cancel-duplicate" type="button" onClick={() => setDuplicateTargetId(null)}>Cancel</button></div>}
         {sizeGuidePlacement && <div className="size-popup-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSizeGuidePlacement(null) }}><section className="size-popup" role="dialog" aria-modal="true" aria-labelledby="size-popup-title"><div className="size-popup-header"><div><span className="eyebrow">Recommended sizes</span><h2 id="size-popup-title">{sizeGuidePlacement}</h2><p>These are the max print sizes for this placement. Choose the matching size in the size menu.</p></div><button className="size-popup-close" aria-label="Close recommended sizes" onClick={() => setSizeGuidePlacement(null)}>×</button></div><div className="size-recommendations">{(sizeOptions[sizeGuidePlacement as keyof typeof sizeOptions] ?? sizeOptions.default).map((option) => <div key={option} className="size-recommendation"><strong>{option.split(' · ')[0]}</strong><span>{option.includes(' · ') ? option.split(' · ')[1] : option}</span></div>)}</div><button className="size-popup-done" onClick={() => setSizeGuidePlacement(null)}>Continue</button></section></div>}
@@ -823,6 +1010,12 @@ function HomeBuilder() {
             printHeightIn={printHeight}
             cutOut={cutOut}
             audience="customer"
+            layoutPieces={layoutPieces}
+            onResizePiece={resizePiece}
+            onTurnPiece={turnPiece}
+            onResetPiece={resetPiece}
+            adjustFocusKey={adjustFocusKey}
+            refreshing={previewRefreshing}
           />
         )}
         <PrecutOfferModal
@@ -970,6 +1163,7 @@ function HomeBuilder() {
             <button onClick={() => { setBuilt(false); setDriveFolderUrl(null) }}>Build another sheet <span>›</span></button>
           </div>
         )}
+        <p className="builder-version">Builder v{BUILDER_VERSION}</p>
       </aside>
     </div>
 
