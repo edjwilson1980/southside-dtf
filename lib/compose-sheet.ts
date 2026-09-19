@@ -35,27 +35,6 @@ export const ART_INSET_IN = LABEL_PAD_IN + LABEL_HEIGHT_IN + PRINT_MARGIN_IN
 /** Pre-cut sheets skip the extra 1.5 in print margin so the first crop marks sit near the leading edge. */
 export const CUT_ART_START_IN = LABEL_PAD_IN + LABEL_HEIGHT_IN + LABEL_MARGIN_IN
 
-export function pieceHeightInches(piece: {
-  placement: string;
-  size: string;
-  customHeight: string;
-  pixelWidth: number;
-  pixelHeight: number;
-  widthIn: number;
-}) {
-  if (piece.placement === 'Custom') {
-    const height = Number(piece.customHeight)
-    if (Number.isFinite(height) && height > 0) return Math.min(199, height)
-  }
-  const measurement = piece.size.split(' · ').pop() ?? piece.size
-  const nums = [...measurement.matchAll(/[0-9]+(?:\.[0-9]+)?/g)].map((match) => Number(match[0]))
-  if (nums.length >= 2) return nums[1]
-  if (piece.pixelWidth > 0 && piece.pixelHeight > 0) {
-    return piece.widthIn * (piece.pixelHeight / piece.pixelWidth)
-  }
-  return piece.widthIn
-}
-
 export type RotatePolicy = 'none' | 'auto' | 'all'
 
 export type PackItem = {
@@ -68,6 +47,71 @@ export type PackItem = {
 type FreeRect = { xIn: number; yIn: number; widthIn: number; heightIn: number }
 
 const EPS = 1e-6
+
+/**
+ * Fit artwork inside a box without distorting it.
+ *
+ * A placement preset such as "Medium · 10.5 x 12 in" is the space the design may
+ * occupy, not the shape it must become. Forcing art into the box stretches it,
+ * and reserves the whole box on the sheet even when the art is a thin bar — so
+ * the customer gets a distorted print and pays for film nobody used.
+ */
+export function fitWithinBox(
+  boxWidthIn: number,
+  boxHeightIn: number,
+  pixelWidth: number,
+  pixelHeight: number,
+): { widthIn: number; heightIn: number } {
+  const width = Math.max(0, boxWidthIn)
+  const height = Math.max(0, boxHeightIn)
+  if (!(pixelWidth > 0) || !(pixelHeight > 0) || width <= 0 || height <= 0) {
+    return { widthIn: width, heightIn: height }
+  }
+  const aspect = pixelHeight / pixelWidth
+  const byWidth = { widthIn: width, heightIn: width * aspect }
+  if (byWidth.heightIn <= height + EPS) return byWidth
+  return { widthIn: height / aspect, heightIn: height }
+}
+
+export type PieceSizeInput = {
+  placement: string
+  size: string
+  customWidth?: string
+  customHeight: string
+  pixelWidth: number
+  pixelHeight: number
+  /** Box width already parsed from the preset or the custom field. */
+  widthIn: number
+}
+
+/** The box a design is allowed to fill, before the artwork is fitted into it. */
+function pieceBoxInches(piece: PieceSizeInput): { widthIn: number; heightIn: number } {
+  if (piece.placement === 'Custom') {
+    const height = Number(piece.customHeight)
+    return {
+      widthIn: piece.widthIn,
+      heightIn: Number.isFinite(height) && height > 0 ? Math.min(199, height) : piece.widthIn,
+    }
+  }
+  const measurement = piece.size.split(' · ').pop() ?? piece.size
+  const nums = [...measurement.matchAll(/[0-9]+(?:\.[0-9]+)?/g)].map((match) => Number(match[0]))
+  if (nums.length >= 2) return { widthIn: piece.widthIn, heightIn: nums[1] }
+  return { widthIn: piece.widthIn, heightIn: piece.widthIn }
+}
+
+/**
+ * The printed size of a design: its artwork fitted inside the chosen box.
+ * Returns the box itself only when the artwork's pixel size is not known yet.
+ */
+export function piecePrintSize(piece: PieceSizeInput): { widthIn: number; heightIn: number } {
+  const box = pieceBoxInches(piece)
+  return fitWithinBox(box.widthIn, box.heightIn, piece.pixelWidth, piece.pixelHeight)
+}
+
+/** Height of a design once fitted into its box. */
+export function pieceHeightInches(piece: PieceSizeInput) {
+  return piecePrintSize(piece).heightIn
+}
 
 export type PackSheetOptions = {
   packWidthIn: number
@@ -389,18 +433,30 @@ export async function composeGangSheet(opts: {
     const w = piece.widthIn * opts.pxPerIn
     const h = piece.heightIn * opts.pxPerIn
 
+    // Safety net: contain the art in its rect rather than stretching it, and
+    // centre whatever slack is left. With piecePrintSize feeding the packer the
+    // slack is zero, but a mismatch must never distort a customer's print.
+    const naturalW = image.naturalWidth || w
+    const naturalH = image.naturalHeight || h
+    // A turned piece is drawn in local space where the long edge runs along h.
+    const boxW = piece.rotated ? h : w
+    const boxH = piece.rotated ? w : h
+    const scale = Math.min(boxW / Math.max(1, naturalW), boxH / Math.max(1, naturalH))
+    const drawW = naturalW * scale
+    const drawH = naturalH * scale
+    const offsetX = (boxW - drawW) / 2
+    const offsetY = (boxH - drawH) / 2
+
     if (piece.rotated) {
-      // widthIn/heightIn are already the turned dimensions, so the artwork is
-      // drawn h x w in local space and rotated a quarter turn into the box.
       context.save()
       context.translate(x, y)
       context.rotate(Math.PI / 2)
-      context.drawImage(image, 0, -w, h, w)
+      context.drawImage(image, offsetX, -w + offsetY, drawW, drawH)
       context.restore()
       continue
     }
 
-    context.drawImage(image, x, y, w, h)
+    context.drawImage(image, x + offsetX, y + offsetY, drawW, drawH)
   }
 
   if (opts.mapCmyk) {

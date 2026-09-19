@@ -11,7 +11,7 @@ import {
 import { DesignInspector } from '@/components/design-inspector'
 import { PrecutOfferModal } from '@/components/precut-offer-modal'
 import { SheetPreviewModal } from '@/components/sheet-preview-modal'
-import { composeGangSheet, packSheetBestGutter, pieceHeightInches, ART_INSET_IN, CUT_ART_START_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
+import { composeGangSheet, packSheetBestGutter, piecePrintSize, ART_INSET_IN, CUT_ART_START_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
 import { CUT_GUTTER_IN, CUT_MARGIN_IN, MARK_CLEARANCE_IN, MARK_SECTION_IN, cutPlt, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, startMarkArrowPoints } from '@/lib/cut-layout'
 import { trimEmptySpace } from '@/lib/crop-image'
@@ -345,15 +345,23 @@ function HomeBuilder() {
   }
   const totalTransfers = designs.reduce((sum, design) => sum + design.quantity, 0)
   const previewPieces = designs.flatMap((design) => Array.from({ length: design.quantity }, () => design))
-  const getDesignWidth = (design: Design) => parsePrintWidthInches(design.size, design.placement, design.customWidth)
-  const getDesignHeight = (design: Design) => pieceHeightInches({
-    placement: design.placement,
-    size: design.size,
-    customHeight: design.customHeight,
-    pixelWidth: design.pixelWidth,
-    pixelHeight: design.pixelHeight,
-    widthIn: getDesignWidth(design),
-  })
+  /**
+   * The chosen size is the box the design may fill. The printed size is the
+   * artwork fitted inside it, so nothing is ever stretched and the packer only
+   * reserves the film the art actually covers.
+   */
+  const getDesignSize = (design: Design) =>
+    piecePrintSize({
+      placement: design.placement,
+      size: design.size,
+      customWidth: design.customWidth,
+      customHeight: design.customHeight,
+      pixelWidth: design.pixelWidth,
+      pixelHeight: design.pixelHeight,
+      widthIn: parsePrintWidthInches(design.size, design.placement, design.customWidth),
+    })
+  const getDesignWidth = (design: Design) => getDesignSize(design).widthIn
+  const getDesignHeight = (design: Design) => getDesignSize(design).heightIn
   const pieceInputs = previewPieces.map((design) => ({
     previewUrl: design.previewUrl,
     widthIn: getDesignWidth(design),
