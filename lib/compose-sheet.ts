@@ -6,6 +6,8 @@ export type SheetPiece = {
   previewUrl: string
   widthIn: number
   heightIn: number
+  /** Turned a quarter turn to nest better. widthIn/heightIn are already swapped. */
+  rotated?: boolean
 }
 
 export type PlacedSheetPiece = SheetPiece & {
@@ -54,7 +56,14 @@ export function pieceHeightInches(piece: {
   return piece.widthIn
 }
 
-export type PackItem = { widthIn: number; heightIn: number }
+export type RotatePolicy = 'none' | 'auto' | 'all'
+
+export type PackItem = {
+  widthIn: number
+  heightIn: number
+  /** Set false to keep a design upright — otherwise the packer may turn it. */
+  allowRotate?: boolean
+}
 
 type FreeRect = { xIn: number; yIn: number; widthIn: number; heightIn: number }
 
@@ -65,6 +74,20 @@ export type PackSheetOptions = {
   gutterIn?: number
   startYIn?: number
   sideInsetIn?: number
+  /**
+   * How hard to try turning designs a quarter turn.
+   *
+   *   none — everything stays upright
+   *   auto — per design, whichever orientation drops into the tightest gap
+   *   all  — turn every design that still fits the roll width
+   *
+   * 'all' exists because 'auto' is greedy and cannot see a whole-row win: three
+   * 10.5 x 6 designs each drop into a tighter gap upright, so auto leaves them
+   * 2-up over 12.1 in of film, while turning all three puts them 3-up in one
+   * 10.5 in row. packSheetBestGutter runs every policy and keeps the shortest.
+   * Individual items can still opt out with allowRotate: false.
+   */
+  rotatePolicy?: RotatePolicy
 }
 
 function splitFreeRect(free: FreeRect, used: FreeRect): FreeRect[] {
@@ -132,14 +155,16 @@ export function packSheetPieces<T extends PackItem>(
   items: T[],
   opts: PackSheetOptions,
 ): {
-  pieces: Array<T & { xIn: number; yIn: number }>
+  pieces: Array<T & { xIn: number; yIn: number; rotated: boolean }>
   contentBottom: number
   contentEndY: number
   gutterIn: number
+  rotatedCount: number
 } {
   const gutterIn = opts.gutterIn ?? SHEET_GUTTER_IN
   const startYIn = opts.startYIn ?? ART_INSET_IN
   const sideInsetIn = opts.sideInsetIn ?? 0
+  const policy: RotatePolicy = opts.rotatePolicy ?? 'auto'
   // Each design reserves a gutter on its right and below, so the strip is
   // one gutter wider than the usable width.
   const stripWidth = opts.packWidthIn + gutterIn
@@ -147,51 +172,81 @@ export function packSheetPieces<T extends PackItem>(
   const openHeight = totalHeight + startYIn + 1
 
   let free: FreeRect[] = [{ xIn: 0, yIn: startYIn, widthIn: stripWidth, heightIn: openHeight }]
-  const placed: Array<T & { xIn: number; yIn: number }> = []
+  const placed: Array<T & { xIn: number; yIn: number; rotated: boolean }> = []
+
+  const canTurn = (item: PackItem) =>
+    policy !== 'none' &&
+    item.allowRotate !== false &&
+    Math.abs(item.widthIn - item.heightIn) > EPS &&
+    item.heightIn <= opts.packWidthIn + EPS
+  /** Longest edge first: with rotation in play, that orders better than height. */
+  const orderKey = (item: T) => (canTurn(item) ? Math.max(item.widthIn, item.heightIn) : item.heightIn)
 
   const ordered = items
     .map((item, index) => ({ item, index }))
     .sort((a, b) => {
-      const heightDiff = b.item.heightIn - a.item.heightIn
-      if (Math.abs(heightDiff) > EPS) return heightDiff
+      const keyDiff = orderKey(b.item) - orderKey(a.item)
+      if (Math.abs(keyDiff) > EPS) return keyDiff
       const widthDiff = b.item.widthIn - a.item.widthIn
       if (Math.abs(widthDiff) > EPS) return widthDiff
       return a.index - b.index
     })
 
+  let rotatedCount = 0
+
   for (const { item } of ordered) {
-    const boxWidth = Math.min(item.widthIn, opts.packWidthIn) + gutterIn
-    const boxHeight = item.heightIn + gutterIn
+    const upright = { widthIn: item.widthIn, heightIn: item.heightIn, rotated: false }
+    const turned = { widthIn: item.heightIn, heightIn: item.widthIn, rotated: true }
+    // Upright first so it wins ties — only turn the design when it pays.
+    const orientations: Array<{ widthIn: number; heightIn: number; rotated: boolean }> =
+      policy === 'all' && canTurn(item) ? [turned] : canTurn(item) ? [upright, turned] : [upright]
 
     let bestRect: FreeRect | undefined
     let bestY = Infinity
     let bestX = Infinity
     let bestFit = Infinity
+    let bestOrientation = orientations[0]
 
-    for (const rect of free) {
-      if (rect.widthIn + EPS < boxWidth || rect.heightIn + EPS < boxHeight) continue
-      const fit = Math.min(rect.widthIn - boxWidth, rect.heightIn - boxHeight)
-      if (
-        rect.yIn < bestY - EPS ||
-        (Math.abs(rect.yIn - bestY) <= EPS && fit < bestFit - EPS) ||
-        (Math.abs(rect.yIn - bestY) <= EPS && Math.abs(fit - bestFit) <= EPS && rect.xIn < bestX - EPS)
-      ) {
-        bestRect = rect
-        bestY = rect.yIn
-        bestX = rect.xIn
-        bestFit = fit
+    for (const orientation of orientations) {
+      const boxWidth = Math.min(orientation.widthIn, opts.packWidthIn) + gutterIn
+      const boxHeight = orientation.heightIn + gutterIn
+
+      for (const rect of free) {
+        if (rect.widthIn + EPS < boxWidth || rect.heightIn + EPS < boxHeight) continue
+        const fit = Math.min(rect.widthIn - boxWidth, rect.heightIn - boxHeight)
+        if (
+          rect.yIn < bestY - EPS ||
+          (Math.abs(rect.yIn - bestY) <= EPS && fit < bestFit - EPS) ||
+          (Math.abs(rect.yIn - bestY) <= EPS && Math.abs(fit - bestFit) <= EPS && rect.xIn < bestX - EPS)
+        ) {
+          bestRect = rect
+          bestY = rect.yIn
+          bestX = rect.xIn
+          bestFit = fit
+          bestOrientation = orientation
+        }
       }
     }
 
     if (!bestRect) continue
 
+    const boxWidth = Math.min(bestOrientation.widthIn, opts.packWidthIn) + gutterIn
+    const boxHeight = bestOrientation.heightIn + gutterIn
     const used: FreeRect = { xIn: bestX, yIn: bestY, widthIn: boxWidth, heightIn: boxHeight }
-    placed.push({ ...item, xIn: bestX + sideInsetIn, yIn: bestY })
+    if (bestOrientation.rotated) rotatedCount += 1
+    placed.push({
+      ...item,
+      widthIn: bestOrientation.widthIn,
+      heightIn: bestOrientation.heightIn,
+      rotated: bestOrientation.rotated,
+      xIn: bestX + sideInsetIn,
+      yIn: bestY,
+    })
     free = pruneFreeRects(free.flatMap((rect) => splitFreeRect(rect, used)))
   }
 
   const contentBottom = placed.reduce((max, piece) => Math.max(max, piece.yIn + piece.heightIn), startYIn)
-  return { pieces: placed, contentBottom, contentEndY: contentBottom + gutterIn, gutterIn }
+  return { pieces: placed, contentBottom, contentEndY: contentBottom + gutterIn, gutterIn, rotatedCount }
 }
 
 /**
@@ -201,18 +256,37 @@ export function packSheetPieces<T extends PackItem>(
  * cannot overlap, since a cut box that reaches into the next design would
  * put the knife straight through it. Compared on content bottom rather than
  * sheet end, since a wider gutter always adds its own trailing space.
+ *
+ * Rotation should never make a sheet longer, so every policy is tried and the
+ * shortest layout wins. 'all' catches whole-row wins that greedy 'auto' misses.
  */
 export function packSheetBestGutter<T extends PackItem>(
   items: T[],
   opts: Omit<PackSheetOptions, 'gutterIn'> & { minGutterIn?: number },
 ) {
-  const [first, ...rest] = gutterChoices(opts.minGutterIn ?? SHEET_GUTTER_IN)
-  let best = packSheetPieces(items, { ...opts, gutterIn: first })
-  for (const gutterIn of rest) {
-    const candidate = packSheetPieces(items, { ...opts, gutterIn })
-    if (candidate.contentBottom < best.contentBottom - EPS) best = candidate
+  const gutters = gutterChoices(opts.minGutterIn ?? SHEET_GUTTER_IN)
+  const policies: RotatePolicy[] =
+    opts.rotatePolicy === 'none' ? ['none'] : ['none', 'auto', 'all']
+
+  let best: ReturnType<typeof packSheetPieces<T>> | undefined
+  for (const rotatePolicy of policies) {
+    for (const gutterIn of gutters) {
+      const candidate = packSheetPieces(items, { ...opts, gutterIn, rotatePolicy })
+      if (!best) {
+        best = candidate
+        continue
+      }
+      if (candidate.contentBottom < best.contentBottom - EPS) best = candidate
+      // Same length: prefer the layout that turned fewer designs.
+      else if (
+        Math.abs(candidate.contentBottom - best.contentBottom) <= EPS &&
+        candidate.rotatedCount < best.rotatedCount
+      ) {
+        best = candidate
+      }
+    }
   }
-  return best
+  return best as ReturnType<typeof packSheetPieces<T>>
 }
 
 function fillMarkCircle(
@@ -310,13 +384,23 @@ export async function composeGangSheet(opts: {
   for (const piece of opts.pieces) {
     if (!piece.previewUrl) continue
     const image = await loadImage(piece.previewUrl)
-    context.drawImage(
-      image,
-      piece.xIn * opts.pxPerIn,
-      piece.yIn * opts.pxPerIn,
-      piece.widthIn * opts.pxPerIn,
-      piece.heightIn * opts.pxPerIn,
-    )
+    const x = piece.xIn * opts.pxPerIn
+    const y = piece.yIn * opts.pxPerIn
+    const w = piece.widthIn * opts.pxPerIn
+    const h = piece.heightIn * opts.pxPerIn
+
+    if (piece.rotated) {
+      // widthIn/heightIn are already the turned dimensions, so the artwork is
+      // drawn h x w in local space and rotated a quarter turn into the box.
+      context.save()
+      context.translate(x, y)
+      context.rotate(Math.PI / 2)
+      context.drawImage(image, 0, -w, h, w)
+      context.restore()
+      continue
+    }
+
+    context.drawImage(image, x, y, w, h)
   }
 
   if (opts.mapCmyk) {
