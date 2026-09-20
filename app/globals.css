@@ -874,19 +874,5 @@ button.thumb:disabled { cursor: default; }
 .sheet-layout-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
 .sheet-edge-box { position: absolute; inset: 0; border: 2px solid #111; box-sizing: border-box; }
 .sheet-piece-box { position: absolute; border: 1px solid #111; box-sizing: border-box; background: transparent; }
-.sheet-piece-box.selectable { pointer-events: auto; cursor: pointer; padding: 0; }
-.sheet-piece-box.selectable:hover { border-color: var(--chicago-blue); box-shadow: inset 0 0 0 1px var(--chicago-blue); }
-.sheet-piece-box.selected { border: 2px solid var(--chicago-blue); box-shadow: inset 0 0 0 1px var(--chicago-blue); }
 .inspect-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
-.adjust-toggle { padding: 7px 12px; border: 1px solid var(--border); border-radius: 7px; background: #fff; color: #344054; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
-.adjust-toggle.selected { border-color: var(--chicago-blue); background: #e8f7fc; color: #006e99; }
-.adjust-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; padding: 10px 12px; border: 1px solid #d7e3ea; border-radius: 9px; background: #f7fbfd; }
-.adjust-bar-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.adjust-bar-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.adjust-bar-copy span { color: var(--muted); font-size: 12px; font-weight: 700; }
-.adjust-bar-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.adjust-bar-actions button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px; background: #fff; color: #344054; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-.adjust-bar-actions button:hover { border-color: var(--chicago-blue); color: var(--chicago-blue); }
-.adjust-hint { margin: 0 0 10px; color: var(--muted); font-size: 12px; font-weight: 600; }
-.sheet-preview-stage.refreshing { opacity: .72; transition: opacity .15s ease; }
 .builder-version { margin: 18px 0 0; color: #8b95a5; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-align: right; }

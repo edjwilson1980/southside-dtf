@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Check, Minus, Plus, RotateCw } from 'lucide-react'
+import { Check, Minus, Plus } from 'lucide-react'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
-import { SheetLayoutOverlay, pieceKey, type LayoutPiece } from '@/components/sheet-layout-overlay'
+import { SheetLayoutOverlay, type LayoutPiece } from '@/components/sheet-layout-overlay'
 import { CUT_MARGIN_IN, MARK_SECTION_IN, type CutBox } from '@/lib/cut-layout'
 import { readImageSize } from '@/lib/image-utils'
 import { formatInches } from '@/lib/measure-file'
@@ -40,18 +40,6 @@ type SheetPreviewModalProps = {
   /** customer = public builder; shop = production tools with cutter loading notes */
   audience?: 'customer' | 'shop'
   layoutPieces?: LayoutPiece[]
-  onResizePiece?: (designId: number, copyIndex: number, factor: number) => void
-  onTurnPiece?: (designId: number, copyIndex: number, rotated: boolean) => void
-  onResetPiece?: (designId: number, copyIndex: number) => void
-  adjustFocusKey?: string | null
-  refreshing?: boolean
-}
-
-function naturalSize(piece: LayoutPiece) {
-  if (piece.rotated) {
-    return { widthIn: piece.heightIn, heightIn: piece.widthIn }
-  }
-  return { widthIn: piece.widthIn, heightIn: piece.heightIn }
 }
 
 export function SheetPreviewModal({
@@ -68,54 +56,17 @@ export function SheetPreviewModal({
   printHeightIn,
   audience = 'shop',
   layoutPieces = [],
-  onResizePiece,
-  onTurnPiece,
-  onResetPiece,
-  adjustFocusKey = null,
-  refreshing = false,
 }: SheetPreviewModalProps) {
   const paneRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
   const fitZoomRef = useRef(true)
   const zoomScaleRef = useRef(1)
-  const adjustModeRef = useRef(false)
-  const selectedKeyRef = useRef<string | null>(null)
   const [pixels, setPixels] = useState({ width: 0, height: 0 })
   const [fitZoom, setFitZoom] = useState(true)
   const [zoomScale, setZoomScale] = useState(1)
   const [fitBox, setFitBox] = useState({ width: 0, height: 0 })
-  const [adjustMode, setAdjustMode] = useState(false)
-  const [selectedKey, setSelectedKey] = useState<string | null>(null)
 
   const sheetHeightIn = printHeightIn || sheetLengthIn
-  const canAdjust = !cutOut && layoutPieces.length > 0 && Boolean(onResizePiece)
-  const selected = layoutPieces.find((piece) => pieceKey(piece) === selectedKey) ?? null
-
-  useEffect(() => {
-    adjustModeRef.current = adjustMode
-  }, [adjustMode])
-
-  useEffect(() => {
-    selectedKeyRef.current = selectedKey
-  }, [selectedKey])
-
-  useEffect(() => {
-    if (adjustFocusKey) {
-      setSelectedKey(adjustFocusKey)
-      setAdjustMode(true)
-    }
-  }, [adjustFocusKey])
-
-  useEffect(() => {
-    if (!canAdjust && adjustMode) setAdjustMode(false)
-  }, [canAdjust, adjustMode])
-
-  useEffect(() => {
-    if (!selectedKey) return
-    if (!layoutPieces.some((piece) => pieceKey(piece) === selectedKey)) {
-      setSelectedKey(null)
-    }
-  }, [layoutPieces, selectedKey])
 
   useEffect(() => {
     let active = true
@@ -198,17 +149,6 @@ export function SheetPreviewModal({
 
     const onWheel = (event: WheelEvent) => {
       event.preventDefault()
-      if (
-        adjustModeRef.current &&
-        selectedKeyRef.current &&
-        onResizePiece
-      ) {
-        const piece = layoutPieces.find((item) => pieceKey(item) === selectedKeyRef.current)
-        if (piece) {
-          onResizePiece(piece.designId, piece.copyIndex, event.deltaY < 0 ? 1.03 : 1 / 1.03)
-          return
-        }
-      }
       const rect = pane.getBoundingClientRect()
       applyZoom(currentDisplayScale() * (event.deltaY < 0 ? 1.12 : 1 / 1.12), {
         x: event.clientX - rect.left + pane.scrollLeft,
@@ -220,7 +160,7 @@ export function SheetPreviewModal({
 
     pane.addEventListener('wheel', onWheel, { passive: false })
     return () => pane.removeEventListener('wheel', onWheel)
-  }, [pixels.width, layoutPieces, onResizePiece])
+  }, [pixels.width, fitBox.width])
 
   const zoomStyle =
     !fitZoom && pixels.width > 0 && pixels.height > 0
@@ -234,8 +174,6 @@ export function SheetPreviewModal({
         : pixels.width > 0 && pixels.height > 0
           ? ({ aspectRatio: `${pixels.width} / ${pixels.height}` } as React.CSSProperties)
           : undefined
-
-  const natural = selected ? naturalSize(selected) : null
 
   return (
     <div
@@ -254,7 +192,7 @@ export function SheetPreviewModal({
               {SHEET_WIDTH_IN} in wide · {sheetLengthIn} in long · {totalTransfers} transfers.
               {cutOut
                 ? cropMarkPreviewCopy(cutMarks.length, audience)
-                : ' Scroll or zoom to inspect the layout. Turn on Adjust sizes to nudge a design by hand.'}
+                : ' Scroll or zoom to inspect the layout. Black boxes mark the film edge and each design.'}
             </p>
           </div>
           <button className="size-popup-close" aria-label="Close gang sheet preview" onClick={onClose} disabled={saving}>
@@ -287,64 +225,9 @@ export function SheetPreviewModal({
             </button>
             <span className="zoom-readout">{fitZoom ? 'Fit' : `${Math.round(zoomScale * 100)}%`}</span>
           </div>
-          {canAdjust && (
-            <button
-              type="button"
-              className={`adjust-toggle${adjustMode ? ' selected' : ''}`}
-              aria-pressed={adjustMode}
-              onClick={() => {
-                setAdjustMode((current) => {
-                  if (current) setSelectedKey(null)
-                  return !current
-                })
-              }}
-            >
-              Adjust sizes
-            </button>
-          )}
         </div>
 
-        {adjustMode && selected && natural && (
-          <div className="adjust-bar" aria-live="polite">
-            <div className="adjust-bar-copy">
-              <strong>{selected.name}</strong>
-              <span>
-                {formatInches(natural.widthIn)} × {formatInches(natural.heightIn)} in
-                {selected.rotated ? ' · turned' : ''}
-              </span>
-            </div>
-            <div className="adjust-bar-actions">
-              <button
-                type="button"
-                aria-label="Make smaller"
-                onClick={() => onResizePiece?.(selected.designId, selected.copyIndex, 1 / 1.03)}
-              >
-                <Minus size={14} />
-              </button>
-              <button
-                type="button"
-                aria-label="Make larger"
-                onClick={() => onResizePiece?.(selected.designId, selected.copyIndex, 1.03)}
-              >
-                <Plus size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={() => onTurnPiece?.(selected.designId, selected.copyIndex, !selected.rotated)}
-              >
-                <RotateCw size={14} /> {selected.rotated ? 'Upright' : 'Turn'}
-              </button>
-              <button type="button" onClick={() => onResetPiece?.(selected.designId, selected.copyIndex)}>
-                Reset
-              </button>
-            </div>
-          </div>
-        )}
-        {adjustMode && !selected && (
-          <p className="adjust-hint">Click a design box to select it. Scroll to resize, or use + / −.</p>
-        )}
-
-        <div className={`sheet-preview-stage${refreshing ? ' refreshing' : ''}`}>
+        <div className="sheet-preview-stage">
           <div ref={paneRef} className={`inspect-frame on-check ${fitZoom ? 'zoom-fit' : 'zoom-manual'}`}>
             <div className="inspect-zoom-inner">
               <div className="inspect-media sheet-media" style={zoomStyle}>
@@ -358,12 +241,6 @@ export function SheetPreviewModal({
                   pieces={layoutPieces}
                   sheetWidthIn={SHEET_WIDTH_IN}
                   sheetHeightIn={sheetHeightIn}
-                  selectable={adjustMode}
-                  selectedKey={selectedKey}
-                  onSelect={(piece) => {
-                    const key = pieceKey(piece)
-                    setSelectedKey((current) => (current === key ? null : key))
-                  }}
                 />
                 {cutOut && (
                   <CutBoxOverlay
