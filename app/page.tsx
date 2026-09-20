@@ -22,6 +22,7 @@ import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib
 import { isEmbedSearchParam } from '@/lib/embed'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
+import { buildFeeForLength } from '@/lib/sheet-pricing'
 
 type Design = {
   id: number
@@ -443,7 +444,8 @@ function HomeBuilder() {
   const cutRate = cuttingFeeEach(totalTransfers)
   const offeredCutFee = totalTransfers > 0 ? cutRate * totalTransfers : 0
   const cutFee = cutOut && totalTransfers > 0 ? offeredCutFee : 0
-  const subtotal = sheet.price + cutFee
+  const buildFee = designs.length > 0 ? buildFeeForLength(billedLength) : 0
+  const subtotal = sheet.price + cutFee + buildFee
   const total = subtotal.toFixed(2)
   const currentGuideStep = !customerName.trim() ? 1 : designs.length === 0 ? 2 : !previewing && !built ? 4 : 5
   const updateDesign = (id: number, patch: Partial<Design>) => setDesigns((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item))
@@ -645,6 +647,7 @@ function HomeBuilder() {
           transfers: totalTransfers,
           precut: cutOut,
           precutTotal: cutFee,
+          buildFee: index === 0 ? buildFee : 0,
           fileName: sheetCount > 1 ? cartFileName.replace(/\.png$/i, `-${index + 1}.png`) : cartFileName,
           fileUrl: driveLink,
           driveFileId: drive.fileId,
@@ -903,6 +906,9 @@ function HomeBuilder() {
           <div className="price-breakdown">
             <strong>{sheetName} · {sheetCount === 1 ? '1 of 1' : `1 of ${sheetCount}`}</strong>
             <span>{sheet.breakdown}</span>
+            {buildFee > 0 && (
+              <span>Build fee: ${buildFee.toFixed(2)}{billedLength >= 101 ? ' (over 100 in)' : ''}</span>
+            )}
             {cutOut && totalTransfers > 0 && (
               <span>Pre-cut: {totalTransfers} × ${cutRate.toFixed(2)} = ${cutFee.toFixed(2)}</span>
             )}

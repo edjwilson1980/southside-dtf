@@ -2,7 +2,7 @@
 /**
  * Plugin Name: South Side Gang Sheet Builder
  * Description: Embed the South Side DTF customer gang sheet builder and add finished sheets to the WooCommerce cart.
- * Version: 1.20
+ * Version: 1.21
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.20');
+define('SSGS_PLUGIN_VERSION', '1.21');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 
 function ssgs_default_options() {
@@ -419,6 +419,7 @@ function ssgs_handle_add_to_cart() {
     'ssgs_transfers' => intval($payload['transfers'] ?? 0),
     'ssgs_precut' => !empty($payload['precut']) ? 'yes' : 'no',
     'ssgs_precut_total' => floatval($payload['precutTotal'] ?? 0),
+    'ssgs_build_fee' => floatval($payload['buildFee'] ?? 0),
     'ssgs_printed_height' => $printed_height,
     'ssgs_billed_height' => $billable_height,
     'ssgs_sheet_type' => $sheet_type,
@@ -480,6 +481,30 @@ add_action('woocommerce_before_calculate_totals', function ($cart) {
   }
 }, 20, 1);
 
+// Build fee for gang-sheet builds: $5 up to 100 in, $10 at 101 in and longer.
+add_action('woocommerce_cart_calculate_fees', function ($cart) {
+  if (is_admin() && !defined('DOING_AJAX')) {
+    return;
+  }
+  if (!$cart instanceof WC_Cart) {
+    return;
+  }
+
+  $fee = 0.0;
+  foreach ($cart->get_cart() as $cart_item) {
+    if (!empty($cart_item['ssgs_precut_for'])) {
+      continue;
+    }
+    $amount = floatval($cart_item['ssgs_build_fee'] ?? 0);
+    if ($amount > 0) {
+      $fee += $amount * max(1, intval($cart_item['quantity']));
+    }
+  }
+  if ($fee > 0) {
+    $cart->add_fee(__('Gang sheet build', 'southside-gangsheet'), $fee, true);
+  }
+}, 20, 1);
+
 // Remove the pre-cut line when its sheet is removed.
 add_action('woocommerce_cart_item_removed', function ($removed_key, $cart) {
   $removed = isset($cart->removed_cart_contents[$removed_key]) ? $cart->removed_cart_contents[$removed_key] : null;
@@ -534,6 +559,13 @@ add_filter('woocommerce_get_item_data', function ($item_data, $cart_item) {
         'value' => esc_html((string) $cart_item[$key]),
       );
     }
+  }
+
+  if (!empty($cart_item['ssgs_build_fee']) && empty($cart_item['ssgs_precut_for'])) {
+    $item_data[] = array(
+      'key' => __('Build fee', 'southside-gangsheet'),
+      'value' => wc_price(floatval($cart_item['ssgs_build_fee'])),
+    );
   }
 
   if (!empty($cart_item['ssgs_printed_height']) && !empty($cart_item['ssgs_billed_height'])

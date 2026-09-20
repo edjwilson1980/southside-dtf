@@ -46,6 +46,15 @@ export function cuttingFeeEach(transferCount: number) {
   return 0.1
 }
 
+/**
+ * Layout / build fee for customer gang-sheet builds (builder + intake).
+ * Up to 100 in → $5; 101 in and longer → $10.
+ */
+export function buildFeeForLength(billedLengthIn: number) {
+  if (!(billedLengthIn > 0)) return 0
+  return billedLengthIn >= 101 ? 10 : 5
+}
+
 export function getGangSheet(length: number) {
   const billedLength = billedSheetLength(length)
   const fullSheets = Math.floor(billedLength / 200)
