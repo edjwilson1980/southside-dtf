@@ -903,6 +903,10 @@ function HomeBuilder() {
             <Metric label="Estimated Price" value={`$${total}`} icon={<Sparkles size={22} />} green />
             <span className="tax-estimate">Estimated tax (11%): ${(Number(total) * 0.11).toFixed(2)}</span>
           </div>
+          <p className="build-fee-warning" role="status">
+            A gang sheet build fee will be applied: <strong>$5.00</strong> up to 100 in,{' '}
+            <strong>$10.00</strong> for sheets over 100 in.
+          </p>
           <div className="price-breakdown">
             <strong>{sheetName} · {sheetCount === 1 ? '1 of 1' : `1 of ${sheetCount}`}</strong>
             <span>{sheet.breakdown}</span>
