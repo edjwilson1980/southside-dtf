@@ -43,6 +43,8 @@ export type IntakeJobRecord = {
     billedLengthIn: number
     sheetPrice: number
     precutTotal: number
+    /** Layout/build fee ($5 ≤100 in, $10 ≥101 in). Optional on older records. */
+    buildFee?: number
     total: number
   }
   needsAttention: IntakeNeedsAttention[]

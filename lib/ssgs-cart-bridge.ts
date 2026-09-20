@@ -17,6 +17,8 @@ export type GangSheetCartPayload = {
   transfers: number
   precut: boolean
   precutTotal: number
+  /** Layout/build fee for builder + intake sheets ($5 ≤100 in, $10 ≥101 in). */
+  buildFee?: number
   fileName: string
   /** Google Drive link — required. File bytes never go through WordPress. */
   fileUrl: string

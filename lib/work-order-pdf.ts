@@ -318,6 +318,14 @@ export async function generateWorkOrderPdf(input: WorkOrderPdfInput): Promise<Bl
   field(state, 'Transfers', String(record.estimate.transfers), { bold: true, size: 16 })
   const precut = precutDisplay(record)
   field(state, 'Pre-cut', precut.text, { bold: precut.bold })
+  const buildFee = Number(record.estimate.buildFee ?? 0)
+  if (buildFee > 0) {
+    field(
+      state,
+      'Build fee',
+      `$${buildFee.toFixed(2)}${record.estimate.billedLengthIn >= 101 ? ' (over 100 in)' : ''}`,
+    )
+  }
   field(state, 'Total', `$${record.estimate.total.toFixed(2)} - PAID`, { bold: true })
   state.y += 0.06
   rule(state)

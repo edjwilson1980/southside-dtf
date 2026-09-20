@@ -21,7 +21,7 @@ import {
 } from '@/lib/work-order-pdf'
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
 import { ART_INSET_IN, packSheetBestGutter, piecePrintSize, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
-import { billedSheetLength, cuttingFeeEach, getGangSheet } from '@/lib/sheet-pricing'
+import { billedSheetLength, buildFeeForLength, cuttingFeeEach, getGangSheet } from '@/lib/sheet-pricing'
 import { sheetStamp } from '@/lib/sheet-name'
 import { uploadJobToGoogleDrive, writeDriveFolderBlob, writeDriveJobRecord } from '@/lib/upload-to-drive'
 import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
@@ -29,6 +29,9 @@ import { BUILDER_VERSION } from '@/lib/version'
 
 const UNSURE_SIZE = 'unsure'
 const UNSURE_BOX_IN = 10.5
+
+const sizeGuideUrl =
+  'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/DTF%20size%20chart%20%20front2-SIpj1XrVDRyRDtQhaACxzNHj5geNxv.png'
 
 const placements = [
   'Left Chest',
@@ -177,7 +180,6 @@ function SendIntake() {
     stamp: string
     total: string
     designs: IntakeDesign[]
-    workOrderUrl: string | null
   } | null>(null)
 
   useEffect(() => {
@@ -347,7 +349,8 @@ function SendIntake() {
   const sheet = getGangSheet(billableHeightIn)
   const cutRate = cuttingFeeEach(totalTransfers)
   const cutFee = cutOut && totalTransfers > 0 ? cutRate * totalTransfers : 0
-  const total = (sheet.price + cutFee).toFixed(2)
+  const buildFee = designs.length > 0 ? buildFeeForLength(billedLength) : 0
+  const total = (sheet.price + cutFee + buildFee).toFixed(2)
   const hasSizeUnknown = designs.some((design) => design.sizeUnknown || design.size === UNSURE_SIZE)
 
   async function submitAndPay() {
@@ -407,8 +410,6 @@ function SendIntake() {
       })
 
       let workOrderMissing = false
-      let workOrderBlob: Blob | null = null
-      let workOrderUrl: string | null = null
 
       const draftRecord = buildIntakeJobRecord({
         stamp,
@@ -426,6 +427,7 @@ function SendIntake() {
           billedLengthIn: billedLength,
           sheetPrice: sheet.price,
           precutTotal: cutFee,
+          buildFee,
           total: Number(total),
         },
         designs: jobDesigns,
@@ -433,7 +435,7 @@ function SendIntake() {
 
       try {
         const thumbs = await workOrderThumbsFromBlobs(designs.map((design) => design.uploadBlob))
-        workOrderBlob = await generateWorkOrderPdf({
+        const workOrderBlob = await generateWorkOrderPdf({
           record: draftRecord,
           thumbnails: thumbs,
           backdropLabels: designs.map((design) => design.backdropLabel),
@@ -444,7 +446,6 @@ function SendIntake() {
           blob: workOrderBlob,
           mimeType: 'application/pdf',
         })
-        workOrderUrl = URL.createObjectURL(workOrderBlob)
       } catch (pdfErr) {
         workOrderMissing = true
         console.error('Work order PDF failed; continuing without it.', pdfErr)
@@ -470,13 +471,14 @@ function SendIntake() {
         transfers: totalTransfers,
         precut: cutOut,
         precutTotal: cutFee,
-        fileName: `${slugify(customerName.trim()) || 'artwork'}-intake.json`,
+        buildFee,
+        fileName: `${slugify(customerName.trim()) || 'artwork'}-${stamp}`,
         fileUrl: drive.folderUrl,
         driveFileId: drive.folderId,
         sheetIndex: '1 of 1',
         sheetType: 'intake',
         jobStamp: stamp,
-        printFileName: workOrderMissing ? 'job.json' : workOrderFileName(draftRecord.jobId),
+        printFileName: workOrderMissing ? undefined : workOrderFileName(draftRecord.jobId),
       }
 
       const cart = await addToCart(payload)
@@ -487,7 +489,6 @@ function SendIntake() {
         stamp,
         total,
         designs: designs.map((design) => ({ ...design })),
-        workOrderUrl,
       })
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not submit your artwork. Please try again.')
@@ -521,14 +522,6 @@ function SendIntake() {
             <li>If anything would change your total, we email you before we print — never after.</li>
             <li>Finish checkout in your cart so the job stays in our queue.</li>
           </ol>
-          {submitted.workOrderUrl && (
-            <p className="intake-work-order-link">
-              <a href={submitted.workOrderUrl} download={`00-WORK-ORDER-${submitted.jobId}.pdf`}>
-                Download your work order PDF
-              </a>
-              {' '}— same sheet we keep with the job. Your confirmation email will point at this folder too.
-            </p>
-          )}
           {hasSizeUnknown && (
             <p className="intake-promise">
               One design still needs a size from us. We&apos;ll email you before we print if it changes your
@@ -550,6 +543,46 @@ function SendIntake() {
               Upload your designs, tell us how big and how many, and we build the gang sheet for you. No
               layout to fuss with — we handle the nesting so you get the most out of every inch of film.
             </p>
+          </div>
+
+          <div className="inline-guide">
+            <img src={sizeGuideUrl} alt="DTF design size guide for toddler, youth, and adult shirts" />
+            <div className="inline-guide-copy">
+              <span className="eyebrow">Live size chart</span>
+              <h2>{placement} max sizes</h2>
+              <p>Pick a garment below to update this chart. Use it when you are not sure what size to choose.</p>
+              <div className="guide-quick-picks">
+                {placements.filter((item) => item !== 'Custom').map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    className={placement === item ? 'active' : undefined}
+                    onClick={() => setPlacement(item)}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="live-size-chart" aria-live="polite">
+              <section
+                id={`intake-size-chart-${placement.replace(/\s+/g, '-').toLowerCase()}`}
+                className="live-size-section selected"
+              >
+                <header>
+                  <h3>{placement === 'Custom' ? 'Custom sizes' : placement}</h3>
+                  <span>Max print size</span>
+                </header>
+                <div className="size-recommendations">
+                  {(sizeOptions[placement] ?? sizeOptions.default).map((option) => (
+                    <div key={option} className="size-recommendation">
+                      <strong>{option.split(' · ')[0]}</strong>
+                      <span>{option.includes(' · ') ? option.split(' · ')[1] : option}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
           </div>
 
           <label className="customer-name-field workspace-customer-name">
@@ -898,6 +931,12 @@ function SendIntake() {
               <span>Gang sheet — {billedLength} in</span>
               <strong>${sheet.price.toFixed(2)}</strong>
             </div>
+            {buildFee > 0 && (
+              <div>
+                <span>Build fee{billedLength >= 101 ? ' (over 100 in)' : ''}</span>
+                <strong>${buildFee.toFixed(2)}</strong>
+              </div>
+            )}
             {cutOut && totalTransfers > 0 && (
               <div>
                 <span>
