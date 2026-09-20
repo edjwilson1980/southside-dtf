@@ -1,6 +1,10 @@
 /** Types and builders for the customer artwork intake `job.json` contract. */
 
-export type IntakeNeedsAttention = 'size-unknown' | 'low-dpi' | 'remove-background'
+export type IntakeNeedsAttention =
+  | 'size-unknown'
+  | 'low-dpi'
+  | 'remove-background'
+  | 'work-order-missing'
 
 export type IntakeJobDesign = {
   file: string
@@ -16,6 +20,8 @@ export type IntakeJobDesign = {
   pixelHeight: number
   dpi: number
   removeBackground: boolean
+  /** Colour name from border detect when removeBackground is suggested/checked. */
+  backdropLabel?: string
   upscale: boolean
 }
 
@@ -52,18 +58,22 @@ export function intakeFileName(index: number, originalName: string) {
   return `${String(index + 1).padStart(2, '0')}-${safe}`
 }
 
-export function buildNeedsAttention(designs: Array<{
-  sizeUnknown?: boolean
-  upscale?: boolean
-  removeBackground?: boolean
-  dpi?: number
-}>): IntakeNeedsAttention[] {
+export function buildNeedsAttention(
+  designs: Array<{
+    sizeUnknown?: boolean
+    upscale?: boolean
+    removeBackground?: boolean
+    dpi?: number
+  }>,
+  extra: IntakeNeedsAttention[] = [],
+): IntakeNeedsAttention[] {
   const flags = new Set<IntakeNeedsAttention>()
   for (const design of designs) {
     if (design.sizeUnknown) flags.add('size-unknown')
     if (design.upscale || (design.dpi != null && design.dpi > 0 && design.dpi < 150)) flags.add('low-dpi')
     if (design.removeBackground) flags.add('remove-background')
   }
+  for (const flag of extra) flags.add(flag)
   return [...flags]
 }
 

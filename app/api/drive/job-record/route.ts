@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import {
   isGoogleDriveConfigured,
+  uploadBufferToFolder,
   uploadCutterFileToFolder,
 } from '@/lib/google-drive'
 
@@ -10,9 +11,12 @@ type Body = {
   folderId?: string
   content?: string
   name?: string
+  mimeType?: string
+  /** utf8 (default) for job.json / text; base64 for PDF and other binaries. */
+  encoding?: 'utf8' | 'base64'
 }
 
-/** Writes `job.json` into an existing Drive job folder after the art uploads. */
+/** Writes a small file (job.json or work-order PDF) into an existing Drive job folder. */
 export async function POST(req: Request) {
   try {
     if (!isGoogleDriveConfigured()) {
@@ -23,15 +27,27 @@ export async function POST(req: Request) {
     const folderId = String(body.folderId ?? '').trim()
     const content = String(body.content ?? '')
     const name = String(body.name ?? 'job.json').trim() || 'job.json'
+    const encoding = body.encoding === 'base64' ? 'base64' : 'utf8'
+    const mimeType =
+      String(body.mimeType ?? '').trim() ||
+      (name.toLowerCase().endsWith('.pdf')
+        ? 'application/pdf'
+        : name.toLowerCase().endsWith('.json')
+          ? 'application/json'
+          : 'text/plain')
 
     if (!folderId) {
       return NextResponse.json({ error: 'folderId is required.' }, { status: 400 })
     }
     if (!content) {
-      return NextResponse.json({ error: 'job.json content is required.' }, { status: 400 })
+      return NextResponse.json({ error: 'File content is required.' }, { status: 400 })
     }
 
-    const file = await uploadCutterFileToFolder(folderId, name, content, 'application/json')
+    const file =
+      encoding === 'base64'
+        ? await uploadBufferToFolder(folderId, name, Buffer.from(content, 'base64'), mimeType)
+        : await uploadCutterFileToFolder(folderId, name, content, mimeType)
+
     return NextResponse.json({
       ok: true,
       id: file.id,
@@ -39,7 +55,7 @@ export async function POST(req: Request) {
       webViewLink: file.webViewLink,
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Could not write job.json to Google Drive.'
+    const message = err instanceof Error ? err.message : 'Could not write file to Google Drive.'
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
