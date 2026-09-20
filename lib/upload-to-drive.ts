@@ -138,6 +138,26 @@ export async function uploadJobToGoogleDrive(options: {
   }
 }
 
+/** Write `job.json` into an existing Drive folder after the art files land. */
+export async function writeDriveJobRecord(options: {
+  folderId: string
+  content: string
+  name?: string
+}) {
+  const res = await fetch('/api/drive/job-record', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      folderId: options.folderId,
+      content: options.content,
+      name: options.name || 'job.json',
+    }),
+  })
+  const json = (await res.json()) as { error?: string; id?: string; name?: string; webViewLink?: string }
+  if (!res.ok) throw new Error(json.error || 'Could not write job.json to Google Drive.')
+  return json
+}
+
 async function sleep(ms: number) {
   await new Promise((resolve) => window.setTimeout(resolve, ms))
 }

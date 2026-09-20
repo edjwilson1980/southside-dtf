@@ -23,7 +23,7 @@ export type GangSheetCartPayload = {
   driveFileId?: string
   sheetIndex: string
   /** Builder-packed sheet vs customer-uploaded file. */
-  sheetType?: 'built' | 'uploaded'
+  sheetType?: 'built' | 'uploaded' | 'intake'
   sourceWidthIn?: number
   sourceHeightIn?: number
   scaleFactor?: number

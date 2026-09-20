@@ -4,17 +4,17 @@
  * finished sheets already used it).
  */
 
-export type UploadKind = 'png' | 'jpeg' | 'tiff' | 'pdf' | 'svg' | 'unknown'
+export type UploadKind = 'png' | 'jpeg' | 'tiff' | 'pdf' | 'svg' | 'heic' | 'unknown'
 
 /** File picker `accept` for design builders and the halftone tool. */
 export const DESIGN_ACCEPT =
-  'image/png,image/jpeg,image/jpg,image/svg+xml,application/pdf,.png,.jpg,.jpeg,.svg,.pdf'
+  'image/png,image/jpeg,image/jpg,image/svg+xml,application/pdf,image/heic,image/heif,.png,.jpg,.jpeg,.svg,.pdf,.heic,.heif'
 
 /** File picker `accept` for finished gang-sheet upload (keeps TIFF). */
 export const SHEET_ACCEPT =
   'image/png,image/jpeg,image/jpg,image/tiff,image/tif,image/svg+xml,application/pdf,.png,.jpg,.jpeg,.tif,.tiff,.svg,.pdf'
 
-export const DESIGN_ACCEPT_LABEL = 'PNG · JPG · PDF · SVG'
+export const DESIGN_ACCEPT_LABEL = 'PNG · JPG · PDF · SVG · HEIC'
 export const SHEET_ACCEPT_LABEL = 'PNG · JPG · PDF · SVG · TIFF'
 
 export function extensionOf(fileName: string) {
@@ -49,13 +49,18 @@ export function sniffUploadKind(file: File, bytes?: Uint8Array): UploadKind {
   if (type.includes('tif') || name.endsWith('.tif') || name.endsWith('.tiff')) return 'tiff'
   if (type.includes('pdf') || name.endsWith('.pdf')) return 'pdf'
   if (type.includes('svg') || name.endsWith('.svg')) return 'svg'
+  if (type.includes('heic') || type.includes('heif') || name.endsWith('.heic') || name.endsWith('.heif')) return 'heic'
   return 'unknown'
 }
 
 /** True when the browser/file picker handed us an allowed design file. */
 export function isAcceptedDesignFile(file: File) {
   const kind = sniffUploadKind(file)
-  return kind === 'png' || kind === 'jpeg' || kind === 'pdf' || kind === 'svg' || kind === 'tiff'
+  return kind === 'png' || kind === 'jpeg' || kind === 'pdf' || kind === 'svg' || kind === 'tiff' || kind === 'heic'
+}
+
+export function isHeicFile(file: File) {
+  return sniffUploadKind(file) === 'heic'
 }
 
 /** Finished-sheet upload allowlist (same formats + TIFF). */
@@ -75,6 +80,8 @@ export function mimeForKind(kind: UploadKind) {
       return 'application/pdf'
     case 'svg':
       return 'image/svg+xml'
+    case 'heic':
+      return 'image/heic'
     default:
       return 'application/octet-stream'
   }
