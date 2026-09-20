@@ -1062,3 +1062,16 @@ button.thumb:disabled { cursor: default; }
 
 .intake-work-order-link { margin: 16px 0 0; font-size: 14px; line-height: 1.45; }
 .intake-work-order-link a { color: var(--chicago-blue); font-weight: 700; }
+
+.build-fee-warning {
+  margin: 12px 0 10px;
+  padding: 10px 12px;
+  border: 1px solid #f0b4b4;
+  border-radius: 10px;
+  background: #fff5f5;
+  color: var(--chicago-red);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.build-fee-warning strong { font-weight: 800; }
