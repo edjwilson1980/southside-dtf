@@ -12,7 +12,9 @@
  * which dot shape is selected.
  */
 
-/** halftone = screen only · knockout = erase a colour only · both = erase then screen. */
+import { detectBackdropColor as detectBackdropFromSamples } from '@/lib/detect-backdrop'
+
+/** Halftone = screen only · knockout = erase a colour only · both = erase then screen. */
 export type HalftoneMode = 'halftone' | 'knockout' | 'both'
 
 export type RgbColor = { r: number; g: number; b: number }
@@ -231,39 +233,7 @@ function colorDistance(r: number, g: number, b: number, color: RgbColor) {
  * it so the UI can show what it found.
  */
 export function detectBackdropColor(source: PixelBuffer): RgbColor | null {
-  const { data, width, height } = source
-  const points: Array<[number, number]> = [
-    [0, 0],
-    [width - 1, 0],
-    [0, height - 1],
-    [width - 1, height - 1],
-    [Math.floor(width / 2), 0],
-    [Math.floor(width / 2), height - 1],
-    [0, Math.floor(height / 2)],
-    [width - 1, Math.floor(height / 2)],
-  ]
-  const samples: RgbColor[] = []
-  for (const [x, y] of points) {
-    const index = (y * width + x) * 4
-    if (data[index + 3] < 200) continue
-    samples.push({ r: data[index], g: data[index + 1], b: data[index + 2] })
-  }
-  if (samples.length === 0) return null
-
-  let best = samples[0]
-  let bestCount = 0
-  for (const candidate of samples) {
-    let count = 0
-    for (const sample of samples) {
-      if (colorDistance(sample.r, sample.g, sample.b, candidate) <= 34) count += 1
-    }
-    if (count > bestCount) {
-      best = candidate
-      bestCount = count
-    }
-  }
-  // Fewer than three agreeing corners means there is no consistent backdrop.
-  return bestCount >= 3 ? best : null
+  return detectBackdropFromSamples(source)
 }
 
 /**

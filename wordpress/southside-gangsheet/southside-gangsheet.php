@@ -2,7 +2,7 @@
 /**
  * Plugin Name: South Side Gang Sheet Builder
  * Description: Embed the South Side DTF customer gang sheet builder and add finished sheets to the WooCommerce cart.
- * Version: 1.19
+ * Version: 1.20
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.19');
+define('SSGS_PLUGIN_VERSION', '1.20');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 
 function ssgs_default_options() {
@@ -81,6 +81,7 @@ function ssgs_render_settings_page() {
     <p><?php esc_html_e('Embed the customer builder on any page or WooCommerce product with the shortcode below.', 'southside-gangsheet'); ?></p>
     <p><code>[southside_gangsheet]</code></p>
     <p><code>[southside_gangsheet mode="upload"]</code> <?php esc_html_e('for the upload-your-own-sheet flow.', 'southside-gangsheet'); ?></p>
+    <p><code>[southside_artwork_intake]</code> <?php esc_html_e('for the customer send-us-your-artwork flow.', 'southside-gangsheet'); ?></p>
     <form method="post" action="options.php">
       <?php settings_fields('ssgs_options_group'); ?>
       <table class="form-table" role="presentation">
@@ -146,6 +147,48 @@ function ssgs_render_settings_page() {
 }
 
 add_shortcode('southside_gangsheet', 'ssgs_render_shortcode');
+add_shortcode('southside_artwork_intake', 'ssgs_render_intake_shortcode');
+
+function ssgs_render_embed_iframe($base, $src, $title, $height, $fallback_label) {
+  $height = max(intval($height), 400);
+  $id = 'ssgs-frame-' . uniqid();
+
+  wp_enqueue_script(
+    'southside-gangsheet-embed',
+    plugins_url('embed.js', __FILE__),
+    array(),
+    SSGS_PLUGIN_VERSION,
+    true
+  );
+  wp_localize_script('southside-gangsheet-embed', 'ssgsEmbed', array(
+    'minHeight' => intval(ssgs_get_options()['min_height']),
+    'builderOrigin' => $base,
+    'ajaxUrl' => admin_url('admin-ajax.php'),
+    'nonce' => wp_create_nonce('ssgs_add_to_cart'),
+  ));
+
+  ob_start();
+  ?>
+  <div class="ssgs-embed-wrap" data-ssgs-embed="1">
+    <iframe
+      id="<?php echo esc_attr($id); ?>"
+      class="ssgs-embed-frame"
+      src="<?php echo esc_url($src); ?>"
+      title="<?php echo esc_attr($title); ?>"
+      loading="lazy"
+      referrerpolicy="strict-origin-when-cross-origin"
+      allow="clipboard-write"
+      style="width:100%;max-width:100%;height:<?php echo esc_attr($height); ?>px;border:0;border-radius:12px;background:#f4f8fb;"
+    ></iframe>
+    <p class="ssgs-embed-fallback">
+      <a href="<?php echo esc_url($base . '/'); ?>" target="_blank" rel="noopener noreferrer">
+        <?php echo esc_html($fallback_label); ?>
+      </a>
+    </p>
+  </div>
+  <?php
+  return ob_get_clean();
+}
 
 function ssgs_render_shortcode($atts) {
   $opts = ssgs_get_options();
@@ -160,46 +203,37 @@ function ssgs_render_shortcode($atts) {
   $mode = strtolower(trim((string) $atts['mode']));
   $src = $base . ($mode === 'upload' ? '/embed/upload' : '/embed');
   $height = max(intval($opts['min_height']), intval($atts['height']));
-  $id = 'ssgs-frame-' . uniqid();
   if ($mode === 'upload' && $atts['title'] === __('Build a Gang Sheet', 'southside-gangsheet')) {
     $atts['title'] = __('Upload a Gang Sheet', 'southside-gangsheet');
   }
 
-  wp_enqueue_script(
-    'southside-gangsheet-embed',
-    plugins_url('embed.js', __FILE__),
-    array(),
-    SSGS_PLUGIN_VERSION,
-    true
+  return ssgs_render_embed_iframe(
+    $base,
+    $src,
+    $atts['title'],
+    $height,
+    __('Open the gang sheet builder in a new tab', 'southside-gangsheet')
   );
-  wp_localize_script('southside-gangsheet-embed', 'ssgsEmbed', array(
-    'minHeight' => intval($opts['min_height']),
-    'builderOrigin' => $base,
-    'ajaxUrl' => admin_url('admin-ajax.php'),
-    'nonce' => wp_create_nonce('ssgs_add_to_cart'),
-  ));
+}
 
-  ob_start();
-  ?>
-  <div class="ssgs-embed-wrap" data-ssgs-embed="1">
-    <iframe
-      id="<?php echo esc_attr($id); ?>"
-      class="ssgs-embed-frame"
-      src="<?php echo esc_url($src); ?>"
-      title="<?php echo esc_attr($atts['title']); ?>"
-      loading="lazy"
-      referrerpolicy="strict-origin-when-cross-origin"
-      allow="clipboard-write"
-      style="width:100%;max-width:100%;height:<?php echo esc_attr($height); ?>px;border:0;border-radius:12px;background:#f4f8fb;"
-    ></iframe>
-    <p class="ssgs-embed-fallback">
-      <a href="<?php echo esc_url($base . '/'); ?>" target="_blank" rel="noopener noreferrer">
-        <?php esc_html_e('Open the gang sheet builder in a new tab', 'southside-gangsheet'); ?>
-      </a>
-    </p>
-  </div>
-  <?php
-  return ob_get_clean();
+function ssgs_render_intake_shortcode($atts) {
+  $opts = ssgs_get_options();
+  $atts = shortcode_atts(array(
+    'height' => $opts['default_height'],
+    'title' => __('Send us your artwork', 'southside-gangsheet'),
+    'url' => '',
+  ), $atts, 'southside_artwork_intake');
+
+  $base = untrailingslashit($atts['url'] ?: $opts['builder_url']);
+  $height = max(intval($opts['min_height']), intval($atts['height']));
+
+  return ssgs_render_embed_iframe(
+    $base,
+    $base . '/embed/send',
+    $atts['title'],
+    $height,
+    __('Open Send us your artwork in a new tab', 'southside-gangsheet')
+  );
 }
 
 add_action('wp_enqueue_scripts', function () {
@@ -207,7 +241,13 @@ add_action('wp_enqueue_scripts', function () {
     return;
   }
   $post = get_post();
-  if (!$post || !has_shortcode($post->post_content, 'southside_gangsheet')) {
+  if (
+    !$post
+    || (
+      !has_shortcode($post->post_content, 'southside_gangsheet')
+      && !has_shortcode($post->post_content, 'southside_artwork_intake')
+    )
+  ) {
     return;
   }
   wp_register_script(
@@ -318,7 +358,11 @@ function ssgs_handle_add_to_cart() {
   }
 
   $opts = ssgs_get_options();
-  $is_upload = (isset($payload['sheetType']) && $payload['sheetType'] === 'uploaded');
+  $sheet_type = sanitize_text_field($payload['sheetType'] ?? 'built');
+  if (!in_array($sheet_type, array('built', 'uploaded', 'intake'), true)) {
+    $sheet_type = 'built';
+  }
+  $is_upload = ($sheet_type === 'uploaded');
   $product_id = $is_upload && intval($opts['upload_product_id']) > 0
     ? intval($opts['upload_product_id'])
     : ssgs_resolve_product_id();
@@ -329,9 +373,12 @@ function ssgs_handle_add_to_cart() {
   $file_url = esc_url_raw($payload['fileUrl'] ?? '');
   $drive_file_id = sanitize_text_field($payload['driveFileId'] ?? '');
   if ($file_url === '' || (strpos($file_url, 'drive.google.com') === false && strpos($file_url, 'docs.google.com') === false)) {
-    wp_send_json_error(array('message' => 'Missing Google Drive file link for this sheet.'), 400);
+    wp_send_json_error(array('message' => 'Missing Google Drive file or folder link for this sheet.'), 400);
   }
   if ($drive_file_id === '' && preg_match('#/d/([^/]+)#', $file_url, $m)) {
+    $drive_file_id = $m[1];
+  }
+  if ($drive_file_id === '' && preg_match('#/folders/([^/?]+)#', $file_url, $m)) {
     $drive_file_id = $m[1];
   }
 
@@ -374,7 +421,7 @@ function ssgs_handle_add_to_cart() {
     'ssgs_precut_total' => floatval($payload['precutTotal'] ?? 0),
     'ssgs_printed_height' => $printed_height,
     'ssgs_billed_height' => $billable_height,
-    'ssgs_sheet_type' => sanitize_text_field($payload['sheetType'] ?? 'built'),
+    'ssgs_sheet_type' => $sheet_type,
     'ssgs_source_size' => ($source_w > 0 && $source_h > 0)
       ? (rtrim(rtrim(number_format($source_w, 2, '.', ''), '0'), '.') . ' x ' . rtrim(rtrim(number_format($source_h, 2, '.', ''), '0'), '.') . ' in')
       : '',
