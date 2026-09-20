@@ -151,10 +151,43 @@ export async function writeDriveJobRecord(options: {
       folderId: options.folderId,
       content: options.content,
       name: options.name || 'job.json',
+      mimeType: 'application/json',
+      encoding: 'utf8',
     }),
   })
   const json = (await res.json()) as { error?: string; id?: string; name?: string; webViewLink?: string }
   if (!res.ok) throw new Error(json.error || 'Could not write job.json to Google Drive.')
+  return json
+}
+
+/** Upload a binary file (work-order PDF) into an existing Drive job folder. */
+export async function writeDriveFolderBlob(options: {
+  folderId: string
+  name: string
+  blob: Blob
+  mimeType?: string
+}) {
+  const buffer = await options.blob.arrayBuffer()
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  }
+  const content = btoa(binary)
+  const res = await fetch('/api/drive/job-record', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      folderId: options.folderId,
+      content,
+      name: options.name,
+      mimeType: options.mimeType || options.blob.type || 'application/pdf',
+      encoding: 'base64',
+    }),
+  })
+  const json = (await res.json()) as { error?: string; id?: string; name?: string; webViewLink?: string }
+  if (!res.ok) throw new Error(json.error || `Could not upload ${options.name} to Google Drive.`)
   return json
 }
 

@@ -10,14 +10,20 @@ import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import {
   buildIntakeJobRecord,
+  buildNeedsAttention,
   intakeFileName,
   intakeJobId,
 } from '@/lib/intake'
+import {
+  generateWorkOrderPdf,
+  workOrderFileName,
+  workOrderThumbsFromBlobs,
+} from '@/lib/work-order-pdf'
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
 import { ART_INSET_IN, packSheetBestGutter, piecePrintSize, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 import { billedSheetLength, cuttingFeeEach, getGangSheet } from '@/lib/sheet-pricing'
 import { sheetStamp } from '@/lib/sheet-name'
-import { uploadJobToGoogleDrive, writeDriveJobRecord } from '@/lib/upload-to-drive'
+import { uploadJobToGoogleDrive, writeDriveFolderBlob, writeDriveJobRecord } from '@/lib/upload-to-drive'
 import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
 import { BUILDER_VERSION } from '@/lib/version'
 
@@ -171,6 +177,7 @@ function SendIntake() {
     stamp: string
     total: string
     designs: IntakeDesign[]
+    workOrderUrl: string | null
   } | null>(null)
 
   useEffect(() => {
@@ -394,11 +401,16 @@ function SendIntake() {
           pixelHeight: design.pixelHeight,
           dpi,
           removeBackground: design.removeBackground,
+          backdropLabel: design.backdropLabel || undefined,
           upscale: design.upscale,
         }
       })
 
-      const record = buildIntakeJobRecord({
+      let workOrderMissing = false
+      let workOrderBlob: Blob | null = null
+      let workOrderUrl: string | null = null
+
+      const draftRecord = buildIntakeJobRecord({
         stamp,
         submittedAt: new Date().toISOString(),
         customer: {
@@ -418,6 +430,30 @@ function SendIntake() {
         },
         designs: jobDesigns,
       })
+
+      try {
+        const thumbs = await workOrderThumbsFromBlobs(designs.map((design) => design.uploadBlob))
+        workOrderBlob = await generateWorkOrderPdf({
+          record: draftRecord,
+          thumbnails: thumbs,
+          backdropLabels: designs.map((design) => design.backdropLabel),
+        })
+        await writeDriveFolderBlob({
+          folderId: drive.folderId,
+          name: workOrderFileName(draftRecord.jobId),
+          blob: workOrderBlob,
+          mimeType: 'application/pdf',
+        })
+        workOrderUrl = URL.createObjectURL(workOrderBlob)
+      } catch (pdfErr) {
+        workOrderMissing = true
+        console.error('Work order PDF failed; continuing without it.', pdfErr)
+      }
+
+      const record = {
+        ...draftRecord,
+        needsAttention: buildNeedsAttention(jobDesigns, workOrderMissing ? ['work-order-missing'] : []),
+      }
 
       await writeDriveJobRecord({
         folderId: drive.folderId,
@@ -440,7 +476,7 @@ function SendIntake() {
         sheetIndex: '1 of 1',
         sheetType: 'intake',
         jobStamp: stamp,
-        printFileName: 'job.json',
+        printFileName: workOrderMissing ? 'job.json' : workOrderFileName(draftRecord.jobId),
       }
 
       const cart = await addToCart(payload)
@@ -451,6 +487,7 @@ function SendIntake() {
         stamp,
         total,
         designs: designs.map((design) => ({ ...design })),
+        workOrderUrl,
       })
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not submit your artwork. Please try again.')
@@ -484,6 +521,14 @@ function SendIntake() {
             <li>If anything would change your total, we email you before we print — never after.</li>
             <li>Finish checkout in your cart so the job stays in our queue.</li>
           </ol>
+          {submitted.workOrderUrl && (
+            <p className="intake-work-order-link">
+              <a href={submitted.workOrderUrl} download={`00-WORK-ORDER-${submitted.jobId}.pdf`}>
+                Download your work order PDF
+              </a>
+              {' '}— same sheet we keep with the job. Your confirmation email will point at this folder too.
+            </p>
+          )}
           {hasSizeUnknown && (
             <p className="intake-promise">
               One design still needs a size from us. We&apos;ll email you before we print if it changes your

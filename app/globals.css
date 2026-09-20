@@ -1059,3 +1059,6 @@ button.thumb:disabled { cursor: default; }
   .intake-contact-row { grid-template-columns: 1fr; }
   .intake-shell .title-block h1 { font-size: 28px; }
 }
+
+.intake-work-order-link { margin: 16px 0 0; font-size: 14px; line-height: 1.45; }
+.intake-work-order-link a { color: var(--chicago-blue); font-weight: 700; }
