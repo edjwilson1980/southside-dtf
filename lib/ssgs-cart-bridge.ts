@@ -33,6 +33,21 @@ export type GangSheetCartPayload = {
   dpiSource?: 'file' | 'assumed' | 'customer'
   jobStamp?: string
   printFileName?: string
+  /** Upload Gangsheet: Woo variation chosen from measured length (server re-checks). */
+  variationId?: number
+  measuredWidthIn?: number
+  measuredLengthIn?: number
+  measuredDpi?: number
+  /** Signed measure from /api/upload/sign — required for sheetType uploaded. */
+  uploadSig?: {
+    drive_file_id: string
+    width_in: string
+    length_in: string
+    dpi: string
+    filename: string
+    exp: string
+    sig: string
+  }
 }
 
 export type StoreBridgeStatus = 'idle' | 'sending' | 'error' | 'sent'
