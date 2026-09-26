@@ -5,52 +5,47 @@ import { useSearchParams } from 'next/navigation'
 import { Check, Plus, Trash2, Upload } from 'lucide-react'
 import { CutOutNoteModal } from '@/components/cut-out-note-modal'
 import { isEmbedSearchParam } from '@/lib/embed'
-import { formatInches, measureUploadFile, type MeasuredFile } from '@/lib/measure-file'
-import { getGangSheet, SAFETY_WIDTH_IN } from '@/lib/sheet-pricing'
-import {
-  evaluateScaledSheet,
-  scaleToSafetyWidth,
-  softDpiWarning,
-  type ScaleGate,
-  type ScaledSheet,
-} from '@/lib/upload-scale'
+import { formatInches } from '@/lib/measure-file'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
 import { sheetStamp } from '@/lib/sheet-name'
-import { SHEET_ACCEPT, SHEET_ACCEPT_LABEL, isAcceptedSheetFile } from '@/lib/accepted-uploads'
-import { prepareEditableUpload } from '@/lib/rasterize-upload'
+import { formatSignedNumber, type UploadSignedMeasure } from '@/lib/upload-sign-shared'
+import {
+  UPLOAD_LOW_DPI,
+  pickUploadSize,
+  type UploadSizeOption,
+} from '@/lib/upload-pricing'
+import { fetchUploadSizes } from '@/lib/upload-woo-client'
+import { BUILDER_VERSION } from '@/lib/version'
 
 const logoUrl =
   'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/SSP%20Logo%20%28Black%20Outline%29-A5PrDBPZRDhydxNxRumbsTUFufpLv9.png'
 const MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
 const MAX_SHEETS = 25
-/** Above this, decoding the file into an <img> preview can hang or crash the tab. */
 const MAX_PREVIEW_BYTES = 75 * 1024 * 1024
 const CUT_OUT_NOTE_SESSION_KEY = 'ssgs-upload-cutout-note-seen'
+const UPLOAD_ACCEPT = 'image/png,application/pdf,.png,.pdf,.ai'
+const UPLOAD_ACCEPT_LABEL = 'PNG · PDF · AI'
 
 type Step = 1 | 2 | 3 | 4
-type DpiSource = 'file' | 'assumed' | 'customer'
 
-/** One uploaded gang sheet. Each entry prints, prices and carts on its own. */
+type MeasuredUpload = {
+  width_in: number
+  length_in: number
+  dpi: number
+  dpi_assumed: boolean
+  filename: string
+  kind: string
+  warnings: string[]
+}
+
 type SheetEntry = {
   id: string
   file: File
   fileUrl: string
-  measured: MeasuredFile
-  overrideMode: boolean
-  overrideWidth: string
-  overrideHeight: string
-  overrideDpi: string
-}
-
-type DerivedSheet = {
-  entry: SheetEntry
-  activeMeasure: MeasuredFile
-  scaled: ScaledSheet | null
-  gate: ScaleGate | null
-  dpiSoft: string | null
-  sheet: ReturnType<typeof getGangSheet> | null
-  dpiSource: DpiSource
+  measured: MeasuredUpload
+  matched: UploadSizeOption | null
+  quantity: number
   error: string | null
 }
 
@@ -87,43 +82,48 @@ function fileExt(name: string) {
   return name.includes('.') ? name.slice(name.lastIndexOf('.')) : '.png'
 }
 
-/** Resolve one entry into its measurement, scaled size, gate and price. */
-function deriveSheet(entry: SheetEntry): DerivedSheet {
-  const { measured } = entry
-  const activeMeasure: MeasuredFile = entry.overrideMode
-    ? (() => {
-        const dpi = Number(entry.overrideDpi) || measured.dpiX
-        const widthIn = Number(entry.overrideWidth) || measured.pixelWidth / Math.max(1, dpi)
-        const heightIn = Number(entry.overrideHeight) || measured.pixelHeight / Math.max(1, dpi)
-        return { ...measured, dpiX: dpi, dpiY: dpi, dpiAssumed: false, widthIn, heightIn }
-      })()
-    : measured
+function isUploadFile(file: File) {
+  const name = file.name.toLowerCase()
+  const type = file.type.toLowerCase()
+  return (
+    type.includes('png') ||
+    type.includes('pdf') ||
+    name.endsWith('.png') ||
+    name.endsWith('.pdf') ||
+    name.endsWith('.ai')
+  )
+}
 
-  const dpiSource: DpiSource = entry.overrideMode ? 'customer' : measured.dpiAssumed ? 'assumed' : 'file'
+async function measureViaRelay(file: File): Promise<MeasuredUpload> {
+  const body = new FormData()
+  body.append('file', file)
+  const res = await fetch('/api/upload/measure', { method: 'POST', body })
+  const json = (await res.json()) as MeasuredUpload & { error?: string }
+  if (!res.ok) throw new Error(json.error || 'Could not measure that file.')
+  return json
+}
 
-  let scaled: ScaledSheet | null = null
-  let error: string | null = null
-  try {
-    scaled = scaleToSafetyWidth({
-      widthIn: activeMeasure.widthIn,
-      heightIn: activeMeasure.heightIn,
-      pixelWidth: activeMeasure.pixelWidth,
-      pixelHeight: activeMeasure.pixelHeight,
-    })
-  } catch (err) {
-    error = err instanceof Error ? err.message : 'Could not size this sheet.'
-  }
-
-  return {
-    entry,
-    activeMeasure,
-    scaled,
-    gate: scaled ? evaluateScaledSheet(scaled) : null,
-    dpiSoft: scaled ? softDpiWarning(scaled) : null,
-    sheet: scaled ? getGangSheet(scaled.scaledHeightIn) : null,
-    dpiSource,
-    error,
-  }
+async function signMeasure(input: {
+  drive_file_id: string
+  width_in: number
+  length_in: number
+  dpi: number
+  filename: string
+}): Promise<UploadSignedMeasure> {
+  const res = await fetch('/api/upload/sign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      drive_file_id: input.drive_file_id,
+      width_in: formatSignedNumber(input.width_in),
+      length_in: formatSignedNumber(input.length_in),
+      dpi: String(Math.round(input.dpi)),
+      filename: input.filename,
+    }),
+  })
+  const json = (await res.json()) as UploadSignedMeasure & { error?: string }
+  if (!res.ok) throw new Error(json.error || 'Could not sign the upload measure.')
+  return json
 }
 
 function UploadFlow() {
@@ -137,6 +137,8 @@ function UploadFlow() {
   const [customerName, setCustomerName] = useState('')
   const [step, setStep] = useState<Step>(1)
   const [sheets, setSheets] = useState<SheetEntry[]>([])
+  const [sizes, setSizes] = useState<UploadSizeOption[]>([])
+  const [sizesError, setSizesError] = useState<string | null>(null)
   const [measureError, setMeasureError] = useState<string | null>(null)
   const [reading, setReading] = useState(false)
   const [cutOutNoteOpen, setCutOutNoteOpen] = useState(false)
@@ -146,14 +148,34 @@ function UploadFlow() {
   const [built, setBuilt] = useState(false)
   const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null)
 
-  const derived = useMemo(() => sheets.map(deriveSheet), [sheets])
-  const priced = derived.filter((item) => item.sheet && item.gate?.ok)
-  const blocked = derived.filter((item) => item.error || (item.gate && !item.gate.ok))
-  const sheetCount = derived.length
-  const totalLengthIn = priced.reduce((sum, item) => sum + (item.scaled?.scaledHeightIn ?? 0), 0)
-  const totalPrice = priced.reduce((sum, item) => sum + (item.sheet?.price ?? 0), 0)
-  const total = totalPrice.toFixed(2)
-  const allClear = sheetCount > 0 && blocked.length === 0
+  useEffect(() => {
+    let cancelled = false
+    fetchUploadSizes()
+      .then((list) => {
+        if (!cancelled) {
+          setSizes(list)
+          setSizesError(null)
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setSizesError(err instanceof Error ? err.message : 'Could not load prices.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const validSheets = useMemo(
+    () => sheets.filter((sheet) => sheet.matched && !sheet.error),
+    [sheets],
+  )
+  const blocked = sheets.filter((sheet) => sheet.error || !sheet.matched)
+  const sheetCount = sheets.length
+  const orderTotal = validSheets.reduce(
+    (sum, sheet) => sum + (sheet.matched?.price ?? 0) * Math.max(1, sheet.quantity),
+    0,
+  )
+  const allClear = sheetCount > 0 && blocked.length === 0 && sizes.length > 0
 
   useEffect(() => {
     if (!embed) return
@@ -164,7 +186,7 @@ function UploadFlow() {
     const observer = new ResizeObserver(() => post())
     observer.observe(root)
     return () => observer.disconnect()
-  }, [embed, reportHeight, step, sheets, cutOutNoteOpen, saveError, cartStatus, built])
+  }, [embed, reportHeight, step, sheets, cutOutNoteOpen, saveError, cartStatus, built, sizesError])
 
   const sheetsRef = useRef<SheetEntry[]>([])
   useEffect(() => {
@@ -196,6 +218,10 @@ function UploadFlow() {
   async function onPickFiles(list: FileList | null) {
     const incoming = Array.from(list ?? [])
     if (incoming.length === 0) return
+    if (sizes.length === 0) {
+      setMeasureError(sizesError || 'Still loading store prices — try again in a moment.')
+      return
+    }
     setMeasureError(null)
     setBuilt(false)
     setReading(true)
@@ -207,39 +233,33 @@ function UploadFlow() {
     for (const next of incoming.slice(0, Math.max(0, room))) {
       if (next.size > MAX_UPLOAD_BYTES) {
         problems.push(
-          `${next.name} is ${formatBytes(next.size)} — keep each file under ${formatBytes(MAX_UPLOAD_BYTES)}, or split the sheet.`,
+          `${next.name} is ${formatBytes(next.size)} — keep each file under ${formatBytes(MAX_UPLOAD_BYTES)}.`,
         )
         continue
       }
-      if (!isAcceptedSheetFile(next)) {
-        problems.push(`${next.name}: upload a ${SHEET_ACCEPT_LABEL.replace(/ · /g, ', ')}.`)
+      if (!isUploadFile(next)) {
+        problems.push(`${next.name}: Please upload PNG, PDF, or AI.`)
         continue
       }
       try {
-        const info = await measureUploadFile(next)
-        if (info.kind === 'jpeg') {
-          problems.push(
-            `${next.name}: JPEG accepted — if it has a white background, that background will print as white ink. Transparent PNG is safer.`,
-          )
-        }
-        let fileUrl = URL.createObjectURL(next)
-        let measured = info
-        // PDF/SVG cannot preview in <img>; rasterize a PNG preview while keeping the original for Drive.
-        if (info.kind === 'pdf' || info.kind === 'svg') {
-          const prepared = await prepareEditableUpload(next)
-          URL.revokeObjectURL(fileUrl)
-          fileUrl = prepared.editUrl
-          measured = prepared.measured
-        }
+        const measured = await measureViaRelay(next)
+        const matched = pickUploadSize(measured.length_in, sizes)
+        const fileUrl =
+          next.type.includes('png') && next.size <= MAX_PREVIEW_BYTES
+            ? URL.createObjectURL(next)
+            : ''
         accepted.push({
           id: makeEntryId(),
           file: next,
           fileUrl,
           measured,
-          overrideMode: false,
-          overrideWidth: formatInches(measured.widthIn),
-          overrideHeight: formatInches(measured.heightIn),
-          overrideDpi: String(Math.round(measured.dpiX)),
+          matched,
+          quantity: 1,
+          error: matched
+            ? null
+            : measured.length_in > 200
+              ? 'Max sheet is 200 in (16 ft). Please split into two files.'
+              : 'No matching sheet size for this file.',
         })
       } catch (err) {
         problems.push(`${next.name}: ${err instanceof Error ? err.message : 'could not read that file.'}`)
@@ -288,62 +308,69 @@ function UploadFlow() {
     try {
       const stamp = sheetStamp()
       const safeName = slugify(customerName.trim())
-      const jobs = priced.map((item, index) => {
-        const scaled = item.scaled as ScaledSheet
-        const ext = fileExt(item.entry.file.name)
-        const suffix = priced.length > 1 ? `-${index + 1}` : ''
+      const jobs = validSheets.map((entry, index) => {
+        const ext = fileExt(entry.file.name)
+        const suffix = validSheets.length > 1 ? `-${index + 1}` : ''
+        const lengthTier = entry.matched!.length_in
         return {
-          item,
-          scaled,
+          entry,
           ext,
-          printName: `${safeName}-upload${suffix}-${Math.round(scaled.scaledHeightIn)}in-${stamp}${ext}`,
+          printName: `${safeName}-upload${suffix}-${lengthTier}in-${stamp}${ext}`,
         }
       })
 
-      // Browser → Google Drive directly (chunked). WordPress only gets the Drive links.
       const drive = await uploadJobToGoogleDrive({
         customerName: customerName.trim(),
         stamp,
         files: jobs.map((job) => ({
           name: job.printName,
-          mimeType: job.item.entry.file.type || 'application/octet-stream',
-          blob: job.item.entry.file,
+          mimeType: job.entry.file.type || 'application/octet-stream',
+          blob: job.entry.file,
         })),
         onProgress: setUploadProgress,
       })
       setDriveFolderUrl(drive.folderUrl)
 
-      // One cart line per uploaded sheet, each with its own Drive link and price.
       for (const [index, job] of jobs.entries()) {
         const uploaded = drive.files.find((file) => file.name === job.printName)
         if (!uploaded?.id || !uploaded.webViewLink) {
-          throw new Error(`Could not save ${job.item.entry.file.name} to our print queue. Please try again.`)
+          throw new Error(`Could not save ${job.entry.file.name} to our print queue. Please try again.`)
         }
+
+        const uploadSig = await signMeasure({
+          drive_file_id: uploaded.id,
+          width_in: job.entry.measured.width_in,
+          length_in: job.entry.measured.length_in,
+          dpi: job.entry.measured.dpi,
+          filename: job.printName,
+        })
 
         const payload: GangSheetCartPayload = {
           customerName: customerName.trim(),
-          sheetWidthIn: SAFETY_WIDTH_IN,
-          sheetHeightIn: job.scaled.scaledHeightIn,
-          // Send the billed tier (e.g. 36), not the raw float — WooCommerce picks the
-          // smallest variation >= this value, so 36.49 would skip a 36 in product.
-          billableHeightIn: job.item.sheet?.length ?? job.scaled.scaledHeightIn,
-          quantity: 1,
+          sheetWidthIn: 22,
+          sheetHeightIn: job.entry.measured.length_in,
+          billableHeightIn: job.entry.matched!.length_in,
+          quantity: Math.max(1, job.entry.quantity),
           designs: 1,
           transfers: 0,
           precut: false,
           precutTotal: 0,
-          fileName: `${safeName}-gangsheet-upload${jobs.length > 1 ? `-${index + 1}` : ''}${job.ext}`,
+          fileName: job.printName,
           fileUrl: uploaded.webViewLink,
           driveFileId: uploaded.id,
           sheetIndex: `${index + 1} of ${jobs.length}`,
           sheetType: 'uploaded',
-          sourceWidthIn: job.scaled.sourceWidthIn,
-          sourceHeightIn: job.scaled.sourceHeightIn,
-          scaleFactor: job.scaled.scaleFactor,
-          effectiveDpi: job.scaled.effectiveDpi,
-          dpiSource: job.item.dpiSource,
+          sourceWidthIn: job.entry.measured.width_in,
+          sourceHeightIn: job.entry.measured.length_in,
+          effectiveDpi: job.entry.measured.dpi,
+          dpiSource: job.entry.measured.dpi_assumed ? 'assumed' : 'file',
           jobStamp: stamp,
           printFileName: job.printName,
+          variationId: job.entry.matched!.variation_id,
+          measuredWidthIn: job.entry.measured.width_in,
+          measuredLengthIn: job.entry.measured.length_in,
+          measuredDpi: job.entry.measured.dpi,
+          uploadSig,
         }
 
         const result = await addToCart(payload)
@@ -376,10 +403,9 @@ function UploadFlow() {
           <img src={logoUrl} alt="South Side DTF" className="brand-logo" />
           <div className="title-block">
             <h1>Upload Your Gang Sheets</h1>
-            <p className="lead">Already laid out? Send the files and we will size them for the roll.</p>
+            <p className="lead">Already laid out? Send the files — we size them from the file and bill the WooCommerce price.</p>
             <p className="sublead">
-              PNG (transparent), PDF, or TIFF. Upload as many sheets as you need — each one is priced on its own and
-              they add up to your order total.
+              PNG, PDF, or AI. Max width 22 in. You never pick the size — your file dimensions set the sheet.
             </p>
           </div>
         </div>
@@ -440,8 +466,8 @@ function UploadFlow() {
                 <div>
                   <h2>Upload your gang sheets</h2>
                   <p>
-                    One or more files: PNG, JPG, PDF, SVG, or TIFF. Max {formatBytes(MAX_UPLOAD_BYTES)} each, up to{' '}
-                    {MAX_SHEETS} sheets.
+                    PNG, PDF, or AI. Max {formatBytes(MAX_UPLOAD_BYTES)} each, up to {MAX_SHEETS} sheets. Print-ready,
+                    no mirroring, no trademarks — store credit only on remakes.
                   </p>
                 </div>
               </div>
@@ -450,7 +476,7 @@ function UploadFlow() {
                 className="sr-only"
                 type="file"
                 multiple
-                accept={SHEET_ACCEPT}
+                accept={UPLOAD_ACCEPT}
                 onChange={(e) => void onPickFiles(e.target.files)}
               />
               <button
@@ -466,9 +492,12 @@ function UploadFlow() {
                 <Upload size={28} />
                 <strong>Drop your gang sheets here</strong>
                 <span>or click to choose files — you can pick several at once</span>
-                <small>{SHEET_ACCEPT_LABEL} · Max {formatBytes(MAX_UPLOAD_BYTES)} each, up to {MAX_SHEETS} sheets</small>
+                <small>
+                  {UPLOAD_ACCEPT_LABEL} · Max {formatBytes(MAX_UPLOAD_BYTES)} each, up to {MAX_SHEETS} sheets
+                </small>
               </button>
-              {reading && <p className="sublead">Reading files…</p>}
+              {reading && <p className="sublead">Measuring files…</p>}
+              {sizesError && <p className="save-error">{sizesError}</p>}
               {measureError && <p className="save-error">{measureError}</p>}
               {sheetCount > 0 && (
                 <button type="button" className="build-button" onClick={() => setStep(3)}>
@@ -484,244 +513,188 @@ function UploadFlow() {
                 <span className="guide-num">3</span>
                 <div>
                   <h2>Confirm the sizes</h2>
-                  <p>We read these from the file headers — please check each one before we price it.</p>
+                  <p>
+                    Sheet size is set by your file. Wrong size? Resize your art and re-upload.
+                  </p>
                 </div>
               </div>
 
               <div className="upload-sheet-list">
-                {derived.map((item, index) => {
-                  const { entry, activeMeasure, scaled, gate, dpiSoft, sheet } = item
-                  return (
-                    <article key={entry.id} className="upload-sheet-card">
-                      <header className="upload-sheet-head">
-                        <div>
-                          <span className="upload-sheet-index">Sheet {index + 1}</span>
-                          <strong className="upload-sheet-name">{entry.file.name}</strong>
-                        </div>
-                        <div className="upload-sheet-head-right">
-                          {sheet && gate?.ok && <strong className="green-text">${sheet.price.toFixed(2)}</strong>}
-                          <button
-                            type="button"
-                            className="upload-sheet-remove"
-                            onClick={() => removeEntry(entry.id)}
-                            aria-label={`Remove ${entry.file.name}`}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </header>
-
-                      <div className="upload-measure-card">
-                        <p>
-                          We measured this as{' '}
-                          <strong>
-                            {formatInches(activeMeasure.widthIn)} × {formatInches(activeMeasure.heightIn)} in
-                          </strong>{' '}
-                          at {Math.round(activeMeasure.dpiX)} DPI
-                          {entry.measured.dpiAssumed && !entry.overrideMode
-                            ? ' (DPI assumed at 300 — the file had no density tag)'
-                            : ''}
-                          .
-                        </p>
-                        {scaled && scaled.scaleFactor < 0.999 && (
-                          <p>
-                            We will scale it down to{' '}
-                            <strong>
-                              {formatInches(scaled.scaledWidthIn)} × {formatInches(scaled.scaledHeightIn)} in
-                            </strong>{' '}
-                            so it fits the {SAFETY_WIDTH_IN} in printable width.
-                          </p>
-                        )}
-                        {sheet && gate?.ok && (
-                          <p>
-                            Billed as <strong>{sheet.label}</strong> — ${sheet.price.toFixed(2)}
-                          </p>
-                        )}
-                        {dpiSoft && <p className="upload-warn">{dpiSoft}</p>}
-                        {item.error && <p className="save-error">{item.error}</p>}
-                        {gate && !gate.ok && <p className="save-error">{gate.message}</p>}
+                {sheets.map((entry, index) => (
+                  <article key={entry.id} className="upload-sheet-card">
+                    <header className="upload-sheet-head">
+                      <div>
+                        <span className="upload-sheet-index">Sheet {index + 1}</span>
+                        <strong className="upload-sheet-name">{entry.file.name}</strong>
                       </div>
+                      <div className="upload-sheet-head-right">
+                        {entry.matched && !entry.error && (
+                          <strong className="green-text">
+                            ${(entry.matched.price * entry.quantity).toFixed(2)}
+                          </strong>
+                        )}
+                        <button
+                          type="button"
+                          className="upload-sheet-remove"
+                          onClick={() => removeEntry(entry.id)}
+                          aria-label={`Remove ${entry.file.name}`}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </header>
 
-                      {!entry.overrideMode ? (
-                        <div className="upload-size-actions">
-                          <button
-                            type="button"
-                            className="upload-ghost-button"
-                            onClick={() => updateEntry(entry.id, { overrideMode: true })}
-                          >
-                            Set the size myself
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="upload-override">
-                          <label>
-                            Width (in)
-                            <input
-                              value={entry.overrideWidth}
-                              onChange={(e) => updateEntry(entry.id, { overrideWidth: e.target.value })}
-                            />
-                          </label>
-                          <label>
-                            Height (in)
-                            <input
-                              value={entry.overrideHeight}
-                              onChange={(e) => updateEntry(entry.id, { overrideHeight: e.target.value })}
-                            />
-                          </label>
-                          <label>
-                            DPI
-                            <input
-                              value={entry.overrideDpi}
-                              onChange={(e) => updateEntry(entry.id, { overrideDpi: e.target.value })}
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            className="upload-ghost-button"
-                            onClick={() => updateEntry(entry.id, { overrideMode: false })}
-                          >
-                            Use the measured size instead
-                          </button>
-                        </div>
-                      )}
+                    {entry.fileUrl && (
+                      <div className="upload-file-preview">
+                        <img src={entry.fileUrl} alt="" />
+                      </div>
+                    )}
 
-                      {entry.measured.kind !== 'pdf' && entry.file.size <= MAX_PREVIEW_BYTES && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img className="upload-file-preview" src={entry.fileUrl} alt={`${entry.file.name} preview`} />
-                      )}
-                      {entry.measured.kind !== 'pdf' && entry.file.size > MAX_PREVIEW_BYTES && (
-                        <p className="upload-preview-skipped">
-                          Preview skipped — {formatBytes(entry.file.size)} is too large to render in the browser. The
-                          measurements above come from the file header and are what we print from.
+                    <div className="upload-measure-card">
+                      <p>
+                        <strong>{entry.file.name}</strong> — {formatInches(entry.measured.width_in)} ×{' '}
+                        {formatInches(entry.measured.length_in)} in
+                        {entry.matched
+                          ? ` → ${entry.matched.label} — ${entry.matched.price_html || `$${entry.matched.price.toFixed(2)}`}`
+                          : ''}
+                      </p>
+                      {entry.measured.warnings.map((warning) => (
+                        <p className="upload-warn" key={warning}>
+                          ⚠ {warning}
                         </p>
+                      ))}
+                      {entry.measured.dpi > 0 && entry.measured.dpi < UPLOAD_LOW_DPI && (
+                        <p className="upload-warn">⚠ May print blurry</p>
                       )}
-                    </article>
-                  )
-                })}
+                      {entry.error && <p className="save-error">{entry.error}</p>}
+                      <p className="sublead">
+                        Wrong size? Your file&apos;s dimensions set the sheet size. Resize your art and re-upload.
+                      </p>
+                    </div>
+
+                    <label className="customer-name-field">
+                      Quantity
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={entry.quantity}
+                        onChange={(e) =>
+                          updateEntry(entry.id, {
+                            quantity: Math.max(1, Math.floor(Number(e.target.value) || 1)),
+                          })
+                        }
+                      />
+                    </label>
+                  </article>
+                ))}
               </div>
 
-              <div className="upload-sheet-actions">
-                <button type="button" className="upload-ghost-button" onClick={() => setStep(2)}>
-                  <Plus size={16} /> Add more sheets
-                </button>
-                <button type="button" className="build-button" disabled={!allClear} onClick={() => confirmSizes()}>
-                  <Check size={18} /> That&apos;s right — ${total}
-                </button>
-              </div>
-              {!allClear && blocked.length > 0 && (
-                <p className="save-error">
-                  Fix or remove {blocked.length} {blocked.length === 1 ? 'sheet' : 'sheets'} above to continue.
-                </p>
+              <button
+                type="button"
+                className="add-design"
+                onClick={() => inputRef.current?.click()}
+              >
+                <Plus size={18} /> Add another file
+              </button>
+              <input
+                ref={inputRef}
+                className="sr-only"
+                type="file"
+                multiple
+                accept={UPLOAD_ACCEPT}
+                onChange={(e) => void onPickFiles(e.target.files)}
+              />
+
+              <button type="button" className="build-button" disabled={!allClear} onClick={confirmSizes}>
+                Continue to review
+              </button>
+              {!allClear && (
+                <p className="save-error">Every sheet must measure cleanly before you can continue.</p>
               )}
             </div>
           )}
 
-          {step === 4 && allClear && (
+          {step === 4 && (
             <div className="guide-block">
               <div className="guide-heading">
                 <span className="guide-num">4</span>
                 <div>
-                  <h2>Review &amp; order</h2>
-                  <p>We upload your original files to one Google Drive job folder, then add each sheet to the cart.</p>
+                  <h2>Review & order</h2>
+                  <p>Prices come from WooCommerce Upload Gangsheet variations — not from this page.</p>
                 </div>
               </div>
-              <div className="upload-review">
-                <p>
-                  <strong>{customerName.trim()}</strong>
-                </p>
-                <ul className="upload-review-list">
-                  {priced.map((item, index) => (
-                    <li key={item.entry.id}>
-                      <span>
-                        <span className="upload-review-title">
-                          <b>Sheet {index + 1}</b> — {item.entry.file.name}
-                        </span>
-                        <small>
-                          {formatInches(item.scaled?.scaledWidthIn ?? 0)} ×{' '}
-                          {formatInches(item.scaled?.scaledHeightIn ?? 0)} in ({item.sheet?.label}) ·{' '}
-                          {Math.round(item.scaled?.effectiveDpi ?? 0)} DPI ({item.dpiSource})
-                        </small>
-                      </span>
-                      <strong>${(item.sheet?.price ?? 0).toFixed(2)}</strong>
-                    </li>
-                  ))}
-                </ul>
-                <p>Uploaded sheets print as one piece each — no pre-cut on this flow.</p>
-                <p className="upload-total">
-                  {sheetCount} {sheetCount === 1 ? 'sheet' : 'sheets'}: <strong>${total}</strong>
-                </p>
-              </div>
-              {!built ? (
-                <>
-                  <button
-                    type="button"
-                    className="confirm-button cart-button"
-                    disabled={saving || cartStatus === 'sending' || !customerName.trim()}
-                    onClick={() => void addUploadedToCart()}
-                  >
-                    <Check size={18} />
-                    {saving || cartStatus === 'sending'
-                      ? uploadProgress != null
-                        ? `Uploading to Drive… ${Math.round(uploadProgress * 100)}%`
-                        : 'Adding to cart…'
-                      : `Add ${sheetCount} ${sheetCount === 1 ? 'sheet' : 'sheets'} to Cart — $${total}`}
-                  </button>
-                  {uploadProgress != null && (
-                    <div className="upload-progress" aria-live="polite">
-                      <div className="upload-progress-bar" style={{ width: `${Math.round(uploadProgress * 100)}%` }} />
-                    </div>
-                  )}
-                </>
-              ) : (
+              <ul className="upload-review-list">
+                {validSheets.map((entry) => (
+                  <li key={entry.id}>
+                    <span>
+                      <strong>{entry.file.name}</strong>
+                      <small>
+                        {formatInches(entry.measured.width_in)} × {formatInches(entry.measured.length_in)} in →{' '}
+                        {entry.matched?.label} · qty {entry.quantity}
+                      </small>
+                    </span>
+                    <strong>${((entry.matched?.price ?? 0) * entry.quantity).toFixed(2)}</strong>
+                  </li>
+                ))}
+              </ul>
+              {built ? (
                 <div className="built-card">
                   <div className="built-title">
                     <span>
-                      <Check size={21} />
+                      <Check size={16} />
                     </span>
-                    <strong>
-                      {sheetCount} {sheetCount === 1 ? 'sheet' : 'sheets'} added to your cart.
-                    </strong>
+                    <strong>Added to cart</strong>
                   </div>
+                  <p>Finish checkout in the store cart. Your files are in our Drive print queue.</p>
                   {driveFolderUrl && (
-                    <a className="drive-link" href={driveFolderUrl} target="_blank" rel="noreferrer">
-                      Open your job folder in Google Drive
+                    <a href={driveFolderUrl} target="_blank" rel="noreferrer">
+                      Open Drive folder
                     </a>
                   )}
                 </div>
+              ) : (
+                <button
+                  type="button"
+                  className="build-button"
+                  disabled={saving || cartStatus === 'sending' || !allClear}
+                  onClick={() => void addUploadedToCart()}
+                >
+                  <Check size={18} />
+                  {saving || cartStatus === 'sending'
+                    ? uploadProgress != null
+                      ? `Uploading… ${Math.round(uploadProgress * 100)}%`
+                      : 'Adding to cart…'
+                    : 'Add to Cart'}
+                </button>
               )}
-              {(saveError || cartError) && <p className="save-error">{saveError || cartError}</p>}
+              {saveError && <p className="save-error">{saveError}</p>}
+              {cartStatus === 'error' && cartError && <p className="save-error">{cartError}</p>}
             </div>
           )}
         </section>
 
         <aside className="order-panel panel">
           <div className="order-title">
-            <span className="guide-num">✓</span>
             <div>
-              <h2>Order summary</h2>
-              <p className="order-hint">Updates as you add sheets.</p>
+              <h2>Your order</h2>
+              <p className="order-hint">{customerName.trim() || 'Add your name to start'}</p>
             </div>
           </div>
           <div className="metrics">
             <div className="metric">
               <span>Sheets</span>
-              <strong className="green-text">{sheetCount || '—'}</strong>
+              <strong>{sheetCount}</strong>
             </div>
             <div className="metric">
               <span>Order total</span>
-              <strong className="green-text">{sheetCount ? `$${total}` : '—'}</strong>
+              <strong className="green-text">${orderTotal.toFixed(2)}</strong>
             </div>
           </div>
-          {priced.length > 0 && (
-            <div className="price-breakdown">
-              {priced.map((item, index) => (
-                <span key={item.entry.id}>
-                  Sheet {index + 1}: {item.sheet?.label} — ${(item.sheet?.price ?? 0).toFixed(2)}
-                </span>
-              ))}
-              <span>Total film length: {formatInches(totalLengthIn, 1)} in</span>
-            </div>
-          )}
+          <p className="sublead" style={{ marginTop: 12 }}>
+            Size is read-only. Live prices load from the store&apos;s Upload Gangsheet product.
+          </p>
+          <p className="builder-version">Builder v{BUILDER_VERSION}</p>
         </aside>
       </div>
 
@@ -732,13 +705,7 @@ function UploadFlow() {
 
 export default function UploadPage() {
   return (
-    <Suspense
-      fallback={
-        <main className="builder-shell">
-          <p className="sublead">Loading upload…</p>
-        </main>
-      }
-    >
+    <Suspense fallback={<main className="builder-shell"><p className="sublead">Loading…</p></main>}>
       <UploadFlow />
     </Suspense>
   )
