@@ -102,6 +102,12 @@ async function driveAuth() {
   return auth
 }
 
+/** Shared Drive client for relay routes (archive / restore / delete / thumb). */
+export async function getGoogleDrive() {
+  const auth = await driveAuth()
+  return google.drive({ version: 'v3', auth })
+}
+
 export async function createCustomerDriveFolder(customerName: string, stamp: string) {
   const auth = await driveAuth()
   const drive = google.drive({ version: 'v3', auth })

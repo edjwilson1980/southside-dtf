@@ -2,7 +2,7 @@
 /**
  * Plugin Name: South Side Gang Sheet Builder
  * Description: Embed the South Side DTF customer gang sheet builder and add finished sheets to the WooCommerce cart.
- * Version: 1.21
+ * Version: 1.23
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.21');
+define('SSGS_PLUGIN_VERSION', '1.23');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 
 function ssgs_default_options() {
@@ -24,7 +24,7 @@ function ssgs_default_options() {
     'min_height' => 900,
     'product_id' => 0,
     'precut_product_id' => 0,
-    'upload_product_id' => 0,
+    'upload_product_id' => 115,
     'drive_commit_url' => SSGS_DEFAULT_BUILDER_URL . '/api/drive/finalize',
     'drive_commit_secret' => '',
   );
@@ -33,6 +33,8 @@ function ssgs_default_options() {
 function ssgs_get_options() {
   return wp_parse_args(get_option('ssgs_options', array()), ssgs_default_options());
 }
+
+require_once __DIR__ . '/includes/upload-pricing.php';
 
 add_action('admin_menu', function () {
   add_options_page(
@@ -110,7 +112,7 @@ function ssgs_render_settings_page() {
           <th scope="row"><label for="ssgs_upload_product_id"><?php esc_html_e('Upload product ID', 'southside-gangsheet'); ?></label></th>
           <td>
             <input name="ssgs_options[upload_product_id]" id="ssgs_upload_product_id" type="number" min="0" step="1" value="<?php echo esc_attr($opts['upload_product_id']); ?>" />
-            <p class="description"><?php esc_html_e('The product for customer-uploaded gang sheets. Leave 0 to use the main gang sheet product.', 'southside-gangsheet'); ?></p>
+            <p class="description"><?php esc_html_e('Upload Gangsheet product ID (115). Prices come from its variations — do not hardcode them in the builder.', 'southside-gangsheet'); ?></p>
           </td>
         </tr>
         <tr>
@@ -363,8 +365,8 @@ function ssgs_handle_add_to_cart() {
     $sheet_type = 'built';
   }
   $is_upload = ($sheet_type === 'uploaded');
-  $product_id = $is_upload && intval($opts['upload_product_id']) > 0
-    ? intval($opts['upload_product_id'])
+  $product_id = $is_upload
+    ? ssdtf_upload_product_id()
     : ssgs_resolve_product_id();
   if ($product_id <= 0) {
     wp_send_json_error(array('message' => 'Set the WooCommerce product ID in Gang Sheet Builder settings (Build A Gangsheet).'), 400);
@@ -389,6 +391,42 @@ function ssgs_handle_add_to_cart() {
 
   $printed_height = floatval($payload['sheetHeightIn'] ?? 0);
   $billable_height = floatval($payload['billableHeightIn'] ?? 0);
+  $upload_width_in = floatval($payload['sourceWidthIn'] ?? $payload['measuredWidthIn'] ?? 0);
+  $upload_length_in = floatval($payload['sourceHeightIn'] ?? $payload['measuredLengthIn'] ?? $printed_height);
+  $upload_dpi = floatval($payload['effectiveDpi'] ?? $payload['measuredDpi'] ?? 0);
+  $upload_filename = sanitize_file_name($payload['printFileName'] ?? $payload['fileName'] ?? '');
+
+  // Upload Gangsheet: verify signed measure and recompute variation from length (round up).
+  if ($is_upload) {
+    $signed = array(
+      'drive_file_id' => sanitize_text_field($payload['uploadSig']['drive_file_id'] ?? $drive_file_id),
+      'width_in' => (string) ($payload['uploadSig']['width_in'] ?? ''),
+      'length_in' => (string) ($payload['uploadSig']['length_in'] ?? ''),
+      'dpi' => (string) ($payload['uploadSig']['dpi'] ?? ''),
+      'filename' => (string) ($payload['uploadSig']['filename'] ?? ''),
+      'exp' => (string) ($payload['uploadSig']['exp'] ?? ''),
+      'sig' => (string) ($payload['uploadSig']['sig'] ?? ''),
+    );
+    if (!ssdtf_verify_upload_sig($signed)) {
+      wp_send_json_error(array('message' => 'Upload measure signature is missing or invalid. Please re-upload the file.'), 403);
+    }
+    $upload_width_in = floatval($signed['width_in']);
+    $upload_length_in = floatval($signed['length_in']);
+    $upload_dpi = floatval($signed['dpi']);
+    $upload_filename = sanitize_file_name($signed['filename']);
+    $drive_file_id = sanitize_text_field($signed['drive_file_id']);
+    $printed_height = $upload_length_in;
+    $billable_height = $upload_length_in;
+
+    $picked = ssdtf_pick_upload_size($upload_length_in);
+    if (!$picked) {
+      wp_send_json_error(array('message' => 'Max sheet is 200 in (16 ft). Please split into two files.'), 400);
+    }
+    $posted_variation = intval($payload['variationId'] ?? 0);
+    if ($posted_variation > 0 && $posted_variation !== intval($picked['variation_id'])) {
+      wp_send_json_error(array('message' => 'Sheet size did not match the measured file. Please try again.'), 400);
+    }
+  }
 
   if ($printed_height <= 0) {
     wp_send_json_error(array('message' => 'The builder did not send a sheet length.'), 400);
@@ -402,7 +440,11 @@ function ssgs_handle_add_to_cart() {
   $variation_id = 0;
   $variation = array();
   if ($product->is_type('variable')) {
-    $variation_id = ssgs_find_variation_id($product, $billable_height);
+    if ($is_upload) {
+      $variation_id = intval($picked['variation_id']);
+    } else {
+      $variation_id = ssgs_find_variation_id($product, $billable_height);
+    }
     if ($variation_id <= 0) {
       wp_send_json_error(array('message' => 'No matching sheet length variation for this gang sheet.'), 400);
     }
@@ -410,8 +452,8 @@ function ssgs_handle_add_to_cart() {
   }
 
   $quantity = max(1, intval($payload['quantity'] ?? 1));
-  $source_w = floatval($payload['sourceWidthIn'] ?? 0);
-  $source_h = floatval($payload['sourceHeightIn'] ?? 0);
+  $source_w = $is_upload ? $upload_width_in : floatval($payload['sourceWidthIn'] ?? 0);
+  $source_h = $is_upload ? $upload_length_in : floatval($payload['sourceHeightIn'] ?? 0);
   $cart_item_data = array(
     'ssgs_customer_name' => sanitize_text_field($payload['customerName'] ?? ''),
     'ssgs_sheet_index' => sanitize_text_field($payload['sheetIndex'] ?? ''),
@@ -419,23 +461,31 @@ function ssgs_handle_add_to_cart() {
     'ssgs_transfers' => intval($payload['transfers'] ?? 0),
     'ssgs_precut' => !empty($payload['precut']) ? 'yes' : 'no',
     'ssgs_precut_total' => floatval($payload['precutTotal'] ?? 0),
-    'ssgs_build_fee' => floatval($payload['buildFee'] ?? 0),
+    'ssgs_build_fee' => $is_upload ? 0 : floatval($payload['buildFee'] ?? 0),
     'ssgs_printed_height' => $printed_height,
-    'ssgs_billed_height' => $billable_height,
+    'ssgs_billed_height' => $is_upload ? floatval($picked['length_in']) : $billable_height,
     'ssgs_sheet_type' => $sheet_type,
     'ssgs_source_size' => ($source_w > 0 && $source_h > 0)
       ? (rtrim(rtrim(number_format($source_w, 2, '.', ''), '0'), '.') . ' x ' . rtrim(rtrim(number_format($source_h, 2, '.', ''), '0'), '.') . ' in')
       : '',
     'ssgs_scale_factor' => isset($payload['scaleFactor']) ? floatval($payload['scaleFactor']) : '',
-    'ssgs_effective_dpi' => isset($payload['effectiveDpi']) ? floatval($payload['effectiveDpi']) : '',
+    'ssgs_effective_dpi' => $is_upload ? $upload_dpi : (isset($payload['effectiveDpi']) ? floatval($payload['effectiveDpi']) : ''),
     'ssgs_dpi_source' => sanitize_text_field($payload['dpiSource'] ?? ''),
     'ssgs_job_stamp' => sanitize_text_field($payload['jobStamp'] ?? ''),
-    'ssgs_print_file_name' => sanitize_file_name($payload['printFileName'] ?? ''),
+    'ssgs_print_file_name' => $upload_filename ?: sanitize_file_name($payload['printFileName'] ?? ''),
     'ssgs_drive_file_id' => $drive_file_id,
     'ssgs_file_url' => $file_url,
     'ssgs_local_file' => '',
-    'unique_key' => md5($file_url . microtime()),
+    'unique_key' => $is_upload ? md5($drive_file_id) : md5($file_url . microtime()),
   );
+
+  if ($is_upload) {
+    $cart_item_data['ssdtf_drive_file_id'] = $drive_file_id;
+    $cart_item_data['ssdtf_filename'] = $upload_filename;
+    $cart_item_data['ssdtf_width_in'] = $upload_width_in;
+    $cart_item_data['ssdtf_length_in'] = $upload_length_in;
+    $cart_item_data['ssdtf_dpi'] = $upload_dpi;
+  }
 
   $added = WC()->cart->add_to_cart($product_id, $quantity, $variation_id, $variation, $cart_item_data);
   if (!$added) {
@@ -588,10 +638,26 @@ add_filter('woocommerce_get_item_data', function ($item_data, $cart_item) {
     }
   }
 
-  if (!empty($cart_item['ssgs_file_url'])) {
+  if (!empty($cart_item['ssdtf_filename'])) {
+    $item_data[] = array(
+      'key' => __('File', 'southside-gangsheet'),
+      'value' => esc_html((string) $cart_item['ssdtf_filename']),
+    );
+  } elseif (!empty($cart_item['ssgs_file_url'])) {
     $item_data[] = array(
       'key' => __('File', 'southside-gangsheet'),
       'value' => esc_url($cart_item['ssgs_file_url']),
+    );
+  }
+
+  if (!empty($cart_item['ssdtf_width_in']) && !empty($cart_item['ssdtf_length_in'])) {
+    $item_data[] = array(
+      'key' => __('Measured size', 'southside-gangsheet'),
+      'value' => sprintf(
+        '%s × %s in',
+        rtrim(rtrim(number_format(floatval($cart_item['ssdtf_width_in']), 2, '.', ''), '0'), '.'),
+        rtrim(rtrim(number_format(floatval($cart_item['ssdtf_length_in']), 2, '.', ''), '0'), '.')
+      ),
     );
   }
   return $item_data;
@@ -623,7 +689,34 @@ add_action('woocommerce_checkout_create_order_line_item', function ($item, $cart
   ) as $key) {
     if (isset($values[$key]) && $values[$key] !== '') {
       $item->add_meta_data($key, $values[$key], true);
-  
+    }
+  }
+
+  // Prefer explicit upload measure fields; fall back so builder lines are reorderable too.
+  $drive_meta = $values['ssdtf_drive_file_id'] ?? ($values['ssgs_drive_file_id'] ?? '');
+  if (!empty($drive_meta)) {
+    $item->add_meta_data('_ssdtf_drive_file_id', $drive_meta, true);
+  }
+  $length_meta = $values['ssdtf_length_in'] ?? ($values['ssgs_billed_height'] ?? ($values['ssgs_printed_height'] ?? ''));
+  if ($length_meta !== '' && floatval($length_meta) > 0) {
+    $item->add_meta_data('_ssdtf_length_in', $length_meta, true);
+  }
+  if (!empty($values['ssdtf_filename'])) {
+    $item->add_meta_data('File', $values['ssdtf_filename'], true);
+  }
+  if (!empty($values['ssdtf_width_in']) && !empty($values['ssdtf_length_in'])) {
+    $item->add_meta_data(
+      'Measured size',
+      sprintf(
+        '%s × %s in',
+        rtrim(rtrim(number_format(floatval($values['ssdtf_width_in']), 2, '.', ''), '0'), '.'),
+        rtrim(rtrim(number_format(floatval($values['ssdtf_length_in']), 2, '.', ''), '0'), '.')
+      ),
+      true
+    );
+  }
+}, 10, 3);
+
 function ssgs_rename_drive_after_payment($order_id) {
   $opts = ssgs_get_options();
   $url = trim((string) ($opts['drive_commit_url'] ?? ''));
