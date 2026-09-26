@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
-import { DEFAULT_STORE_ORIGIN } from '@/lib/ssgs-cart-bridge'
 
 export const runtime = 'nodejs'
+
+/** Keep out of `@/lib/ssgs-cart-bridge` — that file is `'use client'` and Turbopack will not expose string consts to route handlers. */
+const FALLBACK_STORE_ORIGIN = 'https://southsidedtf.com'
 
 /**
  * Proxy Woo Upload Gangsheet sizes so the browser never needs CORS to the store.
@@ -9,12 +11,24 @@ export const runtime = 'nodejs'
  */
 export async function GET() {
   try {
-    const origin = (process.env.NEXT_PUBLIC_STORE_ORIGIN?.trim() || DEFAULT_STORE_ORIGIN).replace(/\/$/, '')
+    const origin = (process.env.NEXT_PUBLIC_STORE_ORIGIN?.trim() || FALLBACK_STORE_ORIGIN).replace(/\/$/, '')
     const res = await fetch(`${origin}/wp-json/ssdtf/v1/upload-sizes`, {
       headers: { Accept: 'application/json' },
       next: { revalidate: 60 },
     })
-    const json = await res.json()
+    const text = await res.text()
+    let json: { message?: string; error?: string; sizes?: unknown }
+    try {
+      json = JSON.parse(text) as typeof json
+    } catch {
+      return NextResponse.json(
+        {
+          error:
+            'Store blocked the price lookup (bot protection or plugin not deployed). Deploy southside-gangsheet 1.22 and allow /wp-json/ssdtf/v1/upload-sizes.',
+        },
+        { status: 502 },
+      )
+    }
     if (!res.ok) {
       return NextResponse.json(
         { error: json?.message || json?.error || 'Could not load Upload Gangsheet prices.' },
