@@ -2,7 +2,7 @@
 /**
  * Plugin Name: South Side Gang Sheet Builder
  * Description: Embed the South Side DTF customer gang sheet builder and add finished sheets to the WooCommerce cart.
- * Version: 1.22
+ * Version: 1.23
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.22');
+define('SSGS_PLUGIN_VERSION', '1.23');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 
 function ssgs_default_options() {
@@ -692,11 +692,14 @@ add_action('woocommerce_checkout_create_order_line_item', function ($item, $cart
     }
   }
 
-  if (!empty($values['ssdtf_drive_file_id'])) {
-    $item->add_meta_data('_ssdtf_drive_file_id', $values['ssdtf_drive_file_id'], true);
+  // Prefer explicit upload measure fields; fall back so builder lines are reorderable too.
+  $drive_meta = $values['ssdtf_drive_file_id'] ?? ($values['ssgs_drive_file_id'] ?? '');
+  if (!empty($drive_meta)) {
+    $item->add_meta_data('_ssdtf_drive_file_id', $drive_meta, true);
   }
-  if (!empty($values['ssdtf_length_in'])) {
-    $item->add_meta_data('_ssdtf_length_in', $values['ssdtf_length_in'], true);
+  $length_meta = $values['ssdtf_length_in'] ?? ($values['ssgs_billed_height'] ?? ($values['ssgs_printed_height'] ?? ''));
+  if ($length_meta !== '' && floatval($length_meta) > 0) {
+    $item->add_meta_data('_ssdtf_length_in', $length_meta, true);
   }
   if (!empty($values['ssdtf_filename'])) {
     $item->add_meta_data('File', $values['ssdtf_filename'], true);
