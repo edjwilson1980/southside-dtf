@@ -53,10 +53,13 @@ const EPS = 1e-6
 /**
  * Fit artwork inside a box without distorting it.
  *
- * A placement preset such as "Medium · 10.5 x 12 in" is the space the design may
- * occupy, not the shape it must become. Forcing art into the box stretches it,
- * and reserves the whole box on the sheet even when the art is a thin bar — so
- * the customer gets a distorted print and pays for film nobody used.
+ * Prefer the ordered WIDTH. Height follows the art up to the box max. Never
+ * shrink width to squeeze a tall design into the box — that turned a 12.5 in
+ * 2XL into ~8 in so two of them could sit side by side undersized.
+ *
+ * Tall art that exceeds the box height is cropped top/bottom when drawn
+ * (see composeGangSheet). Wide/short art still collapses the reserved height
+ * so a thin bar does not bill a full shirt-back of empty film.
  */
 export function fitWithinBox(
   boxWidthIn: number,
@@ -69,10 +72,8 @@ export function fitWithinBox(
   if (!(pixelWidth > 0) || !(pixelHeight > 0) || width <= 0 || height <= 0) {
     return { widthIn: width, heightIn: height }
   }
-  const aspect = pixelHeight / pixelWidth
-  const byWidth = { widthIn: width, heightIn: width * aspect }
-  if (byWidth.heightIn <= height + EPS) return byWidth
-  return { widthIn: height / aspect, heightIn: height }
+  const naturalHeight = width * (pixelHeight / pixelWidth)
+  return { widthIn: width, heightIn: Math.min(height, naturalHeight) }
 }
 
 export type PieceSizeInput = {
@@ -149,7 +150,8 @@ function pieceBoxInches(piece: PieceSizeInput): { widthIn: number; heightIn: num
  * - Custom (and other exact sizes): print at those inches — unusual sizes like
  *   13×4 must not be shrunk by aspect fitting.
  * - Single-number sizes: width × natural art height.
- * - Two-number garment presets: fit art inside the max box without stretching.
+ * - Two-number garment presets: ordered WIDTH × art height capped by the box.
+ *   Width is never reduced (a 12.5 in 2XL stays 12.5 in wide).
  */
 export function piecePrintSize(piece: PieceSizeInput): { widthIn: number; heightIn: number } {
   const box = pieceBoxInches(piece)
@@ -500,11 +502,12 @@ export async function composeGangSheet(opts: {
     let offsetX = 0
     let offsetY = 0
     if (!piece.stretch) {
-      // Garment presets: contain-centre so art is never distorted.
-      const scale = Math.min(boxW / Math.max(1, naturalW), boxH / Math.max(1, naturalH))
-      drawW = naturalW * scale
+      // Garment presets: fill the ordered WIDTH (no distortion). Tall art is
+      // cropped top/bottom inside the box; short art is centred vertically.
+      const scale = boxW / Math.max(1, naturalW)
+      drawW = boxW
       drawH = naturalH * scale
-      offsetX = (boxW - drawW) / 2
+      offsetX = 0
       offsetY = (boxH - drawH) / 2
     }
 
@@ -512,12 +515,21 @@ export async function composeGangSheet(opts: {
       context.save()
       context.translate(x, y)
       context.rotate(Math.PI / 2)
+      // Local draw space: +x is down the roll, +y is left across the film.
+      context.beginPath()
+      context.rect(0, -w, h, w)
+      context.clip()
       context.drawImage(image, offsetX, -w + offsetY, drawW, drawH)
       context.restore()
       continue
     }
 
+    context.save()
+    context.beginPath()
+    context.rect(x, y, w, h)
+    context.clip()
     context.drawImage(image, x + offsetX, y + offsetY, drawW, drawH)
+    context.restore()
   }
 
   if (opts.mapCmyk) {
