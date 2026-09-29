@@ -71,7 +71,8 @@ export type HalftoneSettings = {
 }
 
 export const DEFAULT_HALFTONE: HalftoneSettings = {
-  mode: 'halftone',
+  /** Both so colour knockout is live as soon as art loads. */
+  mode: 'both',
   lpi: 40,
   angleDeg: 22.5,
   shape: 'round',
@@ -548,7 +549,9 @@ export function processArtwork(
       settings.knockoutColor,
       settings.knockoutTolerance,
       settings.knockoutSoftness,
-      { backgroundOnly: settings.backgroundOnly, ...guards },
+      // Settings win over the guard bag so backgroundOnly cannot be wiped by a
+      // protect-mask-only call site.
+      { ...guards, backgroundOnly: settings.backgroundOnly },
     )
     working = result.image
     knockedOut = result.removed
