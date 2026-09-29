@@ -7,13 +7,14 @@ import {
 } from 'lucide-react'
 import { DesignInspector } from '@/components/design-inspector'
 import { SheetPreviewModal } from '@/components/sheet-preview-modal'
-import { composeGangSheet, packSheetBestGutter, piecePrintSize, ART_INSET_IN, CUT_ART_START_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
+import { composeGangSheet, packSheetBestGutter, piecePrintSize, pieceShouldStretch, ART_INSET_IN, CUT_ART_START_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 import { type LayoutPiece } from '@/components/sheet-layout-overlay'
 import { BUILDER_VERSION } from '@/lib/version'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
 import { CUT_GUTTER_IN, CUT_MARGIN_IN, MARK_CLEARANCE_IN, MARK_SECTION_IN, cutPlt, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, startMarkArrowPoints } from '@/lib/cut-layout'
 import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
+import { formatInches } from '@/lib/measure-file'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/accepted-uploads'
@@ -35,6 +36,8 @@ type Design = {
   enhanced: boolean
   pixelWidth: number
   pixelHeight: number
+  fileWidthIn: number
+  fileHeightIn: number
   keepUpright: boolean
 }
 const logoUrl = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/SSP%20Logo%20%28Black%20Outline%29-A5PrDBPZRDhydxNxRumbsTUFufpLv9.png'
@@ -225,6 +228,8 @@ export default function Home() {
         enhanced: false,
         pixelWidth: item.measured.pixelWidth,
         pixelHeight: item.measured.pixelHeight,
+        fileWidthIn: item.measured.widthIn,
+        fileHeightIn: item.measured.heightIn,
         keepUpright: false,
       } satisfies Design
     })
@@ -268,11 +273,6 @@ export default function Home() {
   }
   const totalTransfers = designs.reduce((sum, design) => sum + design.quantity, 0)
   const previewPieces = designs.flatMap((design) => Array.from({ length: design.quantity }, () => design))
-  /**
-   * The chosen size is the box the design may fill. The printed size is the
-   * artwork fitted inside it, so nothing is ever stretched and the packer only
-   * reserves the film the art actually covers.
-   */
   const getDesignSize = (design: Design) =>
     piecePrintSize({
       placement: design.placement,
@@ -290,6 +290,7 @@ export default function Home() {
     widthIn: getDesignWidth(design),
     heightIn: getDesignHeight(design),
     allowRotate: !design.keepUpright,
+    stretch: pieceShouldStretch(design.placement),
   }))
   /** What the sheet would cost with nothing turned — for the saving readout. */
   const uprightLayout = packSheetBestGutter(pieceInputs, {
@@ -414,6 +415,8 @@ export default function Home() {
                 enhanced: false,
                 pixelWidth: prepared.measured.pixelWidth,
                 pixelHeight: prepared.measured.pixelHeight,
+                fileWidthIn: prepared.measured.widthIn,
+                fileHeightIn: prepared.measured.heightIn,
               }
             : item,
         )

@@ -50,7 +50,24 @@ export function readImageSize(src: string) {
 export function parsePrintWidthInches(size: string, placement: string, customWidth: string) {
   if (placement === 'Custom') return Math.min(SHEET_WIDTH_IN, Number(customWidth) || 0)
   const measurement = size.split(' · ').pop() ?? size
-  return Math.min(SHEET_WIDTH_IN, Number.parseFloat(measurement.match(/[0-9]+(?:\.[0-9]+)?/)?.[0] ?? '10.5'))
+  // Prefer the number before ×/x/by so "13 × 4 in" is 13 wide, not 4.
+  const pair =
+    /([0-9]+(?:\.[0-9]+)?)\s*(?:×|x|by)\s*([0-9]+(?:\.[0-9]+)?)/i.exec(measurement) ||
+    /([0-9]+(?:\.[0-9]+)?)/.exec(measurement)
+  return Math.min(SHEET_WIDTH_IN, Number.parseFloat(pair?.[1] ?? '10.5'))
+}
+
+/** Height from a "W × H in" label (second number), or null for single-number sizes. */
+export function parsePrintHeightInches(size: string, placement: string, customHeight: string) {
+  if (placement === 'Custom') {
+    const height = Number(customHeight)
+    return Number.isFinite(height) && height > 0 ? Math.min(199, height) : null
+  }
+  const measurement = size.split(' · ').pop() ?? size
+  const pair = /([0-9]+(?:\.[0-9]+)?)\s*(?:×|x|by)\s*([0-9]+(?:\.[0-9]+)?)/i.exec(measurement)
+  if (!pair) return null
+  const height = Number.parseFloat(pair[2])
+  return Number.isFinite(height) && height > 0 ? height : null
 }
 
 export function printDpi(pixelWidth: number, printWidthInches: number) {
