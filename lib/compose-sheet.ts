@@ -8,6 +8,8 @@ export type SheetPiece = {
   heightIn: number
   /** Turned a quarter turn to nest better. widthIn/heightIn are already swapped. */
   rotated?: boolean
+  /** Custom exact sizes fill the rect; garment presets contain-centre. */
+  stretch?: boolean
 }
 
 export type PlacedSheetPiece = SheetPiece & {
@@ -84,28 +86,82 @@ export type PieceSizeInput = {
   widthIn: number
 }
 
-/** The box a design is allowed to fill, before the artwork is fitted into it. */
-function pieceBoxInches(piece: PieceSizeInput): { widthIn: number; heightIn: number } {
-  if (piece.placement === 'Custom') {
-    const height = Number(piece.customHeight)
-    return {
-      widthIn: piece.widthIn,
-      heightIn: Number.isFinite(height) && height > 0 ? Math.min(199, height) : piece.widthIn,
+/** Pull width × height inches from a size label like "3XL · 13 × 15 in" or "13 x 4 in". */
+export function parseSizeBoxInches(size: string): {
+  widthIn: number
+  heightIn: number
+  /** False for Hat/Sleeve/"4 in" — height was not specified in the label. */
+  hasExplicitHeight: boolean
+} | null {
+  const measurement = size.split(' · ').pop() ?? size
+  const pair = /([0-9]+(?:\.[0-9]+)?)\s*(?:×|x|by)\s*([0-9]+(?:\.[0-9]+)?)/i.exec(measurement)
+  if (pair) {
+    const widthIn = Number(pair[1])
+    const heightIn = Number(pair[2])
+    if (widthIn > 0 && heightIn > 0) {
+      return { widthIn, heightIn, hasExplicitHeight: true }
     }
   }
-  const measurement = piece.size.split(' · ').pop() ?? piece.size
-  const nums = [...measurement.matchAll(/[0-9]+(?:\.[0-9]+)?/g)].map((match) => Number(match[0]))
-  if (nums.length >= 2) return { widthIn: piece.widthIn, heightIn: nums[1] }
-  return { widthIn: piece.widthIn, heightIn: piece.widthIn }
+  const single = /([0-9]+(?:\.[0-9]+)?)/.exec(measurement)
+  if (single) {
+    const widthIn = Number(single[1])
+    if (widthIn > 0) return { widthIn, heightIn: widthIn, hasExplicitHeight: false }
+  }
+  return null
+}
+
+function naturalHeightForWidth(widthIn: number, pixelWidth: number, pixelHeight: number) {
+  if (!(widthIn > 0) || !(pixelWidth > 0) || !(pixelHeight > 0)) return widthIn
+  return widthIn * (pixelHeight / pixelWidth)
+}
+
+/** The box a design is allowed to fill, before the artwork is fitted into it. */
+function pieceBoxInches(piece: PieceSizeInput): { widthIn: number; heightIn: number; exact: boolean } {
+  if (piece.placement === 'Custom') {
+    const width = Math.max(0, piece.widthIn)
+    const height = Number(piece.customHeight)
+    if (Number.isFinite(height) && height > 0) {
+      // Exact custom size — e.g. 13×4 must print 13×4.
+      return { widthIn: width, heightIn: Math.min(199, height), exact: true }
+    }
+    // Width only — follow the artwork so a banner is not forced into a square.
+    return {
+      widthIn: width,
+      heightIn: naturalHeightForWidth(width, piece.pixelWidth, piece.pixelHeight),
+      exact: true,
+    }
+  }
+  const parsed = parseSizeBoxInches(piece.size)
+  if (parsed?.hasExplicitHeight) {
+    return { widthIn: piece.widthIn, heightIn: parsed.heightIn, exact: false }
+  }
+  // Single-number sizes (Hat / Sleeve / "4 in"): width is the constraint; height follows art.
+  return {
+    widthIn: piece.widthIn,
+    heightIn: naturalHeightForWidth(piece.widthIn, piece.pixelWidth, piece.pixelHeight),
+    exact: true,
+  }
 }
 
 /**
- * The printed size of a design: its artwork fitted inside the chosen box.
- * Returns the box itself only when the artwork's pixel size is not known yet.
+ * The printed size of a design.
+ *
+ * - Custom (and other exact sizes): print at those inches — unusual sizes like
+ *   13×4 must not be shrunk by aspect fitting.
+ * - Single-number sizes: width × natural art height.
+ * - Two-number garment presets: fit art inside the max box without stretching.
  */
 export function piecePrintSize(piece: PieceSizeInput): { widthIn: number; heightIn: number } {
   const box = pieceBoxInches(piece)
+  if (box.exact) {
+    return { widthIn: box.widthIn, heightIn: box.heightIn }
+  }
   return fitWithinBox(box.widthIn, box.heightIn, piece.pixelWidth, piece.pixelHeight)
+}
+
+/** True when the piece should fill its rect (Custom exact size), not letterbox. */
+export function pieceShouldStretch(placement: string) {
+  return placement === 'Custom'
 }
 
 /** Height of a design once fitted into its box. */
@@ -433,19 +489,24 @@ export async function composeGangSheet(opts: {
     const w = piece.widthIn * opts.pxPerIn
     const h = piece.heightIn * opts.pxPerIn
 
-    // Safety net: contain the art in its rect rather than stretching it, and
-    // centre whatever slack is left. With piecePrintSize feeding the packer the
-    // slack is zero, but a mismatch must never distort a customer's print.
     const naturalW = image.naturalWidth || w
     const naturalH = image.naturalHeight || h
     // A turned piece is drawn in local space where the long edge runs along h.
     const boxW = piece.rotated ? h : w
     const boxH = piece.rotated ? w : h
-    const scale = Math.min(boxW / Math.max(1, naturalW), boxH / Math.max(1, naturalH))
-    const drawW = naturalW * scale
-    const drawH = naturalH * scale
-    const offsetX = (boxW - drawW) / 2
-    const offsetY = (boxH - drawH) / 2
+
+    let drawW = boxW
+    let drawH = boxH
+    let offsetX = 0
+    let offsetY = 0
+    if (!piece.stretch) {
+      // Garment presets: contain-centre so art is never distorted.
+      const scale = Math.min(boxW / Math.max(1, naturalW), boxH / Math.max(1, naturalH))
+      drawW = naturalW * scale
+      drawH = naturalH * scale
+      offsetX = (boxW - drawW) / 2
+      offsetY = (boxH - drawH) / 2
+    }
 
     if (piece.rotated) {
       context.save()
