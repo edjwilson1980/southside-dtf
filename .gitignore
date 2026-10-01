@@ -20,6 +20,12 @@ yarn-error.log*
 .env*
 !.env.example
 
+# Google Cloud service account keys — never commit
+*x-victor*.json
+*-service-account*.json
+**/credentials/*.json
+**/service-account*.json
+
 # vercel
 .vercel
 

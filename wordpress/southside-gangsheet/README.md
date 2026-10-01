@@ -6,18 +6,23 @@ Embed the customer builder and **Add to Cart** into WooCommerce on southsidedtf.
 
 Use the ready zip in this repo:
 
-- [`wordpress/southside-gangsheet-1.16.zip`](./southside-gangsheet-1.16.zip)
+- [`wordpress/southside-gangsheet-1.22.zip`](./southside-gangsheet-1.22.zip)
 
 Or zip the `southside-gangsheet/` folder yourself.
 
 ## Install on WordPress
 
-1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet-1.16.zip` → Activate
+1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet-1.22.zip` → Activate
 2. **Settings → Gang Sheet Builder**
    - Builder URL: `https://southside-dtf.vercel.app`
    - WooCommerce product ID: **4365** (or leave `0` for slug `custom-gang-sheet-builder`)
-   - Pre-cut product ID: builder path (per-transfer custom price)
+   - Pre-cut product ID: must be the **pre-cut** product — never the “I Don’t Know How to Build a Gangsheet” service product
    - Upload product ID: customer-uploaded sheets (leave `0` to reuse main product)
+
+## Build fee (v1.22+)
+
+- Self-serve builder and upload carts: **no** layout/build fee.
+- Done-for-you intake (`sheetType: intake` / “I Don’t Know How to Build a Gangsheet”): $5 up to 100 in, $10 at 101 in+.
    - Drive finalize URL: `https://southside-dtf.vercel.app/api/drive/finalize`
    - Drive commit secret: must match `SSGS_COMMIT_SECRET` on Vercel (used only to rename Drive files with the order number after payment)
 3. Shortcodes:

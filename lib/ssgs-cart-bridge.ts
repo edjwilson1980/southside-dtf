@@ -17,7 +17,10 @@ export type GangSheetCartPayload = {
   transfers: number
   precut: boolean
   precutTotal: number
-  /** Layout/build fee for builder + intake sheets ($5 ≤100 in, $10 ≥101 in). */
+  /**
+   * Layout/build fee ($5 ≤100 in, $10 ≥101 in). Only for sheetType `intake`
+   * (done-for-you). Self-serve builder must send 0 / omit.
+   */
   buildFee?: number
   fileName: string
   /** Google Drive link — required. File bytes never go through WordPress. */
