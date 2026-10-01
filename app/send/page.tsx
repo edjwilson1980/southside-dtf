@@ -927,8 +927,9 @@ function SendIntake() {
           </div>
 
           <p className="build-fee-warning" role="status">
-            A gang sheet build fee will be applied: <strong>$5.00</strong> up to 100 in,{' '}
-            <strong>$10.00</strong> for sheets over 100 in.
+            Because we build this sheet for you, a layout fee applies: <strong>$5.00</strong> up to
+            100 in, <strong>$10.00</strong> for sheets over 100 in. Customers who build their own
+            sheet in the gang sheet builder are not charged this fee.
           </p>
 
           <div className="price-breakdown intake-price">

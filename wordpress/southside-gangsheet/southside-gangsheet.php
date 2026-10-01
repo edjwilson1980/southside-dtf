@@ -2,7 +2,7 @@
 /**
  * Plugin Name: South Side Gang Sheet Builder
  * Description: Embed the South Side DTF customer gang sheet builder and add finished sheets to the WooCommerce cart.
- * Version: 1.21
+ * Version: 1.22
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.21');
+define('SSGS_PLUGIN_VERSION', '1.22');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 
 function ssgs_default_options() {
@@ -419,7 +419,8 @@ function ssgs_handle_add_to_cart() {
     'ssgs_transfers' => intval($payload['transfers'] ?? 0),
     'ssgs_precut' => !empty($payload['precut']) ? 'yes' : 'no',
     'ssgs_precut_total' => floatval($payload['precutTotal'] ?? 0),
-    'ssgs_build_fee' => floatval($payload['buildFee'] ?? 0),
+    // Build fee only for done-for-you intake — never self-serve builder or upload.
+    'ssgs_build_fee' => ($sheet_type === 'intake') ? floatval($payload['buildFee'] ?? 0) : 0,
     'ssgs_printed_height' => $printed_height,
     'ssgs_billed_height' => $billable_height,
     'ssgs_sheet_type' => $sheet_type,
@@ -481,7 +482,8 @@ add_action('woocommerce_before_calculate_totals', function ($cart) {
   }
 }, 20, 1);
 
-// Build fee for gang-sheet builds: $5 up to 100 in, $10 at 101 in and longer.
+// Build fee only when the cart item is a done-for-you intake sheet.
+// Self-serve builder and upload carts never get this fee.
 add_action('woocommerce_cart_calculate_fees', function ($cart) {
   if (is_admin() && !defined('DOING_AJAX')) {
     return;
@@ -493,6 +495,9 @@ add_action('woocommerce_cart_calculate_fees', function ($cart) {
   $fee = 0.0;
   foreach ($cart->get_cart() as $cart_item) {
     if (!empty($cart_item['ssgs_precut_for'])) {
+      continue;
+    }
+    if (($cart_item['ssgs_sheet_type'] ?? '') !== 'intake') {
       continue;
     }
     $amount = floatval($cart_item['ssgs_build_fee'] ?? 0);
@@ -561,7 +566,11 @@ add_filter('woocommerce_get_item_data', function ($item_data, $cart_item) {
     }
   }
 
-  if (!empty($cart_item['ssgs_build_fee']) && empty($cart_item['ssgs_precut_for'])) {
+  if (
+    !empty($cart_item['ssgs_build_fee'])
+    && empty($cart_item['ssgs_precut_for'])
+    && ($cart_item['ssgs_sheet_type'] ?? '') === 'intake'
+  ) {
     $item_data[] = array(
       'key' => __('Build fee', 'southside-gangsheet'),
       'value' => wc_price(floatval($cart_item['ssgs_build_fee'])),

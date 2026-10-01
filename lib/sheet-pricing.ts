@@ -47,7 +47,8 @@ export function cuttingFeeEach(transferCount: number) {
 }
 
 /**
- * Layout / build fee for customer gang-sheet builds (builder + intake).
+ * Layout / build fee for the done-for-you path only ("I Don't Know How to Build
+ * a Gangsheet" / /send intake). Never charge this on the self-serve builder.
  * Up to 100 in → $5; 101 in and longer → $10.
  */
 export function buildFeeForLength(billedLengthIn: number) {
