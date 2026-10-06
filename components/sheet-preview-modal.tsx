@@ -26,6 +26,7 @@ type SheetPreviewModalProps = {
   cutBoxes?: CutBox[]
   cutMarks?: Array<CutBox & { first?: boolean }>
   printHeightIn?: number
+  confirmDisabled?: boolean
 }
 
 export function SheetPreviewModal({
@@ -40,6 +41,7 @@ export function SheetPreviewModal({
   cutBoxes = [],
   cutMarks = [],
   printHeightIn,
+  confirmDisabled = false,
 }: SheetPreviewModalProps) {
   const paneRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
@@ -207,7 +209,7 @@ export function SheetPreviewModal({
           <button type="button" className="knockout-white" onClick={onClose} disabled={saving}>
             Close
           </button>
-          <button type="button" className="confirm-button sheet-preview-confirm" disabled={saving} onClick={onConfirm}>
+          <button type="button" className="confirm-button sheet-preview-confirm" disabled={saving || confirmDisabled} onClick={onConfirm}>
             <Check size={18} /> {saving ? 'Building…' : 'Confirm & Build Gang Sheet'}
           </button>
         </div>

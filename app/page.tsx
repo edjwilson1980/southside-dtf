@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { DesignInspector } from '@/components/design-inspector'
 import { SheetPreviewModal } from '@/components/sheet-preview-modal'
-import { composeGangSheet, layoutSheetRows, pieceHeightInches, ART_INSET_IN, SHEET_GUTTER_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
+import { composeGangSheet, packSheetBestGutter, pieceHeightInches, ART_INSET_IN, SHEET_GUTTER_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
 import { CUT_MARGIN_IN, CUT_SECTION_IN, MARK_CLEARANCE_IN, cutPltSections, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects } from '@/lib/cut-layout'
 import { trimEmptySpace } from '@/lib/crop-image'
@@ -30,6 +30,7 @@ type Design = {
   enhanced: boolean
   pixelWidth: number
   pixelHeight: number
+  keepUpright: boolean
 }
 const logoUrl = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/SSP%20Logo%20%28Black%20Outline%29-A5PrDBPZRDhydxNxRumbsTUFufpLv9.png'
 const sizeGuideUrl = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/DTF%20size%20chart%20%20front2-SIpj1XrVDRyRDtQhaACxzNHj5geNxv.png'
@@ -180,6 +181,7 @@ export default function Home() {
         enhanced: false,
         pixelWidth: 0,
         pixelHeight: 0,
+        keepUpright: false,
       } satisfies Design
     })
 
@@ -232,26 +234,39 @@ export default function Home() {
     widthIn: getDesignWidth(design),
   })
   const packWidth = cutOut ? SHEET_WIDTH_IN - MARK_CLEARANCE_IN * 2 : SHEET_WIDTH_IN
-  const packedRows = previewPieces.reduce<Design[][]>((rows, design) => {
-    const current = rows[rows.length - 1]
-    const currentWidth = current?.reduce((sum, item) => sum + getDesignWidth(item), 0) ?? 0
-    const gutters = current ? current.length * SHEET_GUTTER_IN : 0
-    const designWidth = getDesignWidth(design)
-    if (!current || currentWidth + gutters + designWidth > packWidth) rows.push([design])
-    else current.push(design)
-    return rows
-  }, [])
-  const sheetRows = packedRows.map((row) => row.map((design) => ({
-    previewUrl: design.previewUrl,
-    widthIn: getDesignWidth(design),
-    heightIn: getDesignHeight(design),
-  })))
-  const sheetLayout = layoutSheetRows(sheetRows, cutOut
-    ? { sectionLengthIn: CUT_SECTION_IN, boxMarginIn: MARK_CLEARANCE_IN, sideInsetIn: MARK_CLEARANCE_IN }
-    : undefined)
+  const packItems = previewPieces.map((design) => {
+    const widthIn = getDesignWidth(design)
+    const heightIn = getDesignHeight(design)
+    return {
+      previewUrl: design.previewUrl,
+      widthIn,
+      heightIn,
+      allowRotate: !design.keepUpright,
+      name: design.name,
+      designId: design.id,
+      size: design.size,
+      originalWidthIn: widthIn,
+      originalHeightIn: heightIn,
+    }
+  })
+  const packOpts = {
+    packWidthIn: packWidth,
+    startYIn: ART_INSET_IN,
+    startXIn: cutOut ? MARK_CLEARANCE_IN : 0,
+    minGutterIn: SHEET_GUTTER_IN,
+    ...(cutOut ? { sectionLengthIn: CUT_SECTION_IN, boxMarginIn: MARK_CLEARANCE_IN } : {}),
+  }
+  const emptyLayout = { pieces: [], unplaced: [] as typeof packItems, contentBottom: ART_INSET_IN, contentEndY: ART_INSET_IN }
+  const sheetLayout = packItems.length ? packSheetBestGutter(packItems, packOpts) : emptyLayout
+  const uprightLayout = packItems.length ? packSheetBestGutter(packItems, packOpts, ['none']) : emptyLayout
   const packedHeight = Math.max(0, sheetLayout.contentEndY - ART_INSET_IN)
+  const uprightHeight = Math.max(0, uprightLayout.contentEndY - ART_INSET_IN)
   const printHeight = sheetLayout.contentEndY + ART_INSET_IN
   const billedLength = billedSheetLength(packedHeight)
+  const savedFilmIn = Math.max(0, billedSheetLength(uprightHeight) - billedLength)
+  const rotatedCount = sheetLayout.pieces.filter((piece) => piece.rotated).length
+  const unplacedDesigns = Array.from(new Map(sheetLayout.unplaced.map((item) => [item.designId, item])).values())
+  const hasUnplaced = unplacedDesigns.length > 0
   const cutBoxes = cutOut ? cutPreviewBoxes(sheetLayout.pieces, SHEET_WIDTH_IN, printHeight) : []
   const cutMarks = cutOut ? registrationMarkBounds(printHeight) : []
   const cutMarkRects = cutOut ? registrationMarkRects(printHeight) : []
@@ -259,7 +274,7 @@ export default function Home() {
   const layoutKey = designs.map((design) => [
     design.id, design.quantity, design.size, design.placement,
     design.customWidth, design.customHeight, design.previewUrl,
-    design.pixelWidth, design.pixelHeight,
+    design.pixelWidth, design.pixelHeight, design.keepUpright ? '1' : '0',
   ].join(':')).join('|') + `|cut:${cutOut ? '1' : '0'}`
   const sheet = getGangSheet(packedHeight)
   const sheetCount = Math.max(1, Math.ceil(billedLength / 200))
@@ -325,7 +340,7 @@ export default function Home() {
   }
 
   async function composeCurrentSheet(pxPerIn: number, label: string, mapCmyk = false) {
-    if (sheetRows.length === 0) throw new Error('Add a design before previewing the gang sheet.')
+    if (sheetLayout.pieces.length === 0) throw new Error(hasUnplaced ? 'Those designs are too wide to fit on the sheet.' : 'Add a design before previewing the gang sheet.')
     return composeGangSheet({
       pieces: sheetLayout.pieces,
       sheetLengthIn: printHeight,
@@ -367,7 +382,7 @@ export default function Home() {
   }
 
   async function buildAndStore() {
-    if (!customerName.trim() || designs.length === 0 || saving || !previewing) return
+    if (!customerName.trim() || designs.length === 0 || saving || !previewing || hasUnplaced) return
     setSaving(true)
     setSaveError(null)
     try {
@@ -442,7 +457,7 @@ export default function Home() {
           <h2 className="design-count">Your designs ({designs.length})</h2>
         </div>
         {designs.length === 0 && <div className="empty-designs"><FileImage size={24} /><span>Your uploaded designs will appear here.</span></div>}
-        <div className="design-list">{designs.map((design) => <div className="design-row" key={design.id}><div className="drag-handle">⋮<br />⋮</div><button type="button" className={`thumb ${design.previewUrl ? 'has-art' : design.color}`} disabled={!design.previewUrl} onClick={() => design.previewUrl && setInspectId(design.id)} aria-label={`Inspect ${design.name}`}>{design.previewUrl ? <img src={design.previewUrl} alt="" /> : <><ImageIcon size={24} /><small>ARTWORK</small></>}<span className="thumb-status">Click to inspect</span></button><div className="design-name"><strong>{design.name}</strong>{(() => { const dpi = printDpi(design.pixelWidth, getDesignWidth(design)); const quality = qualityFromDpi(dpi); return <span className={quality.tone === 'good' ? 'quality' : quality.tone === 'poor' ? 'quality-warn' : 'transparent'}>{quality.tone === 'good' ? <Check size={13} /> : null}{dpi ? `${dpi} DPI · ${quality.label}` : 'Click art to check quality'}</span> })()}{design.enhanced && <span className="quality">Upscaled</span>}<button type="button" className="compare-link" disabled={!design.previewUrl} onClick={() => setInspectId(design.id)}>View large · Upscale</button></div><label className="object-type">What are you printing?<select aria-label={`What are you printing for ${design.name}`} value={design.placement} onChange={(e) => { const nextPlacement = e.target.value; updateDesign(design.id, { placement: nextPlacement, size: nextPlacement === 'Custom' ? '0 × 0 in' : (sizeOptions[nextPlacement as keyof typeof sizeOptions] ?? sizeOptions.default)[0], customWidth: nextPlacement === 'Custom' ? '' : design.customWidth, customHeight: nextPlacement === 'Custom' ? '' : design.customHeight }) }}>{placements.map((option) => <option key={option}>{option}</option>)}</select></label>{design.placement === 'Custom' ? <div className="custom-dimensions"><span>Custom image size (max 22 in wide × 199 in high)</span><div><label>Width (in)<input aria-label={`Custom width for ${design.name}`} type="number" min="0.25" max="22" step="0.25" placeholder="Width" value={design.customWidth} onChange={(e) => { const width = Math.min(22, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(width); updateDesign(design.id, { customWidth: value, size: `${value || '0'} × ${design.customHeight || '0'} in` }) }} /></label><label>Height (in)<input aria-label={`Custom height for ${design.name}`} type="number" min="0.25" max="199" step="0.25" placeholder="Height" value={design.customHeight} onChange={(e) => { const height = Math.min(199, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(height); updateDesign(design.id, { customHeight: value, size: `${design.customWidth || '0'} × ${value || '0'} in` }) }} /></label></div></div> : <label>Size<select aria-label={`Print size for ${design.name}`} value={design.size} onChange={(e) => updateDesign(design.id, { size: e.target.value })}>{(sizeOptions[design.placement as keyof typeof sizeOptions] ?? sizeOptions.default).map((option) => <option key={option}>{option}</option>)}</select></label>}<label>Quantity<div className="number-input"><button aria-label="Decrease design quantity" onClick={() => updateDesign(design.id, { quantity: Math.max(1, design.quantity - 1) })}><Minus size={13} /></button><input aria-label={`Quantity for ${design.name}`} type="number" min="1" step="1" value={design.quantity} onChange={(event) => updateDesign(design.id, { quantity: Math.max(1, Math.floor(Number(event.target.value) || 1)) })} /><button aria-label="Increase design quantity" onClick={() => updateDesign(design.id, { quantity: design.quantity + 1 })}><Plus size={13} /></button></div></label><button className="delete-button" aria-label={`Remove ${design.name}`} onClick={() => removeDesign(design.id)}><Trash2 size={17} /></button></div>)}</div>
+        <div className="design-list">{designs.map((design) => <div className="design-row" key={design.id}><div className="drag-handle">⋮<br />⋮</div><button type="button" className={`thumb ${design.previewUrl ? 'has-art' : design.color}`} disabled={!design.previewUrl} onClick={() => design.previewUrl && setInspectId(design.id)} aria-label={`Inspect ${design.name}`}>{design.previewUrl ? <img src={design.previewUrl} alt="" /> : <><ImageIcon size={24} /><small>ARTWORK</small></>}<span className="thumb-status">Click to inspect</span></button><div className="design-name"><strong>{design.name}</strong>{(() => { const dpi = printDpi(design.pixelWidth, getDesignWidth(design)); const quality = qualityFromDpi(dpi); return <span className={quality.tone === 'good' ? 'quality' : quality.tone === 'poor' ? 'quality-warn' : 'transparent'}>{quality.tone === 'good' ? <Check size={13} /> : null}{dpi ? `${dpi} DPI · ${quality.label}` : 'Click art to check quality'}</span> })()}{design.enhanced && <span className="quality">Upscaled</span>}<button type="button" className="compare-link" disabled={!design.previewUrl} onClick={() => setInspectId(design.id)}>View large · Upscale</button><label className="keep-upright"><input type="checkbox" checked={design.keepUpright} onChange={(event) => updateDesign(design.id, { keepUpright: event.target.checked })} /> Keep upright</label></div><label className="object-type">What are you printing?<select aria-label={`What are you printing for ${design.name}`} value={design.placement} onChange={(e) => { const nextPlacement = e.target.value; updateDesign(design.id, { placement: nextPlacement, size: nextPlacement === 'Custom' ? '0 × 0 in' : (sizeOptions[nextPlacement as keyof typeof sizeOptions] ?? sizeOptions.default)[0], customWidth: nextPlacement === 'Custom' ? '' : design.customWidth, customHeight: nextPlacement === 'Custom' ? '' : design.customHeight }) }}>{placements.map((option) => <option key={option}>{option}</option>)}</select></label>{design.placement === 'Custom' ? <div className="custom-dimensions"><span>Custom image size (max 22 in wide × 199 in high)</span><div><label>Width (in)<input aria-label={`Custom width for ${design.name}`} type="number" min="0.25" max="22" step="0.25" placeholder="Width" value={design.customWidth} onChange={(e) => { const width = Math.min(22, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(width); updateDesign(design.id, { customWidth: value, size: `${value || '0'} × ${design.customHeight || '0'} in` }) }} /></label><label>Height (in)<input aria-label={`Custom height for ${design.name}`} type="number" min="0.25" max="199" step="0.25" placeholder="Height" value={design.customHeight} onChange={(e) => { const height = Math.min(199, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(height); updateDesign(design.id, { customHeight: value, size: `${design.customWidth || '0'} × ${value || '0'} in` }) }} /></label></div></div> : <label>Size<select aria-label={`Print size for ${design.name}`} value={design.size} onChange={(e) => updateDesign(design.id, { size: e.target.value })}>{(sizeOptions[design.placement as keyof typeof sizeOptions] ?? sizeOptions.default).map((option) => <option key={option}>{option}</option>)}</select></label>}<label>Quantity<div className="number-input"><button aria-label="Decrease design quantity" onClick={() => updateDesign(design.id, { quantity: Math.max(1, design.quantity - 1) })}><Minus size={13} /></button><input aria-label={`Quantity for ${design.name}`} type="number" min="1" step="1" value={design.quantity} onChange={(event) => updateDesign(design.id, { quantity: Math.max(1, Math.floor(Number(event.target.value) || 1)) })} /><button aria-label="Increase design quantity" onClick={() => updateDesign(design.id, { quantity: design.quantity + 1 })}><Plus size={13} /></button></div></label><button className="delete-button" aria-label={`Remove ${design.name}`} onClick={() => removeDesign(design.id)}><Trash2 size={17} /></button></div>)}</div>
         <div className="design-footer-actions"><button className="add-design" disabled={!customerName.trim()} onClick={() => { if (customerName.trim()) inputRef.current?.click() }}><Plus size={20} /> Add Another Design</button><button className="duplicate-design" disabled={designs.length === 0} onClick={duplicateLatestDesign}><Copy size={18} /> Duplicate Design</button></div>
         {duplicateTargetId !== null && <div className="duplicate-picker"><div><strong>What are you printing?</strong><span>Choose the garment or placement for this copy.</span></div><div className="duplicate-picker-options">{placements.map((item) => <button key={item} type="button" onClick={() => duplicateDesign(duplicateTargetId, item)}><PlacementIcon placement={item} /><span>{item}</span></button>)}</div><button className="cancel-duplicate" type="button" onClick={() => setDuplicateTargetId(null)}>Cancel</button></div>}
         {sizeGuidePlacement && <div className="size-popup-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSizeGuidePlacement(null) }}><section className="size-popup" role="dialog" aria-modal="true" aria-labelledby="size-popup-title"><div className="size-popup-header"><div><span className="eyebrow">Recommended sizes</span><h2 id="size-popup-title">{sizeGuidePlacement}</h2><p>Select a measurement from the size menu for this design.</p></div><button className="size-popup-close" aria-label="Close recommended sizes" onClick={() => setSizeGuidePlacement(null)}>×</button></div><div className="size-recommendations">{(sizeOptions[sizeGuidePlacement as keyof typeof sizeOptions] ?? sizeOptions.default).map((option) => <div key={option} className="size-recommendation"><strong>{option.split(' · ')[0]}</strong><span>{option.includes(' · ') ? option.split(' · ')[1] : option}</span></div>)}</div><button className="size-popup-done" onClick={() => setSizeGuidePlacement(null)}>Continue</button></section></div>}
@@ -460,6 +475,7 @@ export default function Home() {
             cutMarks={cutMarks}
             printHeightIn={printHeight}
             cutOut={cutOut}
+            confirmDisabled={hasUnplaced}
           />
         )}
       </section>
@@ -500,6 +516,19 @@ export default function Home() {
               </tbody>
             </table>
           </div>
+        )}
+        {rotatedCount > 0 && (
+          <p className="rotation-note">
+            {`We turned ${rotatedCount} ${rotatedCount === 1 ? 'design' : 'designs'} sideways to fit${savedFilmIn > 0 ? ` — this saved ${savedFilmIn} in of film` : ''}.`}
+          </p>
+        )}
+        {hasUnplaced && (
+          <p className="save-error unplaced-error">
+            {unplacedDesigns.length === 1
+              ? `${unplacedDesigns[0].name} (${unplacedDesigns[0].originalWidthIn} × ${unplacedDesigns[0].originalHeightIn} in) is too wide to fit on the sheet.`
+              : `These designs are too wide to fit on the sheet: ${unplacedDesigns.map((item) => `${item.name} (${item.originalWidthIn} × ${item.originalHeightIn} in)`).join(', ')}.`}
+            {' '}Uncheck Keep upright, or turn Pre-cut DTFs off if the roll needs the mark clearance.
+          </p>
         )}
         {cutTooTall && (
           <p className="save-error">A design is taller than 30 in, so it cannot fit in one cutter section. Shorten it or turn Pre-cut DTFs off.</p>
@@ -542,11 +571,11 @@ export default function Home() {
             <div className="mini-sheet preview-placeholder">{previewPieces.length ? '' : <div className="preview-empty">Add designs</div>}</div>
           )}
           <span className="dimension vertical">{billedLength} in</span>
-          <button className="build-button" disabled={previewBusy || saving || designs.length === 0 || !customerName.trim()} onClick={() => void previewGangSheet()}>
+          <button className="build-button" disabled={previewBusy || saving || !customerName.trim() || sheetLayout.pieces.length === 0} onClick={() => void previewGangSheet()}>
             <Eye size={18} /> {previewBusy ? 'Building preview…' : 'Preview Gang Sheet'}
           </button>
           {previewing && sheetPreviewUrl && (
-            <button className="confirm-button" disabled={saving} onClick={() => void buildAndStore()}>
+            <button className="confirm-button" disabled={saving || hasUnplaced} onClick={() => void buildAndStore()}>
               <Check size={18} /> {saving ? 'Building…' : 'Confirm & Build Gang Sheet'}
             </button>
           )}

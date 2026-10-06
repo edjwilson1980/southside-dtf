@@ -185,6 +185,10 @@ button.thumb:disabled { cursor: default; }
   .inspect-stage-view { min-height: 200px; }
 }
 
+.keep-upright { display: inline-flex; align-items: center; gap: 6px; margin: 2px 0 0; color: #344054; font-size: 11px; font-weight: 700; cursor: pointer; }
+.keep-upright input { width: 14px; height: 14px; margin: 0; accent-color: var(--chicago-blue); }
+.rotation-note { margin: 0 0 12px; padding: 10px 12px; border: 1px solid #b9ddeb; border-radius: 8px; background: #f4fbfd; color: #006e99; font-size: 12px; font-weight: 700; line-height: 1.4; }
+.unplaced-error { margin: 0 0 12px !important; text-align: left !important; }
 .save-error { margin: 10px 14px 0; color: var(--chicago-red); font-size: 12px; font-weight: 700; text-align: center; }
 .drive-link { display: block; margin: 0 0 12px 39px; color: var(--chicago-blue); font-size: 13px; font-weight: 700; }
 .build-button:disabled { cursor: not-allowed; opacity: .6; }
