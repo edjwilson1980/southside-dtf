@@ -771,9 +771,6 @@ export default function HalftonePage() {
         <a className="shop-nav-link" href="/shop/sticker-maker">
           Sticker Maker
         </a>
-        <a className="shop-nav-link" href="/shop/cutter-test">
-          Cutter test
-        </a>
         <a className="shop-nav-link" href="/shop/connect-drive">
           Connect Drive
         </a>

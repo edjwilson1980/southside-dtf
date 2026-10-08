@@ -1225,6 +1225,21 @@ button.thumb:disabled { cursor: default; }
   font-weight: 600;
   font-size: 12px;
 }
+.sticker-utility-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line, #d7dee7);
+  border-radius: 10px;
+  background: #fff;
+}
+.sticker-utility-bar .sticker-job-btn {
+  text-decoration: none;
+}
 .sticker-top-actions {
   display: flex;
   flex-wrap: wrap;
