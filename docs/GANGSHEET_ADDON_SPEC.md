@@ -2,14 +2,19 @@
 
 **Project:** Southside Gang Sheet Builder (Next.js 15, WooCommerce checkout)
 **Where this goes:** `docs/GANGSHEET_ADDON_SPEC.md` — one spec for Cursor covering everything below.
+**Release:** **v2.0.0** — shown in the builder's page footer (Part C).
 
 | Part | What it covers | Applies to |
 |---|---|---|
-| **A. UV DTF / Vinyl Sticker Cut Lines** | "Add Contour Cut" toggle, Circle / Box / Contour, −/+ border, production cut file | UV DTF + vinyl sticker products |
-| **B. Save & Reopen Projects + Staff Tools** | Google Drive project JSON, reopen, staff Fix mode, staff as-is JSON load, Photoshop export/import | Whole builder |
+| **A. UV DTF / Vinyl Sticker Cut Lines** | Box 2 Cut Options under Customer Name (UV DTF: No Cut / Box Cut), "Add Contour Cut" toggle, Circle / Box / Contour, −/+ border, production cut file | UV DTF + vinyl sticker products |
+| **B. Save & Reopen Projects + Staff Tools** | Save Job / Reopen Job, Google Drive project JSON, staff Fix mode, staff as-is JSON load, Photoshop export/import | Save/Reopen Job: sticker maker only · staff tools: all orders |
+| **C. Version Footer & Release Notes** | Version number in the page footer, versioning rules, changelog | Whole builder |
 
 ### Summary of decisions
-- **"Add Contour Cut" checkbox** sits above the first image. **On** = every image gets a cut line. **Off** = the cut function is fully turned off.
+- **Box 2 (Cut Options)** sits right under **Box 1 (Customer Name)**. **Save Job / Reopen Job** sit right below Box 2, then **Upload Sticker Art**.
+- **Save Job / Reopen Job appear only on the shop sticker maker.**
+- **UV DTF:** only **No Cut** or **Box Cut**. **Vinyl stickers:** No Cut or Add Contour Cut (Circle / Box / Contour).
+- **Cutting on** = every image gets a cut line. **No Cut** = the cut function is fully turned off.
 - **Default cut** when no style is picked: a **Box** that hugs the image (rectangle or square, never padded out), **2 mm** border.
 - **2 mm is the default border for every shape.** The −/+ buttons change it in 0.5 mm steps.
 - Projects save as **JSON in Google Drive** and can be **reopened** to edit or fix.
@@ -23,6 +28,13 @@
 
 **Scope:** UV DTF and vinyl sticker products only. Standard DTF transfers do **not** show the toggle or cut panels.
 
+**Cut options by product:**
+| Product | Cut options offered |
+|---|---|
+| **UV DTF** | **No Cut** or **Box Cut** only |
+| **Vinyl sticker** | No Cut, or Add Contour Cut with Circle / Box / Contour |
+
+- A0. Sticker Maker Layout — Box 2 & Save / Reopen Job
 - A1. Master Toggle — "Add Contour Cut"
 - A2. Per-Image Cut Panel (only visible when the master toggle is ON)
 - A3. The Three Cut Shapes
@@ -40,9 +52,60 @@
 
 ---
 
+## A0. Sticker Maker Layout — Box 2 & Save / Reopen Job
+
+On the **shop sticker maker** (UV DTF and vinyl sticker products), the cut options are **Box 2**, sitting **right under the customer name (Box 1)**. Right below Box 2 are the **Save Job** and **Reopen Job** buttons, then **Upload Sticker Art**. The other existing boxes follow and renumber after Box 2.
+
+```
+┌──────────────────────────────────────────────────────┐
+│  ①  CUSTOMER NAME   [ ______________________ ]       │  ← Box 1 (existing)
+├──────────────────────────────────────────────────────┤
+│  ②  CUT OPTIONS                                      │  ← Box 2
+│                                                      │
+│   UV DTF:  ( • ) No Cut    (   ) Box Cut             │
+│                                                      │
+│   Vinyl:   ( • ) No Cut    (   ) Add Contour Cut     │
+│            └ per image: Circle · Box · Contour       │
+│                                                      │
+│   Border (when cutting):  [ − ]  2 mm  [ + ]         │
+├──────────────────────────────────────────────────────┤
+│  [ 💾 Save Job ]     [ 📂 Reopen Job ]   Saved ✓     │  ← right below Box 2
+├──────────────────────────────────────────────────────┤
+│  UPLOAD STICKER ART                                  │
+│      Drag & drop or click to upload                  │
+│  ┌──────┐  logo-front.png   Box Cut · 2 mm           │
+│  └──────┘                                            │
+├──────────────────────────────────────────────────────┤
+│  ③ …    (remaining existing boxes, renumbered)       │
+└──────────────────────────────────────────────────────┘
+```
+
+- **Order on the page:** ① Customer Name → ② Cut Options → Save Job / Reopen Job → Upload Sticker Art → ③ onward (the rest of the existing boxes, renumbered).
+- Box 2 shows **only the options for the selected product** (see the table above). Switching product type updates Box 2 right away.
+- Box 2 is visible before any art is uploaded, so customers choose the cut first and then upload.
+- Only one product's options show at a time; the mockup shows both rows for reference.
+
+### UV DTF — Box Cut or No Cut only
+- **Only two choices: "No Cut" and "Box Cut."** Circle and Contour are not offered for UV DTF.
+- **No Cut (default):** same as the master toggle OFF (Section A1). No cut lines anywhere.
+- **Box Cut:** same as the master toggle ON, with **every image locked to Box**. Each image's panel shows only the − / + border control (default 2 mm) and the rounded-corner option, with no shape picker.
+- **Server enforces it:** any UV DTF image arriving with `circle` or `contour` (old job file, modified browser) is converted to `box` and the customer sees *"UV DTF supports Box Cut only — switched to Box Cut."*
+- Production output, nesting and pricing work exactly as for a Box cut on any product.
+
+### Vinyl sticker
+- Box 2 shows **No Cut** or **Add Contour Cut**. "Add Contour Cut" is the master toggle from Section A1.
+- When cutting, each image can be Circle, Box or Contour (Section A2), defaulting to Box at 2 mm.
+
+### Save Job / Reopen Job — sticker maker only
+- **Save Job** and **Reopen Job** appear **only on the shop sticker maker**. The standard DTF gang sheet pages do not show them.
+- **Save Job:** saves the job to Google Drive and shows "Saved ✓". A small "Download job file" link under it downloads the `.ssp.json` (Section B1).
+- **Reopen Job:** opens a saved job from the customer's recent jobs, an uploaded `.ssp.json` file, or a reopen link (Section B1).
+
+---
+
 ## A1. Master Toggle — "Add Contour Cut"
 
-The toggle sits **above the first uploaded image**, at the top of the image list. It is the on/off switch for the entire cut-line feature.
+The toggle lives in **Box 2, right under the customer name** (Section A0). It is the on/off switch for the entire cut-line feature. For **UV DTF** it appears as the **No Cut / Box Cut** choice; for **vinyl stickers** as **No Cut / Add Contour Cut**.
 
 ```
 ┌──────────────────────────────────────────────────┐
@@ -251,7 +314,8 @@ lib/cutline/
 workers/
   cutline.worker.ts
 components/
-  CutToggle.tsx         // "Add Contour Cut" master checkbox above the first image
+  CutOptionsBox.tsx     // Box 2: No Cut / Box Cut (UV DTF) or No Cut / Add Contour Cut (vinyl), under Customer Name
+  JobBar.tsx            // Save Job / Reopen Job (+ Download job file), right below Box 2 — sticker maker only
   CutlinePanel.tsx      // per-image shape picker + +/- stepper + warnings
   CutlineOverlay.tsx    // dashed magenta preview on canvas
 app/api/cutline/route.ts // server recompute for cart + production
@@ -283,7 +347,15 @@ npm i clipper2-js pdf-lib
 
 ## A10. Feature Flag / Product Gating
 
-- Show the **"Add Contour Cut" toggle** only when the product has the WooCommerce attribute `pa_print_type` = `uv-dtf` or `vinyl-sticker`.
+- Show **Box 2 (Cut Options)** and the **Save Job / Reopen Job** buttons only when the product has the WooCommerce attribute `pa_print_type` = `uv-dtf` or `vinyl-sticker`.
+- **Allowed shapes by product** (`lib/cutline/constants.ts`):
+  ```ts
+  export const ALLOWED_SHAPES = {
+    'uv-dtf':        ['box'],
+    'vinyl-sticker': ['circle', 'box', 'contour'],
+  } as const;
+  ```
+  The UI and the server both read this list. UV DTF shows only No Cut / Box Cut.
 - Per-image cut panels appear only when the product qualifies **and** the toggle is checked.
 - Standard DTF products never show the toggle. They skip the cut step entirely and nest exactly as they do today.
 
@@ -291,7 +363,12 @@ npm i clipper2-js pdf-lib
 
 ## A11. Acceptance Criteria
 
-- [ ] The "Add Contour Cut" toggle appears above the first image, only for UV DTF / vinyl sticker products.
+- [ ] Box 2 (Cut Options) sits right under Box 1 (Customer Name), only on the sticker maker (UV DTF / vinyl sticker).
+- [ ] Save Job / Reopen Job sit right below Box 2, above Upload Sticker Art, and only on the sticker maker.
+- [ ] The remaining existing boxes renumber from ③.
+- [ ] UV DTF offers only **No Cut** and **Box Cut**; Circle and Contour never appear.
+- [ ] A UV DTF image sent as `circle` or `contour` is converted to `box` on the server with a notice.
+- [ ] Vinyl stickers offer No Cut / Add Contour Cut, with Circle / Box / Contour per image.
 - [ ] The toggle is OFF by default.
 - [ ] Toggle OFF: no cut panels, no preview lines, no cut computation, no `CutContour` layer, no cut meta, and price/nesting use bare art.
 - [ ] Toggle ON: every image, including ones uploaded later, gets a cut line and its own panel.
@@ -320,6 +397,11 @@ npm i clipper2-js pdf-lib
 | Star with sharp points | Smooth rounded outer cut, no spikes |
 | 3 images, toggle ON → OFF → ON | No cut output while OFF; original per-image settings return when back ON |
 | Wide 6" × 2" banner, no style picked | Box is a 6.16" × 2.16" rectangle, not a square |
+| UV DTF product selected | Box 2 shows only No Cut / Box Cut, right under Customer Name |
+| Standard DTF gang sheet page | No Box 2 cut options, no Save Job / Reopen Job |
+| UV DTF, Box Cut, upload 3 images | All three get Box cuts at 2 mm; no shape picker per image |
+| UV DTF project file with a `contour` image opened via Reopen Job | Opens with that image switched to Box + notice |
+| Switch product from vinyl sticker (Contour image) to UV DTF | Image switches to Box; border kept |
 | Toggle ON, then upload a 4th image | 4th image gets a 2 mm Box cut automatically |
 | 0.5" tiny art at max offset | Valid path, `ART_TOO_SMALL` warning if under 0.5" |
 
@@ -342,11 +424,13 @@ The toggle state and every image's cut settings are stored in the project JSON f
 
 # Part B — Save & Reopen Projects + Staff Tools
 
-**Goal:** Save the full gang-sheet project as a **JSON file in Google Drive**, and add a **Reopen Project** feature so the customer or shop staff can open it later to edit or fix it.
+**Goal:** Save the full gang-sheet project as a **JSON file in Google Drive**, with **Save Job** and **Reopen Job** buttons on the shop sticker maker, so the customer or shop staff can open it later to edit or fix it.
 
-**Scope:** The whole builder: standard DTF, UV DTF and vinyl stickers.
+**Scope:**
+- **Save Job / Reopen Job buttons and autosave:** the shop sticker maker only (UV DTF and vinyl stickers).
+- **Order snapshots and staff tools** (Fix mode, as-is load, Photoshop export/import): every order, so staff can fix any job.
 
-- B1. What the Customer Sees
+- B1. What the Customer Sees — Save Job / Reopen Job (sticker maker only)
 - B2. When a Project Is Saved
 - B3. Google Drive Layout
 - B4. Project File Format (`.ssp.json`)
@@ -362,36 +446,44 @@ The toggle state and every image's cut settings are stored in the project JSON f
 
 ---
 
-## B1. What the Customer Sees
+## B1. What the Customer Sees — Save Job / Reopen Job (sticker maker only)
+
+These buttons appear **only on the shop sticker maker**, **right below Box 2 (Cut Options)** and above "Upload Sticker Art" (Section A0). Standard DTF gang sheet pages don't show them.
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  GANG SHEET BUILDER                                          │
-│  [ 💾 Save Project ]   [ 📂 Reopen Project ]   Saved 2:41 PM ✓  │
 ├──────────────────────────────────────────────────────────────┤
-│  ☑  Add Contour Cut to my stickers                           │
-│  ┌──────┐  logo-front.png ...                                │
+│  ①  CUSTOMER NAME   [ Ed's Fire Dept order ______________ ]   │
+├──────────────────────────────────────────────────────────────┤
+│  ②  CUT OPTIONS   ( • ) No Cut   (   ) Box Cut               │
+├──────────────────────────────────────────────────────────────┤
+│  [ 💾 Save Job ]     [ 📂 Reopen Job ]        Saved 2:41 PM ✓ │
+│       └ Download job file                                    │
+├──────────────────────────────────────────────────────────────┤
+│  UPLOAD STICKER ART                                          │
 ```
 
-- **Save Project:** saves to Google Drive and shows "Saved 2:41 PM ✓". The first save also shows a reopen link the customer can copy or bookmark.
-- **Reopen Project:** opens a dialog with three options:
-  1. **My recent projects** — projects tied to the logged-in WooCommerce account.
-  2. **Upload project file** — a `.ssp.json` file downloaded earlier.
+- **Save Job:** saves the job to Google Drive and shows "Saved 2:41 PM ✓". The first save also shows a reopen link the customer can copy or bookmark. The job is named from Box 1 (customer name) plus the date unless the customer renames it.
+- **Download job file:** a small link under Save Job that downloads the same `.ssp.json` to the customer's computer.
+- **Reopen Job:** opens a dialog with three options:
+  1. **My recent jobs** — jobs tied to the logged-in WooCommerce account.
+  2. **Upload job file** — a `.ssp.json` file downloaded earlier.
   3. **Paste reopen link** — `southsidedtf.com/builder?project=<id>&t=<token>`
-- **Download project file:** a small link under Save that downloads the same `.ssp.json` to the customer's computer.
+- Autosave to Drive runs in the background on the sticker maker (Section B2); the status text next to the buttons shows it.
 
 ```
 ┌─────────────────────────────────────────────┐
-│  REOPEN PROJECT                         ✕   │
+│  REOPEN JOB                             ✕   │
 │                                             │
 │  Recent                                     │
 │   • Crash Out Club drop 3   Oct 8, 2:41 PM  │
 │   • Fire Dept stickers      Oct 2, 9:15 AM  │
 │                                             │
-│  [ Upload .ssp.json file ]                  │
+│  [ Upload .ssp.json job file ]              │
 │  [ Paste reopen link ___________________ ]  │
 └─────────────────────────────────────────────┘
 ```
+
+- In code and in this spec, "project" and "job" mean the same thing; customers only ever see **"Job."**
 
 ---
 
@@ -399,8 +491,8 @@ The toggle state and every image's cut settings are stored in the project JSON f
 
 | Trigger | What happens |
 |---|---|
-| **Save Project** button | Save now, new Drive revision |
-| **Autosave** | Every 60 s while there are unsaved changes, plus on page hide/close (`visibilitychange`) |
+| **Save Job** button (sticker maker) | Save now, new Drive revision |
+| **Autosave** (sticker maker) | Every 60 s while there are unsaved changes, plus on page hide/close (`visibilitychange`) |
 | **Add to cart** | Save, and lock that version to the cart item |
 | **Order placed** (WooCommerce webhook / n8n) | Copy the locked version into the order folder as `order-<orderId>.ssp.json` |
 
@@ -483,7 +575,7 @@ Written when an order is frozen, when staff save in Fix mode, and when staff dow
 "snapshot": {
   "frozenAt": "2026-10-08T20:02:44Z",
   "orderId": 48213,
-  "codeVersion": { "builder": "1.4.2", "cutline": "1.1.0", "alpha": "1.0.3" },
+  "codeVersion": { "builder": "2.0.0", "cutline": "1.1.0", "alpha": "1.0.3" },
   "sheet": { "widthIn": 22, "lengthIn": 64.5 },
   "placements": [
     { "imageId": "img_01", "copy": 1, "xIn": 0.25, "yIn": 0.25, "rotationDeg": 0 },
@@ -719,8 +811,8 @@ lib/psd/
   import.ts         // read PSD, match img_XX, flatten visible ART group
   layers.ts         // shared layer/group naming rules
 components/
-  ProjectBar.tsx        // Save / Reopen / status / download link
-  ReopenDialog.tsx      // recent list, file upload, paste link
+  ReopenDialog.tsx      // "Reopen Job" dialog: recent jobs, file upload, paste link
+  (buttons live in JobBar.tsx — see Part A file structure)
   StaffPsdMenu.tsx      // Export to Photoshop / Import edited PSD (staff only)
   StaffLoadMenu.tsx     // Load project JSON (As-is / Rebuild), Download project JSON
 hooks/
@@ -735,10 +827,12 @@ scripts/
 
 ## B11. Acceptance Criteria
 
-- [ ] **Save Project** creates a Drive project folder with `project.ssp.json`, `originals/` and `processed/`.
+- [ ] **Save Job** creates a Drive project folder with `project.ssp.json`, `originals/` and `processed/`.
 - [ ] Autosave runs every 60 s when there are changes and on page close; the status shows Saving… / Saved ✓ / Not saved.
-- [ ] **Download project file** gives the same JSON, with a valid `sig`.
-- [ ] **Reopen** works from the recent list, an uploaded file, and a pasted link.
+- [ ] **Download job file** gives the same JSON, with a valid `sig`.
+- [ ] **Reopen Job** works from the recent list, an uploaded file, and a pasted link.
+- [ ] Save Job / Reopen Job appear only on the sticker maker, right below Box 2; standard DTF pages don't show them.
+- [ ] Orders from every product still get a frozen snapshot, so staff tools work on any order.
 - [ ] A reopened project matches the original: images, sizes, quantities, rotation, cut toggle, and each image's cut shape and border.
 - [ ] Price, nesting and cut paths are recomputed on reopen, never read from the file.
 - [ ] A hand-edited file (bad `sig`) is rejected for customers and opens with a warning for staff.
@@ -791,17 +885,134 @@ scripts/
 
 ---
 
+# Part C — Version Footer & Release Notes
+
+**Goal:** Every page of the builder shows the current version number in a footer at the bottom of the screen, so staff and customers can tell which version they're on when reporting a problem.
+
+## C1. This Release
+
+**Version: `2.0.0`** — everything in Parts A and B ships together as this release. It's a major version because it adds new saved-file formats (project JSON) and changes how sheets are priced when cuts are on.
+
+## C2. The Footer
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  ... builder ...                                                     │
+│                                                                      │
+├──────────────────────────────────────────────────────────────────────┤
+│  South Side DTF Gang Sheet Builder  ·  v2.0.0  ·  What's new         │  ← customer
+└──────────────────────────────────────────────────────────────────────┘
+
+├──────────────────────────────────────────────────────────────────────┤
+│  South Side DTF Gang Sheet Builder  ·  v2.0.0  ·  build 3f9c2a1  ·    │  ← staff
+│  2026-10-08 14:02 CT  ·  cutline 1.1.0  ·  alpha 1.0.3  ·  What's new │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+- **Placement:** a slim footer bar pinned to the bottom of every builder page (full width, small grey text, ~32 px tall). It sits below the builder content and never covers the canvas or the Add-to-cart button. On phones it wraps to two lines.
+- **Customers see:** app name, version, and a **What's new** link.
+- **Staff see** (WP `manage_woocommerce`): also the git commit (short hash), build date/time in Chicago time, and the `cutline` and `alpha` module versions — the same values written into a project's `snapshot.codeVersion`.
+- **Click the version** to copy `v2.0.0 (3f9c2a1)` to the clipboard, with a "Copied" toast, so it can be pasted into a bug report.
+- **What's new** opens a small modal showing the `CHANGELOG.md` entry for the current version.
+- Also shown in the footer of the **staff PSD export `README.txt`** and in the production PDF metadata (`Producer: SSP Gang Sheet Builder v2.0.0`).
+
+## C3. Where the Number Comes From
+
+- **One source of truth:** `"version"` in `package.json`. Set it to `"2.0.0"` for this release.
+- `next.config.ts` exposes it at build time, with no hard-coding in components:
+
+```ts
+// next.config.ts
+import pkg from './package.json';
+import { execSync } from 'node:child_process';
+
+const commit = (() => {
+  try { return execSync('git rev-parse --short HEAD').toString().trim(); }
+  catch { return 'dev'; }
+})();
+
+export default {
+  env: {
+    NEXT_PUBLIC_APP_VERSION: pkg.version,
+    NEXT_PUBLIC_BUILD_COMMIT: commit,
+    NEXT_PUBLIC_BUILD_TIME: new Date().toISOString(),
+  },
+};
+```
+
+- `lib/version.ts` exports `APP_VERSION`, `BUILD_COMMIT`, `BUILD_TIME`, `CUTLINE_VERSION`, `ALPHA_VERSION`. The footer, project snapshots, PSD `README.txt` and PDF metadata all read from here.
+- `GET /api/version` returns the same values as JSON so n8n or monitoring can check what's deployed.
+
+## C4. Versioning Rules (going forward)
+
+| Change | Bump | Example |
+|---|---|---|
+| Bug fix, no behavior change | Patch | 2.0.0 → 2.0.1 |
+| New feature, old projects still open the same | Minor | 2.0.1 → 2.1.0 |
+| Changes saved-file format, pricing, or cut output | Major | 2.1.0 → 3.0.0 |
+
+- Every release adds an entry to `CHANGELOG.md` and tags git as `v2.0.0`.
+- If a release changes `.ssp.json`, also bump `schemaVersion` and add a migration (Section B4).
+
+## C5. `CHANGELOG.md` entry
+
+```md
+## [2.0.0] — 2026-10-08
+
+### Added
+- Box 2 "Cut Options" right under Customer Name (No Cut by default).
+- UV DTF: No Cut or Box Cut only. Vinyl stickers: No Cut or Add Contour Cut.
+- Save Job / Reopen Job buttons right below Box 2 — sticker maker only.
+- Per-image cut shapes: Circle, Box, Contour, with a −/+ border (2 mm default, 0.5 mm steps).
+- Default cut when no style is chosen: Box hugging the image, 2 mm.
+- CutContour spot-color layer in production PDFs; nesting and pricing use cut footprints.
+- Sticker maker jobs save as JSON to Google Drive, with autosave; Save Job saves (with a download link), Reopen Job reopens.
+- Staff Fix mode, staff "Load project JSON (as-is)" with exact layout/cuts/charged price.
+- Staff Photoshop export (per-image or full sheet, art only, with all original uploads) and PSD re-import.
+- Version number in the page footer.
+
+### Changed
+- Gang-sheet price now reflects cut footprints when Add Contour Cut is on.
+```
+
+## C6. Files
+
+```
+lib/version.ts
+components/AppFooter.tsx        // footer bar (customer vs staff detail)
+components/WhatsNewModal.tsx    // renders the current CHANGELOG entry
+app/api/version/route.ts
+CHANGELOG.md
+```
+
+## C7. Acceptance Criteria
+
+- [ ] Every builder page shows the footer with **v2.0.0** at the bottom of the screen.
+- [ ] Customers see name + version + What's new; staff also see commit, build time (CT) and module versions.
+- [ ] The version comes only from `package.json`; changing it there and rebuilding updates the footer.
+- [ ] Clicking the version copies it; What's new shows the 2.0.0 changelog entry.
+- [ ] `snapshot.codeVersion.builder`, the PSD `README.txt` and PDF metadata all show the same version as the footer.
+- [ ] `GET /api/version` returns the version, commit and build time.
+- [ ] The footer never covers the canvas or Add-to-cart, on desktop or phone.
+
+---
+
 # Add to main README (`## Features` section)
 
 ```md
-- **UV DTF / Sticker cut lines** — an "Add Contour Cut" checkbox above the image list turns
-  cut lines on for every image (off = no cuts). Per image, customers choose Circle, Box, or
+- **UV DTF / Sticker cut lines** — Box 2 "Cut Options" sits right under Customer Name. UV DTF offers
+  No Cut or Box Cut only; vinyl stickers offer No Cut or Add Contour Cut. Per image, vinyl customers choose Circle, Box, or
   Contour with a +/− border control (2 mm default, 0.5 mm steps). No style selected = Box at
   2 mm that hugs the image. Cut paths export as a `CutContour` spot-color layer and drive
   gang-sheet nesting and pricing.
-- **Save & reopen projects** — the full project saves as a JSON file to Google Drive and can be
-  reopened later to edit or fix.
+- **Save Job / Reopen Job** (sticker maker only) — right below Box 2. Jobs save as JSON to Google
+  Drive and can be reopened later to edit or fix.
 - **Staff tools** — Fix mode, load a project JSON exactly as it was ordered, export layered
   Photoshop files (art only) with all original uploads, and re-import Photoshop edits.
+- **Version footer** — current version (v2.0.0) shown at the bottom of every builder page.
 - Spec: `docs/GANGSHEET_ADDON_SPEC.md`
 ```
+
+---
+
+*Gang Sheet Builder Add-on Spec · **v2.0.0** · 2026-10-08*
