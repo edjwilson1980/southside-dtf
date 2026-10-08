@@ -32,13 +32,12 @@ Shared code lives under `lib/` (compose, cut layout, sheet size, image tools).
 
 ## Features
 
-- **UV DTF / Sticker cut lines** — Box 2 "Cut Options" sits right under Customer Name. UV DTF offers
-  No Cut or Box Cut only; vinyl stickers offer No Cut or Add Contour Cut. Per image, vinyl customers choose Circle, Box, or
-  Contour with a +/− border control (2 mm default, 0.5 mm steps). No style selected = Box at
-  2 mm that hugs the image. Cut paths export as a `CutContour` spot-color layer and drive
-  gang-sheet nesting and pricing.
-- **Save Job / Reopen Job** (sticker maker only) — right below Box 2. Jobs save as JSON to Google
-  Drive and can be reopened later to edit or fix.
+- **Sticker maker cut lines** — Box 2 "Cut / No Cut" under Customer Name. Vinyl: each image gets
+  Circle / Square / Contour Cut with its own border (default Square, 2 mm). UV DTF: fixed 2.5 mm
+  Square Cut. The preview shows every cut outline, registration marks fitted to the sheet and a
+  Start Cut box. Cut paths export as a `CutContour` spot-color layer.
+- **Save Job / Reopen Job** (sticker maker only) — Reopen Job and Export to Photoshop sit top right,
+  Save Job below Box 2. Jobs save as JSON to Google Drive.
 - **Staff tools** — Fix mode, load a project JSON exactly as it was ordered, export layered
   Photoshop files (art only) with all original uploads, and re-import Photoshop edits.
 - **Version footer** — current version (v2.0.0) shown at the bottom of every builder page.
