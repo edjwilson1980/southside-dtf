@@ -29,3 +29,20 @@ These are **separate products** that share print/packing libraries. Do not mix t
 - `/shop/connect-drive` — connect shop Gmail for Drive uploads
 
 Shared code lives under `lib/` (compose, cut layout, sheet size, image tools).
+
+## Features
+
+- **UV DTF / Sticker cut lines** — an "Add Contour Cut" checkbox above the image list turns
+  cut lines on for every image (off = no cuts). Per image, customers choose Circle, Box, or
+  Contour with a +/− border control (2 mm default, 0.5 mm steps). No style selected = Box at
+  2 mm that hugs the image. Cut paths export as a `CutContour` spot-color layer and drive
+  gang-sheet nesting and pricing.
+- **Save & reopen projects** — the full project saves as a JSON file to Google Drive and can be
+  reopened later to edit or fix.
+- **Staff tools** — Fix mode, load a project JSON exactly as it was ordered, export layered
+  Photoshop files (art only) with all original uploads, and re-import Photoshop edits.
+- Spec: [`docs/GANGSHEET_ADDON_SPEC.md`](docs/GANGSHEET_ADDON_SPEC.md)
+
+### Shop sticker routes (staff)
+
+- `/shop/sticker-maker` — UV DTF (22 × 12 in min) and vinyl (8 × 11 in min) sticker builder
