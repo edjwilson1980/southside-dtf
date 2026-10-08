@@ -1077,12 +1077,51 @@ button.thumb:disabled { cursor: default; }
 .build-fee-warning strong { font-weight: 800; }
 
 /* Staff Sticker Maker */
+.sticker-product-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+.sticker-product-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--line, #d7dee7);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+}
+.sticker-product-tab strong {
+  font-size: 15px;
+}
+.sticker-product-tab span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.sticker-product-tab.selected,
+.sticker-product-tab[aria-selected="true"] {
+  border-color: var(--chicago-blue);
+  background: #eaf7fc;
+  box-shadow: inset 0 0 0 1px var(--chicago-blue);
+}
 .sticker-media-size,
 .sticker-cut-modes {
   display: flex;
   flex-direction: column;
   gap: 10px;
   margin-bottom: 14px;
+}
+.sticker-size-fields input:disabled,
+.sticker-size-fields input:read-only {
+  background: #f3f5f8;
+  color: #334155;
+  cursor: not-allowed;
 }
 .sticker-size-fields {
   display: grid;

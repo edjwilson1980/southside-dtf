@@ -15,7 +15,6 @@ import {
   piecePrintSize,
   ART_INSET_IN,
   CUT_ART_START_IN,
-  SHEET_WIDTH_IN,
 } from '@/lib/compose-sheet'
 import { type LayoutPiece } from '@/components/sheet-layout-overlay'
 import { BUILDER_VERSION } from '@/lib/version'
@@ -64,15 +63,38 @@ type Design = {
 const logoUrl =
   'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/SSP%20Logo%20%28Black%20Outline%29-A5PrDBPZRDhydxNxRumbsTUFufpLv9.png'
 
+type StickerProduct = 'uv-dtf' | 'vinyl'
+
+const PRODUCT_MODES: {
+  value: StickerProduct
+  label: string
+  hint: string
+}[] = [
+  {
+    value: 'uv-dtf',
+    label: 'UV DTF stickers',
+    hint: 'Media width locks to 22 in. Set the length (height) for the sheet.',
+  },
+  {
+    value: 'vinyl',
+    label: 'Vinyl sticker maker',
+    hint: 'Customize media width and length for vinyl.',
+  },
+]
+
 const DEFAULT_STICKER_W = '3'
 const DEFAULT_STICKER_H = '3'
+/** UV DTF sticker media is always 22 in wide. */
+const UV_DTF_MEDIA_WIDTH_IN = 22
 const MIN_MEDIA_IN = 4
-const MAX_MEDIA_WIDTH_IN = SHEET_WIDTH_IN
+const MAX_VINYL_MEDIA_WIDTH_IN = 48
 const MAX_MEDIA_HEIGHT_IN = 200
 const MAX_STICKER_H = 199
+const DEFAULT_VINYL_WIDTH_IN = 12
+const DEFAULT_MEDIA_HEIGHT_IN = 24
 
-function clampMediaWidth(value: number) {
-  return Math.min(MAX_MEDIA_WIDTH_IN, Math.max(MIN_MEDIA_IN, value))
+function clampVinylWidth(value: number) {
+  return Math.min(MAX_VINYL_MEDIA_WIDTH_IN, Math.max(MIN_MEDIA_IN, value))
 }
 
 function clampMediaHeight(value: number) {
@@ -87,12 +109,22 @@ function stickerSizeLabel(width: string, height: string) {
   return `${width || '0'} × ${height || '0'} in`
 }
 
-const howToSteps = [
-  { id: 'step-1', number: 1, title: 'Customer name', detail: 'Type the customer name first.' },
-  { id: 'step-2', number: 2, title: 'Upload artwork', detail: 'Drop or click to add sticker art.' },
-  { id: 'step-3', number: 3, title: 'Sticker size & edit', detail: 'Set each sticker W×H, crop, and quantity.' },
-  { id: 'step-4', number: 4, title: 'Media size & cut', detail: 'Set media W×H, pick cut type, then build.' },
-]
+function howToStepsFor(product: StickerProduct) {
+  return [
+    { id: 'step-1', number: 1, title: 'Customer name', detail: 'Type the customer name first.' },
+    { id: 'step-2', number: 2, title: 'Upload artwork', detail: 'Drop or click to add sticker art.' },
+    { id: 'step-3', number: 3, title: 'Sticker size & edit', detail: 'Set each sticker W×H, crop, and quantity.' },
+    {
+      id: 'step-4',
+      number: 4,
+      title: product === 'uv-dtf' ? 'Length & cut' : 'Media size & cut',
+      detail:
+        product === 'uv-dtf'
+          ? 'Width is 22 in. Set length, pick cut type, then build.'
+          : 'Set vinyl width × length, pick cut type, then build.',
+    },
+  ]
+}
 
 function GuideHeading({ number, title, hint }: { number: number; title: string; hint: string }) {
   return (
@@ -132,11 +164,26 @@ export default function StickerMakerPage() {
   const [sheetPreviewOpen, setSheetPreviewOpen] = useState(false)
   const [jobStamp, setJobStamp] = useState('')
   const [cutMode, setCutMode] = useState<CutMode>('box')
-  const [mediaWidthIn, setMediaWidthIn] = useState(SHEET_WIDTH_IN)
-  const [mediaHeightIn, setMediaHeightIn] = useState(24)
+  const [product, setProduct] = useState<StickerProduct>('uv-dtf')
+  const [vinylWidthIn, setVinylWidthIn] = useState(DEFAULT_VINYL_WIDTH_IN)
+  const [mediaHeightIn, setMediaHeightIn] = useState(DEFAULT_MEDIA_HEIGHT_IN)
   const [cutShapes, setCutShapes] = useState<CutShape[]>([])
   const [shapesBusy, setShapesBusy] = useState(false)
   const previewGen = useRef(0)
+
+  const mediaWidthIn = product === 'uv-dtf' ? UV_DTF_MEDIA_WIDTH_IN : vinylWidthIn
+  const maxStickerWidthIn = mediaWidthIn
+  const howToSteps = howToStepsFor(product)
+  const productLabel = PRODUCT_MODES.find((mode) => mode.value === product)?.label ?? 'Sticker Maker'
+
+  function selectProduct(next: StickerProduct) {
+    setProduct(next)
+    if (next === 'uv-dtf') {
+      // Width is fixed; keep the current length.
+      return
+    }
+    setVinylWidthIn((current) => clampVinylWidth(current || DEFAULT_VINYL_WIDTH_IN))
+  }
 
   async function addFiles(list: FileList | File[]) {
     if (!customerName.trim()) return
@@ -293,7 +340,7 @@ export default function StickerMakerPage() {
           design.pixelHeight,
         ].join(':'),
       )
-      .join('|') + `|cut:${cutMode}|media:${mediaWidthIn}x${mediaHeightIn}`
+      .join('|') + `|product:${product}|cut:${cutMode}|media:${mediaWidthIn}x${mediaHeightIn}`
   const sheetLabelText = mediaLabel(mediaWidthIn, billedLength)
   const fillPercent =
     mediaHeightIn > 0 ? Math.min(100, Math.round((printHeight / mediaHeightIn) * 100)) : 0
@@ -506,10 +553,26 @@ export default function StickerMakerPage() {
         <img src={logoUrl} alt="South Side DTF" className="brand-logo" />
         <div className="title-block">
           <h1>Sticker Maker</h1>
-          <p className="lead">Staff tool for custom stickers — set media size, sticker size, and cut type.</p>
+          <p className="lead">UV DTF (22 in wide) or vinyl stickers — crop, size, cut, and export.</p>
           <p className="sublead">Crop and clean art, then export print PNG + cutter PLT (box, circle, or cut around object).</p>
         </div>
         <ShopNav current="sticker-maker" />
+      </div>
+
+      <div className="sticker-product-tabs" role="tablist" aria-label="Sticker product">
+        {PRODUCT_MODES.map((mode) => (
+          <button
+            key={mode.value}
+            type="button"
+            role="tab"
+            aria-selected={product === mode.value}
+            className={`sticker-product-tab ${product === mode.value ? 'selected' : ''}`}
+            onClick={() => selectProduct(mode.value)}
+          >
+            <strong>{mode.label}</strong>
+            <span>{mode.hint}</span>
+          </button>
+        ))}
       </div>
 
       <ol className="how-to" aria-label="How to make stickers">
@@ -669,7 +732,7 @@ export default function StickerMakerPage() {
                   </div>
                   <div className="custom-dimensions">
                     <span>
-                      Sticker size (max {SHEET_WIDTH_IN} in wide × {MAX_STICKER_H} in high)
+                      Sticker size (max {maxStickerWidthIn} in wide × {MAX_STICKER_H} in high)
                     </span>
                     <div>
                       <label>
@@ -678,12 +741,12 @@ export default function StickerMakerPage() {
                           aria-label={`Sticker width for ${design.name}`}
                           type="number"
                           min="0.25"
-                          max={SHEET_WIDTH_IN}
+                          max={maxStickerWidthIn}
                           step="0.25"
                           placeholder="Width"
                           value={design.customWidth}
                           onChange={(e) => {
-                            const width = Math.min(SHEET_WIDTH_IN, Math.max(0, Number(e.target.value) || 0))
+                            const width = Math.min(maxStickerWidthIn, Math.max(0, Number(e.target.value) || 0))
                             const value = e.target.value === '' ? '' : String(width)
                             updateDesign(design.id, {
                               customWidth: value,
@@ -841,29 +904,40 @@ export default function StickerMakerPage() {
           <div id="step-4" className="order-title">
             <span className="guide-num">4</span>
             <div>
-              <h2>Media size, cut type &amp; build</h2>
-              <p className="order-hint">Set the media the stickers go on, pick how we cut, then build.</p>
+              <h2>
+                {product === 'uv-dtf' ? 'Length, cut type & build' : 'Media size, cut type & build'}
+              </h2>
+              <p className="order-hint">
+                {product === 'uv-dtf'
+                  ? 'UV DTF media is 22 in wide. Set the length, pick how we cut, then build.'
+                  : 'Set vinyl width and length, pick how we cut, then build.'}
+              </p>
             </div>
           </div>
 
           <div className="sticker-media-size">
             <span className="precut-button-title">
-              <Maximize2 size={18} /> Media size
+              <Maximize2 size={18} /> {product === 'uv-dtf' ? 'UV DTF media' : 'Vinyl media size'}
             </span>
             <div className="sticker-size-fields">
               <label>
                 Width (in)
                 <input
                   type="number"
-                  min={MIN_MEDIA_IN}
-                  max={MAX_MEDIA_WIDTH_IN}
+                  min={product === 'uv-dtf' ? UV_DTF_MEDIA_WIDTH_IN : MIN_MEDIA_IN}
+                  max={product === 'uv-dtf' ? UV_DTF_MEDIA_WIDTH_IN : MAX_VINYL_MEDIA_WIDTH_IN}
                   step="0.25"
                   value={mediaWidthIn}
-                  onChange={(e) => setMediaWidthIn(clampMediaWidth(Number(e.target.value) || MIN_MEDIA_IN))}
+                  disabled={product === 'uv-dtf'}
+                  readOnly={product === 'uv-dtf'}
+                  onChange={(e) => {
+                    if (product !== 'vinyl') return
+                    setVinylWidthIn(clampVinylWidth(Number(e.target.value) || MIN_MEDIA_IN))
+                  }}
                 />
               </label>
               <label>
-                Height (in)
+                Length (in)
                 <input
                   type="number"
                   min={MIN_MEDIA_IN}
@@ -875,8 +949,9 @@ export default function StickerMakerPage() {
               </label>
             </div>
             <small>
-              Size of the media / film this job prints on. Max width {MAX_MEDIA_WIDTH_IN} in. Height grows if
-              stickers need more film.
+              {product === 'uv-dtf'
+                ? 'Width is fixed at 22 in for UV DTF stickers. Length grows automatically if stickers need more film.'
+                : `Customize vinyl width (up to ${MAX_VINYL_MEDIA_WIDTH_IN} in) and length. Length grows if stickers need more media.`}
             </small>
           </div>
 
@@ -915,6 +990,7 @@ export default function StickerMakerPage() {
           <div className="metrics">
             <Metric label="Stickers" value={designs.length} icon={<ImageIcon size={24} />} />
             <Metric label="Total pieces" value={totalTransfers} icon={<Sticker size={25} />} />
+            <Metric label="Product" value={product === 'uv-dtf' ? 'UV DTF' : 'Vinyl'} icon={<Sticker size={22} />} green />
             <Metric label="Media size" value={sheetLabelText} icon={<Maximize2 size={21} />} green />
             <Metric
               label="Cut type"
@@ -925,7 +1001,7 @@ export default function StickerMakerPage() {
             <div className="price-breakdown">
               <strong>{sheetName}</strong>
               <span>
-                {sheetLabelText} · {cutMode} cut
+                {productLabel} · {sheetLabelText} · {cutMode} cut
               </span>
               {shapesBusy && <span>Tracing cut paths…</span>}
             </div>
