@@ -32,15 +32,16 @@ Shared code lives under `lib/` (compose, cut layout, sheet size, image tools).
 
 ## Features
 
-- **UV DTF / Sticker cut lines** — an "Add Contour Cut" checkbox above the image list turns
-  cut lines on for every image (off = no cuts). Per image, customers choose Circle, Box, or
+- **UV DTF / Sticker cut lines** — Box 2 "Cut Options" sits right under Customer Name. UV DTF offers
+  No Cut or Box Cut only; vinyl stickers offer No Cut or Add Contour Cut. Per image, vinyl customers choose Circle, Box, or
   Contour with a +/− border control (2 mm default, 0.5 mm steps). No style selected = Box at
   2 mm that hugs the image. Cut paths export as a `CutContour` spot-color layer and drive
   gang-sheet nesting and pricing.
-- **Save & reopen projects** — the full project saves as a JSON file to Google Drive and can be
-  reopened later to edit or fix.
+- **Save Job / Reopen Job** (sticker maker only) — right below Box 2. Jobs save as JSON to Google
+  Drive and can be reopened later to edit or fix.
 - **Staff tools** — Fix mode, load a project JSON exactly as it was ordered, export layered
   Photoshop files (art only) with all original uploads, and re-import Photoshop edits.
+- **Version footer** — current version (v2.0.0) shown at the bottom of every builder page.
 - Spec: [`docs/GANGSHEET_ADDON_SPEC.md`](docs/GANGSHEET_ADDON_SPEC.md)
 
 ### Shop sticker routes (staff)
