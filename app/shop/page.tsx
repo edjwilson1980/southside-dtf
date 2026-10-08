@@ -18,6 +18,7 @@ import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/accepted-uploads'
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
+import { ShopNav } from '@/components/shop-nav'
 
 type Design = {
   id: number
@@ -541,12 +542,7 @@ export default function Home() {
         <p className="lead">Production builder with cut files and marks.</p>
         <p className="sublead">Internal shop app — advanced features stay here, not on the customer builder.</p>
       </div>
-      <nav className="shop-nav" aria-label="Shop tools">
-        <a className="shop-nav-link" href="/">Customer builder</a>
-        <a className="shop-nav-link" href="/shop/halftone">Halftone generator</a>
-        <a className="shop-nav-link" href="/shop/cutter-test">Cutter test</a>
-        <a className="shop-nav-link" href="/shop/connect-drive">Connect Drive</a>
-      </nav>
+      <ShopNav current="shop" />
     </div>
     <ol className="how-to" aria-label="How to build your gang sheet">
       {howToSteps.map((step) => (

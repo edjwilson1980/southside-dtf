@@ -37,6 +37,8 @@ type SheetPreviewModalProps = {
   cutBoxes?: CutBox[]
   cutMarks?: Array<CutBox & { first?: boolean }>
   printHeightIn?: number
+  /** Defaults to roll printable width; sticker-maker jobs pass a media width. */
+  sheetWidthIn?: number
   /** customer = public builder; shop = production tools with cutter loading notes */
   audience?: 'customer' | 'shop'
   layoutPieces?: LayoutPiece[]
@@ -54,6 +56,7 @@ export function SheetPreviewModal({
   cutBoxes = [],
   cutMarks = [],
   printHeightIn,
+  sheetWidthIn = SHEET_WIDTH_IN,
   audience = 'shop',
   layoutPieces = [],
 }: SheetPreviewModalProps) {
@@ -189,7 +192,7 @@ export function SheetPreviewModal({
             <span className="eyebrow">Gang sheet preview</span>
             <h2 id="sheet-preview-title">{sheetLabel}</h2>
             <p>
-              {SHEET_WIDTH_IN} in wide · {sheetLengthIn} in long · {totalTransfers} transfers.
+              {sheetWidthIn} in wide · {sheetLengthIn} in long · {totalTransfers} transfers.
               {cutOut
                 ? cropMarkPreviewCopy(cutMarks.length, audience)
                 : ' Scroll or zoom to inspect the layout. Black boxes mark the film edge and each design.'}
@@ -239,14 +242,14 @@ export function SheetPreviewModal({
                 />
                 <SheetLayoutOverlay
                   pieces={layoutPieces}
-                  sheetWidthIn={SHEET_WIDTH_IN}
+                  sheetWidthIn={sheetWidthIn}
                   sheetHeightIn={sheetHeightIn}
                 />
                 {cutOut && (
                   <CutBoxOverlay
                     boxes={cutBoxes}
                     marks={cutMarks}
-                    sheetWidthIn={SHEET_WIDTH_IN}
+                    sheetWidthIn={sheetWidthIn}
                     sheetHeightIn={sheetHeightIn}
                   />
                 )}
