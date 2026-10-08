@@ -12,9 +12,11 @@ import { CutShapeOverlay } from '@/components/cut-shape-overlay'
 import {
   composeGangSheet,
   packSheetBestGutter,
+  packSheetIntoPages,
   piecePrintSize,
   ART_INSET_IN,
   CUT_ART_START_IN,
+  type PlacedSheetPiece,
 } from '@/lib/compose-sheet'
 import { type LayoutPiece } from '@/components/sheet-layout-overlay'
 import { BUILDER_VERSION } from '@/lib/version'
@@ -80,7 +82,7 @@ const PRODUCT_MODES: {
   {
     value: 'vinyl',
     label: 'Vinyl sticker maker',
-    hint: 'Customize media width and length for vinyl.',
+    hint: 'Customize media width and length (min 8 × 11 in). Overflow becomes page 2, 3…',
   },
 ]
 
@@ -88,19 +90,26 @@ const DEFAULT_STICKER_W = '3'
 const DEFAULT_STICKER_H = '3'
 /** UV DTF sticker media is always 22 in wide. */
 const UV_DTF_MEDIA_WIDTH_IN = 22
-const MIN_MEDIA_IN = 4
+const MIN_UV_LENGTH_IN = 4
+const MIN_VINYL_WIDTH_IN = 8
+const MIN_VINYL_LENGTH_IN = 11
 const MAX_VINYL_MEDIA_WIDTH_IN = 48
 const MAX_MEDIA_HEIGHT_IN = 200
 const MAX_STICKER_H = 199
-const DEFAULT_VINYL_WIDTH_IN = 12
-const DEFAULT_MEDIA_HEIGHT_IN = 24
+const DEFAULT_VINYL_WIDTH_IN = MIN_VINYL_WIDTH_IN
+const DEFAULT_VINYL_LENGTH_IN = MIN_VINYL_LENGTH_IN
+const DEFAULT_UV_LENGTH_IN = 24
 
 function clampVinylWidth(value: number) {
-  return Math.min(MAX_VINYL_MEDIA_WIDTH_IN, Math.max(MIN_MEDIA_IN, value))
+  return Math.min(MAX_VINYL_MEDIA_WIDTH_IN, Math.max(MIN_VINYL_WIDTH_IN, value))
 }
 
-function clampMediaHeight(value: number) {
-  return Math.min(MAX_MEDIA_HEIGHT_IN, Math.max(MIN_MEDIA_IN, value))
+function clampVinylLength(value: number) {
+  return Math.min(MAX_MEDIA_HEIGHT_IN, Math.max(MIN_VINYL_LENGTH_IN, value))
+}
+
+function clampUvLength(value: number) {
+  return Math.min(MAX_MEDIA_HEIGHT_IN, Math.max(MIN_UV_LENGTH_IN, value))
 }
 
 function mediaLabel(widthIn: number, heightIn: number) {
@@ -123,9 +132,13 @@ function howToStepsFor(product: StickerProduct) {
       detail:
         product === 'uv-dtf'
           ? 'Width is 22 in. Set length, pick cut type, then build.'
-          : 'Set vinyl width × length, pick cut type, then build.',
+          : 'Set vinyl size (min 8 × 11 in). Extra stickers become page 2, 3…',
     },
   ]
+}
+
+function pageFileSuffix(pageNumber: number, pageCount: number) {
+  return pageCount > 1 ? ` p${pageNumber}` : ''
 }
 
 function GuideHeading({ number, title, hint }: { number: number; title: string; hint: string }) {
@@ -160,7 +173,6 @@ export default function StickerMakerPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null)
-  const [sheetPreviewUrl, setSheetPreviewUrl] = useState<string | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const [previewBusy, setPreviewBusy] = useState(false)
   const [sheetPreviewOpen, setSheetPreviewOpen] = useState(false)
@@ -169,24 +181,35 @@ export default function StickerMakerPage() {
   const [contourOffsetIn, setContourOffsetIn] = useState(DEFAULT_CONTOUR_OFFSET_IN)
   const [product, setProduct] = useState<StickerProduct>('uv-dtf')
   const [vinylWidthIn, setVinylWidthIn] = useState(DEFAULT_VINYL_WIDTH_IN)
-  const [mediaHeightIn, setMediaHeightIn] = useState(DEFAULT_MEDIA_HEIGHT_IN)
+  const [vinylLengthIn, setVinylLengthIn] = useState(DEFAULT_VINYL_LENGTH_IN)
+  const [uvLengthIn, setUvLengthIn] = useState(DEFAULT_UV_LENGTH_IN)
+  const [activePageIndex, setActivePageIndex] = useState(0)
+  const [pagePreviewUrls, setPagePreviewUrls] = useState<string[]>([])
   const [cutShapes, setCutShapes] = useState<CutShape[]>([])
   const [shapesBusy, setShapesBusy] = useState(false)
   const previewGen = useRef(0)
   const contourRefreshGen = useRef(0)
 
   const mediaWidthIn = product === 'uv-dtf' ? UV_DTF_MEDIA_WIDTH_IN : vinylWidthIn
+  const mediaHeightIn = product === 'uv-dtf' ? uvLengthIn : vinylLengthIn
   const maxStickerWidthIn = mediaWidthIn
   const howToSteps = howToStepsFor(product)
   const productLabel = PRODUCT_MODES.find((mode) => mode.value === product)?.label ?? 'Sticker Maker'
+  const paginateVinyl = product === 'vinyl'
 
   function selectProduct(next: StickerProduct) {
     setProduct(next)
-    if (next === 'uv-dtf') {
-      // Width is fixed; keep the current length.
-      return
+    setActivePageIndex(0)
+    if (next === 'vinyl') {
+      setVinylWidthIn((current) => clampVinylWidth(current < MIN_VINYL_WIDTH_IN ? DEFAULT_VINYL_WIDTH_IN : current))
+      setVinylLengthIn((current) =>
+        clampVinylLength(current < MIN_VINYL_LENGTH_IN ? DEFAULT_VINYL_LENGTH_IN : current),
+      )
     }
-    setVinylWidthIn((current) => clampVinylWidth(current || DEFAULT_VINYL_WIDTH_IN))
+  }
+
+  function revokePagePreviewUrls(urls: string[]) {
+    for (const url of urls) URL.revokeObjectURL(url)
   }
 
   async function addFiles(list: FileList | File[]) {
@@ -296,21 +319,47 @@ export default function StickerMakerPage() {
     heightIn: getDesignHeight(design),
     allowRotate: !design.keepUpright,
   }))
-  const packWidthIn = Math.max(MIN_MEDIA_IN, mediaWidthIn - MARK_CLEARANCE_IN * 2)
+  const packWidthIn = Math.max(1, mediaWidthIn - MARK_CLEARANCE_IN * 2)
+  const packOpts = {
+    packWidthIn,
+    startYIn: CUT_ART_START_IN,
+    sideInsetIn: MARK_CLEARANCE_IN,
+    minGutterIn: CUT_GUTTER_IN,
+  }
   const uprightLayout = packSheetBestGutter(pieceInputs, {
     packWidthIn,
     startYIn: ART_INSET_IN,
     rotatePolicy: 'none' as const,
   })
-  const sheetLayout = packSheetBestGutter(pieceInputs, {
-    packWidthIn,
-    startYIn: CUT_ART_START_IN,
-    sideInsetIn: MARK_CLEARANCE_IN,
-    minGutterIn: CUT_GUTTER_IN,
-  })
-  const contentHeightIn = Math.max(0, sheetLayout.contentEndY - CUT_ART_START_IN)
-  const printHeight = Math.max(mediaHeightIn, sheetLayout.contentEndY + CUT_ART_START_IN)
-  const pageOverflow = contentHeightIn + CUT_ART_START_IN * 2 > mediaHeightIn + 1e-6
+
+  const vinylPacked = paginateVinyl
+    ? packSheetIntoPages(pieceInputs, { ...packOpts, pageHeightIn: mediaHeightIn })
+    : null
+  const uvLayout = paginateVinyl
+    ? null
+    : packSheetBestGutter(pieceInputs, packOpts)
+
+  const pageLayouts = paginateVinyl
+    ? vinylPacked!.pages
+    : uvLayout && uvLayout.pieces.length > 0
+      ? [uvLayout]
+      : []
+  const tooLargePieces = vinylPacked?.tooLarge ?? []
+  const pageCount = Math.max(1, pageLayouts.length)
+  const safePageIndex = Math.min(activePageIndex, Math.max(0, pageLayouts.length - 1))
+  const sheetLayout = pageLayouts[safePageIndex] ?? {
+    pieces: [] as PlacedSheetPiece[],
+    unplaced: [],
+    contentBottom: CUT_ART_START_IN,
+    contentEndY: CUT_ART_START_IN,
+    gutterIn: CUT_GUTTER_IN,
+    rotatedCount: 0,
+  }
+
+  /** Vinyl keeps the chosen media size; UV DTF roll can grow in length. */
+  const printHeight = paginateVinyl
+    ? mediaHeightIn
+    : Math.max(mediaHeightIn, (uvLayout?.contentEndY ?? CUT_ART_START_IN) + CUT_ART_START_IN)
   const cutMarkRects = registrationMarkRects(printHeight, mediaWidthIn, sheetLayout.pieces)
   const cutMarks = registrationMarkBounds(printHeight, mediaWidthIn, sheetLayout.pieces)
   const startArrow = cutMarks.find((mark) => mark.first)
@@ -323,10 +372,10 @@ export default function StickerMakerPage() {
     widthIn: piece.widthIn,
     heightIn: piece.heightIn,
   }))
-  const rotatedCount = sheetLayout.rotatedCount
-  const filmSavedIn = Math.max(0, uprightLayout.contentBottom - sheetLayout.contentBottom)
+  const rotatedCount = pageLayouts.reduce((sum, page) => sum + page.rotatedCount, 0)
+  const filmSavedIn = Math.max(0, uprightLayout.contentBottom - (uvLayout?.contentBottom ?? uprightLayout.contentBottom))
   const rotateSaveMessage =
-    rotatedCount > 0 && filmSavedIn > 0.05
+    !paginateVinyl && rotatedCount > 0 && filmSavedIn > 0.05
       ? `Turned ${rotatedCount} design${rotatedCount === 1 ? '' : 's'} a quarter turn to fit more across — saves ${filmSavedIn.toFixed(1)} in of film.`
       : null
   const layoutKey =
@@ -347,14 +396,23 @@ export default function StickerMakerPage() {
       .join('|') + `|product:${product}|cut:${cutMode}|media:${mediaWidthIn}x${mediaHeightIn}`
   const sheetLabelText = mediaLabel(mediaWidthIn, billedLength)
   const fillPercent =
-    mediaHeightIn > 0 ? Math.min(100, Math.round((printHeight / mediaHeightIn) * 100)) : 0
+    mediaHeightIn > 0
+      ? Math.min(100, Math.round((sheetLayout.contentBottom / mediaHeightIn) * 100))
+      : 0
   const sheetFillMessage =
     designs.length === 0
       ? null
-      : pageOverflow
-        ? `Art needs ${printHeight.toFixed(1)} in — taller than the ${mediaHeightIn} in media. Sheet length grew to fit.`
-        : `Media is ${fillPercent}% used (${printHeight.toFixed(1)} of ${mediaHeightIn} in)`
+      : tooLargePieces.length > 0
+        ? `${tooLargePieces.length} sticker${tooLargePieces.length === 1 ? '' : 's'} too large for ${sheetLabelText} media. Shrink the sticker or enlarge media.`
+        : paginateVinyl
+          ? pageCount > 1
+            ? `${pageCount} pages at ${sheetLabelText} (media size stays fixed — overflow becomes the next page).`
+            : `Page 1 of 1 · ${sheetLabelText}`
+          : printHeight > mediaHeightIn + 1e-6
+            ? `Art needs ${printHeight.toFixed(1)} in — UV DTF length grew to fit.`
+            : `Media is ${fillPercent}% used (${printHeight.toFixed(1)} of ${mediaHeightIn} in)`
   const sheetName = customerName.trim() || 'Sticker Maker'
+  const sheetPreviewUrl = pagePreviewUrls[safePageIndex] ?? null
   const currentGuideStep = !customerName.trim() ? 1 : designs.length === 0 ? 2 : !previewing && !built ? 3 : 4
 
   const updateDesign = (id: number, patch: Partial<Design>) =>
@@ -447,18 +505,28 @@ export default function StickerMakerPage() {
     setSheetPreviewOpen(false)
     setJobStamp('')
     setBuilt(false)
-    setSheetPreviewUrl((url) => {
-      if (url) URL.revokeObjectURL(url)
-      return null
+    setActivePageIndex(0)
+    setPagePreviewUrls((urls) => {
+      revokePagePreviewUrls(urls)
+      return []
     })
   }, [layoutKey, customerName])
+
+  useEffect(() => {
+    if (activePageIndex > pageLayouts.length - 1) {
+      setActivePageIndex(Math.max(0, pageLayouts.length - 1))
+    }
+  }, [activePageIndex, pageLayouts.length])
 
   function sheetPxPerIn(maxEdge: number, preferred: number) {
     return Math.max(24, Math.min(preferred, Math.floor(maxEdge / Math.max(printHeight, mediaWidthIn))))
   }
 
-  async function refreshCutShapes(offsetIn = contourOffsetIn) {
-    if (sheetLayout.pieces.length === 0) {
+  async function refreshCutShapes(
+    offsetIn = contourOffsetIn,
+    pieces: PlacedSheetPiece[] = sheetLayout.pieces,
+  ) {
+    if (pieces.length === 0) {
       setCutShapes([])
       return []
     }
@@ -466,7 +534,7 @@ export default function StickerMakerPage() {
     setShapesBusy(true)
     try {
       const shapes = await buildCutShapes(
-        sheetLayout.pieces,
+        pieces,
         cutMode,
         mediaWidthIn,
         printHeight,
@@ -486,42 +554,79 @@ export default function StickerMakerPage() {
     if (cutMode === 'contour') void refreshCutShapes(next)
   }
 
-  async function composeCurrentSheet(pxPerIn: number, label: string, mapCmyk = false) {
-    if (sheetLayout.pieces.length === 0) throw new Error('Add a design before previewing the sheet.')
+  async function composePageSheet(
+    pieces: PlacedSheetPiece[],
+    pxPerIn: number,
+    label: string,
+    mapCmyk = false,
+  ) {
+    if (pieces.length === 0) throw new Error('Add a design before previewing the sheet.')
+    const marks = registrationMarkRects(printHeight, mediaWidthIn, pieces)
+    const markBounds = registrationMarkBounds(printHeight, mediaWidthIn, pieces)
+    const first = markBounds.find((mark) => mark.first)
     return composeGangSheet({
-      pieces: sheetLayout.pieces,
+      pieces,
       sheetLengthIn: printHeight,
       sheetWidthIn: mediaWidthIn,
       pxPerIn,
       label,
       mapCmyk,
-      marks: cutMarkRects,
-      startArrow: startArrowPoints,
+      marks,
+      startArrow: first ? startMarkArrowPoints(first) : [],
     })
   }
 
   async function previewStickerSheet() {
     if (!customerName.trim() || designs.length === 0 || previewBusy || saving) return
-    if (sheetPreviewUrl && previewing) {
+    if (tooLargePieces.length > 0) {
+      setSaveError(
+        `${tooLargePieces.length} sticker${tooLargePieces.length === 1 ? '' : 's'} do not fit the ${sheetLabelText} media. Reduce sticker size or increase media size.`,
+      )
+      return
+    }
+    if (pageLayouts.length === 0) {
+      setSaveError('Add a design before previewing the sheet.')
+      return
+    }
+    if (pagePreviewUrls.length > 0 && previewing) {
       setSheetPreviewOpen(true)
       return
     }
     const stamp = sheetStamp()
-    const label = sheetJobName(customerName.trim(), billedLength, stamp)
     setJobStamp(stamp)
     const gen = ++previewGen.current
     setPreviewBusy(true)
     setSaveError(null)
     setBuilt(false)
     try {
-      await refreshCutShapes()
-      if (gen !== previewGen.current) return
-      const blob = await composeCurrentSheet(sheetPxPerIn(3600, 72), label)
-      if (gen !== previewGen.current) return
-      setSheetPreviewUrl((url) => {
-        if (url) URL.revokeObjectURL(url)
-        return URL.createObjectURL(blob)
+      const urls: string[] = []
+      for (let i = 0; i < pageLayouts.length; i += 1) {
+        const pageNumber = i + 1
+        const label =
+          sheetJobName(customerName.trim(), billedLength, stamp) +
+          pageFileSuffix(pageNumber, pageLayouts.length)
+        const blob = await composePageSheet(
+          pageLayouts[i].pieces,
+          sheetPxPerIn(3600, 72),
+          label,
+        )
+        if (gen !== previewGen.current) {
+          revokePagePreviewUrls(urls)
+          return
+        }
+        urls.push(URL.createObjectURL(blob))
+      }
+      if (gen !== previewGen.current) {
+        revokePagePreviewUrls(urls)
+        return
+      }
+      setPagePreviewUrls((prev) => {
+        revokePagePreviewUrls(prev)
+        return urls
       })
+      setActivePageIndex(0)
+      await refreshCutShapes(contourOffsetIn, pageLayouts[0].pieces)
+      if (gen !== previewGen.current) return
       setPreviewing(true)
       setSheetPreviewOpen(true)
     } catch (err) {
@@ -532,28 +637,70 @@ export default function StickerMakerPage() {
     }
   }
 
+  async function selectPreviewPage(index: number) {
+    setActivePageIndex(index)
+    const page = pageLayouts[index]
+    if (page) await refreshCutShapes(contourOffsetIn, page.pieces)
+  }
+
   async function buildAndStore() {
     if (!customerName.trim() || designs.length === 0 || saving || !previewing) return
+    if (tooLargePieces.length > 0 || pageLayouts.length === 0) return
     setSaving(true)
     setSaveError(null)
     setDriveFolderUrl(null)
     try {
       const stamp = jobStamp || sheetStamp()
-      const label = sheetJobName(customerName.trim(), billedLength, stamp)
-      const fileName = sheetFileName(customerName.trim(), billedLength, stamp)
-      const shapes = await refreshCutShapes()
-      const png = await composeCurrentSheet(sheetPxPerIn(14000, 150), label, true)
-      downloadBlob(png, fileName)
-      const plt = cutPltForShapes(shapes, printHeight, mediaWidthIn, sheetLayout.pieces)
-      if (!plt) throw new Error('Could not build the cutter PLT for this sheet.')
-      const cutName = sheetCutFileName(customerName.trim(), billedLength, stamp)
-      await wait(200)
-      downloadBlob(new Blob([plt], { type: 'text/plain' }), cutName)
+      const pngFiles: Array<{ name: string; mimeType: string; blob: Blob }> = []
+      const pltFiles: Array<{ name: string; content: string }> = []
+
+      for (let i = 0; i < pageLayouts.length; i += 1) {
+        const pageNumber = i + 1
+        const suffix = pageFileSuffix(pageNumber, pageLayouts.length)
+        const label = sheetJobName(customerName.trim(), billedLength, stamp) + suffix
+        const fileName = sheetFileName(customerName.trim(), billedLength, stamp).replace(
+          /\.png$/i,
+          `${suffix}.png`,
+        )
+        const pieces = pageLayouts[i].pieces
+        const shapes = await buildCutShapes(
+          pieces,
+          cutMode,
+          mediaWidthIn,
+          printHeight,
+          cutMode === 'contour' ? contourOffsetIn : DEFAULT_CONTOUR_OFFSET_IN,
+        )
+        const png = await composePageSheet(pieces, sheetPxPerIn(14000, 150), label, true)
+        downloadBlob(png, fileName)
+        const plt = cutPltForShapes(shapes, printHeight, mediaWidthIn, pieces)
+        if (!plt) throw new Error(`Could not build the cutter PLT for page ${pageNumber}.`)
+        const cutName = sheetCutFileName(customerName.trim(), billedLength, stamp).replace(
+          / cut\.plt$/i,
+          `${suffix} cut.plt`,
+        )
+        await wait(200)
+        downloadBlob(new Blob([plt], { type: 'text/plain' }), cutName)
+        pngFiles.push({ name: fileName, mimeType: 'image/png', blob: png })
+        pltFiles.push({ name: cutName, content: plt })
+      }
+
+      const [firstPlt, ...otherPlts] = pltFiles
       const drive = await uploadJobToGoogleDrive({
         customerName: customerName.trim(),
         stamp,
-        files: [{ name: fileName, mimeType: 'image/png', blob: png }],
-        cutterFile: { name: cutName, content: plt, mimeType: 'text/plain' },
+        files: [
+          ...pngFiles,
+          ...otherPlts.map((file) => ({
+            name: file.name,
+            mimeType: 'text/plain',
+            blob: new Blob([file.content], { type: 'text/plain' }),
+          })),
+        ],
+        cutterFile: {
+          name: firstPlt.name,
+          content: firstPlt.content,
+          mimeType: 'text/plain',
+        },
       })
       setDriveFolderUrl(drive.folderUrl)
       setBuilt(true)
@@ -901,9 +1048,13 @@ export default function StickerMakerPage() {
           {sheetPreviewOpen && sheetPreviewUrl && (
             <SheetPreviewModal
               url={sheetPreviewUrl}
-              sheetLabel={sheetLabelText}
+              sheetLabel={
+                pageLayouts.length > 1
+                  ? `${sheetLabelText} · Page ${safePageIndex + 1} of ${pageLayouts.length}`
+                  : sheetLabelText
+              }
               sheetLengthIn={billedLength}
-              totalTransfers={totalTransfers}
+              totalTransfers={sheetLayout.pieces.length}
               saving={saving}
               onClose={() => setSheetPreviewOpen(false)}
               onConfirm={() => void buildAndStore()}
@@ -919,7 +1070,11 @@ export default function StickerMakerPage() {
               contourOffsetIn={contourOffsetIn}
               contourOffsetBusy={shapesBusy}
               onContourOffsetChange={handleContourOffsetChange}
-              confirmLabel="Confirm & Build Stickers"
+              confirmLabel={
+                pageLayouts.length > 1
+                  ? `Confirm & Build ${pageLayouts.length} Pages`
+                  : 'Confirm & Build Stickers'
+              }
             />
           )}
         </section>
@@ -934,7 +1089,7 @@ export default function StickerMakerPage() {
               <p className="order-hint">
                 {product === 'uv-dtf'
                   ? 'UV DTF media is 22 in wide. Set the length, pick how we cut, then build.'
-                  : 'Set vinyl width and length, pick how we cut, then build.'}
+                  : 'Vinyl media stays at the size you set (min 8 × 11 in). Overflow becomes page 2, 3…'}
               </p>
             </div>
           </div>
@@ -948,7 +1103,7 @@ export default function StickerMakerPage() {
                 Width (in)
                 <input
                   type="number"
-                  min={product === 'uv-dtf' ? UV_DTF_MEDIA_WIDTH_IN : MIN_MEDIA_IN}
+                  min={product === 'uv-dtf' ? UV_DTF_MEDIA_WIDTH_IN : MIN_VINYL_WIDTH_IN}
                   max={product === 'uv-dtf' ? UV_DTF_MEDIA_WIDTH_IN : MAX_VINYL_MEDIA_WIDTH_IN}
                   step="0.25"
                   value={mediaWidthIn}
@@ -956,7 +1111,7 @@ export default function StickerMakerPage() {
                   readOnly={product === 'uv-dtf'}
                   onChange={(e) => {
                     if (product !== 'vinyl') return
-                    setVinylWidthIn(clampVinylWidth(Number(e.target.value) || MIN_MEDIA_IN))
+                    setVinylWidthIn(clampVinylWidth(Number(e.target.value) || MIN_VINYL_WIDTH_IN))
                   }}
                 />
               </label>
@@ -964,18 +1119,22 @@ export default function StickerMakerPage() {
                 Length (in)
                 <input
                   type="number"
-                  min={MIN_MEDIA_IN}
+                  min={product === 'uv-dtf' ? MIN_UV_LENGTH_IN : MIN_VINYL_LENGTH_IN}
                   max={MAX_MEDIA_HEIGHT_IN}
                   step="0.25"
                   value={mediaHeightIn}
-                  onChange={(e) => setMediaHeightIn(clampMediaHeight(Number(e.target.value) || MIN_MEDIA_IN))}
+                  onChange={(e) => {
+                    const raw = Number(e.target.value) || 0
+                    if (product === 'vinyl') setVinylLengthIn(clampVinylLength(raw || MIN_VINYL_LENGTH_IN))
+                    else setUvLengthIn(clampUvLength(raw || MIN_UV_LENGTH_IN))
+                  }}
                 />
               </label>
             </div>
             <small>
               {product === 'uv-dtf'
                 ? 'Width is fixed at 22 in for UV DTF stickers. Length grows automatically if stickers need more film.'
-                : `Customize vinyl width (up to ${MAX_VINYL_MEDIA_WIDTH_IN} in) and length. Length grows if stickers need more media.`}
+                : `Min ${MIN_VINYL_WIDTH_IN} × ${MIN_VINYL_LENGTH_IN} in. Media size never grows — extra stickers become page 2, 3, 4…`}
             </small>
           </div>
 
@@ -1017,6 +1176,12 @@ export default function StickerMakerPage() {
             <Metric label="Product" value={product === 'uv-dtf' ? 'UV DTF' : 'Vinyl'} icon={<Sticker size={22} />} green />
             <Metric label="Media size" value={sheetLabelText} icon={<Maximize2 size={21} />} green />
             <Metric
+              label="Pages"
+              value={pageLayouts.length || (designs.length ? 0 : 1)}
+              icon={<FileImage size={22} />}
+              green
+            />
+            <Metric
               label="Cut type"
               value={CUT_MODES.find((mode) => mode.value === cutMode)?.label ?? cutMode}
               icon={<Scissors size={22} />}
@@ -1025,7 +1190,8 @@ export default function StickerMakerPage() {
             <div className="price-breakdown">
               <strong>{sheetName}</strong>
               <span>
-                {productLabel} · {sheetLabelText} · {cutMode} cut
+                {productLabel} · {sheetLabelText}
+                {pageLayouts.length > 1 ? ` · ${pageLayouts.length} pages` : ''} · {cutMode} cut
               </span>
               {shapesBusy && <span>Tracing cut paths…</span>}
             </div>
@@ -1037,10 +1203,28 @@ export default function StickerMakerPage() {
           {sheetFillMessage && (
             <p className="sheet-fill-readout" aria-live="polite">
               {sheetFillMessage}
-              <span className="sheet-fill-bar" aria-hidden="true">
-                <span style={{ width: `${fillPercent}%` }} />
-              </span>
+              {!paginateVinyl && (
+                <span className="sheet-fill-bar" aria-hidden="true">
+                  <span style={{ width: `${fillPercent}%` }} />
+                </span>
+              )}
             </p>
+          )}
+          {pageLayouts.length > 1 && (
+            <div className="sticker-page-tabs" role="tablist" aria-label="Sticker pages">
+              {pageLayouts.map((_, index) => (
+                <button
+                  key={`page-${index + 1}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={safePageIndex === index}
+                  className={`sticker-page-tab ${safePageIndex === index ? 'selected' : ''}`}
+                  onClick={() => void selectPreviewPage(index)}
+                >
+                  Page {index + 1}
+                </button>
+              ))}
+            </div>
           )}
           <div className="sheet-preview">
             <span className="dimension horizontal">{mediaWidthIn} in</span>
@@ -1051,7 +1235,15 @@ export default function StickerMakerPage() {
                 onClick={() => setSheetPreviewOpen(true)}
               >
                 <span className="sheet-final-preview-wrap">
-                  <img className="sheet-final-preview" src={sheetPreviewUrl} alt="Sticker sheet preview" />
+                  <img
+                    className="sheet-final-preview"
+                    src={sheetPreviewUrl}
+                    alt={
+                      pageLayouts.length > 1
+                        ? `Sticker sheet page ${safePageIndex + 1} preview`
+                        : 'Sticker sheet preview'
+                    }
+                  />
                   <CutShapeOverlay
                     shapes={cutShapes}
                     marks={cutMarks}
@@ -1068,14 +1260,30 @@ export default function StickerMakerPage() {
             <span className="dimension vertical">{billedLength} in</span>
             <button
               className="build-button"
-              disabled={previewBusy || saving || designs.length === 0 || !customerName.trim()}
+              disabled={
+                previewBusy ||
+                saving ||
+                designs.length === 0 ||
+                !customerName.trim() ||
+                tooLargePieces.length > 0
+              }
               onClick={() => void previewStickerSheet()}
             >
-              <Eye size={18} /> {previewBusy ? 'Building preview…' : 'Preview Sticker Sheet'}
+              <Eye size={18} />{' '}
+              {previewBusy
+                ? 'Building preview…'
+                : pageLayouts.length > 1
+                  ? `Preview ${pageLayouts.length} Pages`
+                  : 'Preview Sticker Sheet'}
             </button>
-            {previewing && sheetPreviewUrl && (
+            {previewing && pagePreviewUrls.length > 0 && (
               <button className="confirm-button" disabled={saving || shapesBusy} onClick={() => void buildAndStore()}>
-                <Check size={18} /> {saving ? 'Saving to Drive…' : 'Confirm & Build Stickers'}
+                <Check size={18} />{' '}
+                {saving
+                  ? 'Saving to Drive…'
+                  : pageLayouts.length > 1
+                    ? `Confirm & Build ${pageLayouts.length} Pages`
+                    : 'Confirm & Build Stickers'}
               </button>
             )}
             {saveError && <p className="save-error">{saveError}</p>}
@@ -1090,7 +1298,9 @@ export default function StickerMakerPage() {
                 <strong>Your sticker sheet is built.</strong>
               </div>
               <p>
-                {sheetLabelText} · {totalTransfers} pieces · {cutMode} cut · Ready
+                {sheetLabelText}
+                {pageLayouts.length > 1 ? ` · ${pageLayouts.length} pages` : ''} · {totalTransfers} pieces ·{' '}
+                {cutMode} cut · Ready
               </p>
               {driveFolderUrl && (
                 <a className="drive-link" href={driveFolderUrl} target="_blank" rel="noreferrer">

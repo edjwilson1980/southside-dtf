@@ -119,6 +119,11 @@ export type PackSheetOptions = {
   startYIn?: number
   sideInsetIn?: number
   /**
+   * When set, packing stays inside this sheet height (from y=0). Pieces that
+   * cannot fit are left unplaced so the caller can put them on the next page.
+   */
+  packHeightIn?: number
+  /**
    * How hard to try turning designs a quarter turn.
    *
    *   none — everything stays upright
@@ -200,6 +205,7 @@ export function packSheetPieces<T extends PackItem>(
   opts: PackSheetOptions,
 ): {
   pieces: Array<T & { xIn: number; yIn: number; rotated: boolean }>
+  unplaced: T[]
   contentBottom: number
   contentEndY: number
   gutterIn: number
@@ -213,10 +219,14 @@ export function packSheetPieces<T extends PackItem>(
   // one gutter wider than the usable width.
   const stripWidth = opts.packWidthIn + gutterIn
   const totalHeight = items.reduce((sum, item) => sum + Math.max(item.widthIn, item.heightIn) + gutterIn, 0)
-  const openHeight = totalHeight + startYIn + 1
+  const openHeight =
+    opts.packHeightIn && opts.packHeightIn > startYIn
+      ? Math.max(0, opts.packHeightIn - startYIn)
+      : totalHeight + startYIn + 1
 
   let free: FreeRect[] = [{ xIn: 0, yIn: startYIn, widthIn: stripWidth, heightIn: openHeight }]
   const placed: Array<T & { xIn: number; yIn: number; rotated: boolean }> = []
+  const unplaced: T[] = []
 
   const canTurn = (item: PackItem) =>
     policy !== 'none' &&
@@ -272,7 +282,10 @@ export function packSheetPieces<T extends PackItem>(
       }
     }
 
-    if (!bestRect) continue
+    if (!bestRect) {
+      unplaced.push(item)
+      continue
+    }
 
     const boxWidth = Math.min(bestOrientation.widthIn, opts.packWidthIn) + gutterIn
     const boxHeight = bestOrientation.heightIn + gutterIn
@@ -290,7 +303,14 @@ export function packSheetPieces<T extends PackItem>(
   }
 
   const contentBottom = placed.reduce((max, piece) => Math.max(max, piece.yIn + piece.heightIn), startYIn)
-  return { pieces: placed, contentBottom, contentEndY: contentBottom + gutterIn, gutterIn, rotatedCount }
+  return {
+    pieces: placed,
+    unplaced,
+    contentBottom,
+    contentEndY: contentBottom + gutterIn,
+    gutterIn,
+    rotatedCount,
+  }
 }
 
 /**
@@ -320,6 +340,12 @@ export function packSheetBestGutter<T extends PackItem>(
         best = candidate
         continue
       }
+      // Prefer layouts that place more pieces (fixed-page packing).
+      if (candidate.pieces.length > best.pieces.length) {
+        best = candidate
+        continue
+      }
+      if (candidate.pieces.length < best.pieces.length) continue
       if (candidate.contentBottom < best.contentBottom - EPS) best = candidate
       // Same length: prefer the layout that turned fewer designs.
       else if (
@@ -331,6 +357,41 @@ export function packSheetBestGutter<T extends PackItem>(
     }
   }
   return best as ReturnType<typeof packSheetPieces<T>>
+}
+
+/**
+ * Pack designs onto fixed-size pages. Media size never grows — leftovers go to
+ * page 2, 3, … until everything is placed or a piece is too large for one page.
+ */
+export function packSheetIntoPages<T extends PackItem>(
+  items: T[],
+  opts: Omit<PackSheetOptions, 'gutterIn' | 'packHeightIn'> & {
+    minGutterIn?: number
+    pageHeightIn: number
+  },
+): {
+  pages: Array<ReturnType<typeof packSheetPieces<T>>>
+  tooLarge: T[]
+} {
+  const pages: Array<ReturnType<typeof packSheetPieces<T>>> = []
+  const tooLarge: T[] = []
+  let remaining = items
+  let guard = 0
+  while (remaining.length > 0 && guard < 100) {
+    guard += 1
+    const layout = packSheetBestGutter(remaining, {
+      ...opts,
+      packHeightIn: opts.pageHeightIn,
+    })
+    if (layout.pieces.length === 0) {
+      // Nothing fits on an empty page — those pieces are too large for the media.
+      tooLarge.push(...layout.unplaced)
+      break
+    }
+    pages.push(layout)
+    remaining = layout.unplaced
+  }
+  return { pages, tooLarge }
 }
 
 function fillMarkCircle(
