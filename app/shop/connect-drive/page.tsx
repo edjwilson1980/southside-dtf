@@ -43,6 +43,9 @@ export default function ConnectDrivePage() {
         <a className="shop-nav-link" href="/shop">
           Shop builder
         </a>
+        <a className="shop-nav-link" href="/shop/custom-cut">
+          Custom cut
+        </a>
         <a className="shop-nav-link" href="/shop/cutter-test">
           Cutter test
         </a>

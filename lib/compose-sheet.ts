@@ -397,13 +397,16 @@ function fillStartArrow(
 export async function composeGangSheet(opts: {
   pieces: PlacedSheetPiece[]
   sheetLengthIn: number
+  /** Defaults to the roll printable width. Custom-cut jobs pass a page width. */
+  sheetWidthIn?: number
   pxPerIn: number
   label?: string
   mapCmyk?: boolean
   marks?: Array<{ xIn: number; yIn: number; widthIn: number; heightIn: number; color?: string }>
   startArrow?: Array<{ xIn: number; yIn: number }>
 }) {
-  const width = Math.max(1, Math.round(SHEET_WIDTH_IN * opts.pxPerIn))
+  const sheetWidthIn = opts.sheetWidthIn && opts.sheetWidthIn > 0 ? opts.sheetWidthIn : SHEET_WIDTH_IN
+  const width = Math.max(1, Math.round(sheetWidthIn * opts.pxPerIn))
   const height = Math.max(1, Math.round(opts.sheetLengthIn * opts.pxPerIn))
   const canvas = document.createElement('canvas')
   canvas.width = width
@@ -474,5 +477,5 @@ export async function composeGangSheet(opts: {
     fillStartArrow(context, opts.startArrow, opts.pxPerIn)
   }
 
-  return canvasToPngBlob(canvas, width / SHEET_WIDTH_IN)
+  return canvasToPngBlob(canvas, width / sheetWidthIn)
 }

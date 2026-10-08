@@ -1075,3 +1075,47 @@ button.thumb:disabled { cursor: default; }
   line-height: 1.4;
 }
 .build-fee-warning strong { font-weight: 800; }
+
+/* Staff custom-cut product */
+.custom-cut-page-size,
+.custom-cut-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.custom-cut-size-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.custom-cut-size-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.custom-cut-size-fields input {
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--input);
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+}
+.custom-cut-modes .precut-button { width: 100%; text-align: left; }
+.cut-preview-shape {
+  fill: none;
+  stroke: #ff1a1a;
+  stroke-width: 0.04;
+  vector-effect: non-scaling-stroke;
+}
+.cut-preview-shape-circle { stroke-dasharray: 0.12 0.08; }
+.cut-preview-shape-contour { stroke: #ff4d00; }
+.shop-nav-link[aria-current="page"] {
+  border-color: var(--chicago-blue);
+  background: #eaf7fc;
+  color: var(--chicago-blue);
+}
