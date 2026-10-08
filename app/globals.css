@@ -1076,20 +1076,20 @@ button.thumb:disabled { cursor: default; }
 }
 .build-fee-warning strong { font-weight: 800; }
 
-/* Staff custom-cut product */
-.custom-cut-page-size,
-.custom-cut-modes {
+/* Staff Sticker Maker */
+.sticker-media-size,
+.sticker-cut-modes {
   display: flex;
   flex-direction: column;
   gap: 10px;
   margin-bottom: 14px;
 }
-.custom-cut-size-fields {
+.sticker-size-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
-.custom-cut-size-fields label {
+.sticker-size-fields label {
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -1097,7 +1097,7 @@ button.thumb:disabled { cursor: default; }
   font-size: 12px;
   font-weight: 700;
 }
-.custom-cut-size-fields input {
+.sticker-size-fields input {
   height: 40px;
   padding: 0 10px;
   border: 1px solid var(--input);
@@ -1105,7 +1105,7 @@ button.thumb:disabled { cursor: default; }
   background: #fff;
   font: inherit;
 }
-.custom-cut-modes .precut-button { width: 100%; text-align: left; }
+.sticker-cut-modes .precut-button { width: 100%; text-align: left; }
 .cut-preview-shape {
   fill: none;
   stroke: #ff1a1a;

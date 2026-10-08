@@ -1,12 +1,12 @@
 'use client'
 
 type ShopNavProps = {
-  current?: 'shop' | 'custom-cut' | 'halftone' | 'cutter-test' | 'connect-drive' | 'customer'
+  current?: 'shop' | 'sticker-maker' | 'halftone' | 'cutter-test' | 'connect-drive' | 'customer'
 }
 
 const LINKS: { href: string; label: string; key: NonNullable<ShopNavProps['current']> }[] = [
   { href: '/shop', label: 'Shop builder', key: 'shop' },
-  { href: '/shop/custom-cut', label: 'Custom cut', key: 'custom-cut' },
+  { href: '/shop/sticker-maker', label: 'Sticker Maker', key: 'sticker-maker' },
   { href: '/shop/halftone', label: 'Halftone generator', key: 'halftone' },
   { href: '/shop/cutter-test', label: 'Cutter test', key: 'cutter-test' },
   { href: '/shop/connect-drive', label: 'Connect Drive', key: 'connect-drive' },

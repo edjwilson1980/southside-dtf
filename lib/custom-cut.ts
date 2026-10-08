@@ -1,5 +1,5 @@
 /**
- * Cut shapes for the staff Custom Cut product: rectangular box, circle, or
+ * Cut shapes for the staff Sticker Maker: rectangular box, circle, or
  * silhouette contour around the artwork. PLT generation reuses the Teneth
  * mark-row / section structure from cut-layout.
  */

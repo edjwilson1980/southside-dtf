@@ -37,7 +37,7 @@ type SheetPreviewModalProps = {
   cutBoxes?: CutBox[]
   cutMarks?: Array<CutBox & { first?: boolean }>
   printHeightIn?: number
-  /** Defaults to roll printable width; custom-cut jobs pass a page width. */
+  /** Defaults to roll printable width; sticker-maker jobs pass a media width. */
   sheetWidthIn?: number
   /** customer = public builder; shop = production tools with cutter loading notes */
   audience?: 'customer' | 'shop'
