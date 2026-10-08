@@ -1145,6 +1145,51 @@ button.thumb:disabled { cursor: default; }
   font: inherit;
 }
 .sticker-cut-modes .precut-button { width: 100%; text-align: left; }
+
+.contour-offset-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding: 6px 10px;
+  border: 1px solid var(--line, #d7dee7);
+  border-radius: 10px;
+  background: #fff8f4;
+}
+.contour-offset-controls strong {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.contour-offset-controls button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--input, #cbd5e1);
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.contour-offset-controls button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.contour-offset-controls input[type="range"] {
+  width: 120px;
+  accent-color: #ff4d00;
+}
+.contour-offset-readout {
+  min-width: 4.5rem;
+  font-size: 12px;
+  font-weight: 800;
+  color: #c2410c;
+  font-variant-numeric: tabular-nums;
+}
 .cut-preview-shape {
   fill: none;
   stroke: #ff1a1a;

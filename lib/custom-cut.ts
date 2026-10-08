@@ -45,8 +45,18 @@ export type CutShape = {
 
 const EPS = 1e-6
 const CIRCLE_SEGMENTS = 48
-/** How far outside the alpha the contour sits (matches box margin feel). */
-const CONTOUR_OFFSET_IN = CUT_MARGIN_IN
+/** Default how far outside the alpha the contour sits (matches box margin feel). */
+export const DEFAULT_CONTOUR_OFFSET_IN = CUT_MARGIN_IN
+/** Tightest allowed inset (negative = cut into the artwork). */
+export const MIN_CONTOUR_OFFSET_IN = -0.1
+/** Widest allowed expand around the object. */
+export const MAX_CONTOUR_OFFSET_IN = 0.5
+export const CONTOUR_OFFSET_STEP_IN = 0.025
+
+export function clampContourOffsetIn(value: number) {
+  if (!Number.isFinite(value)) return DEFAULT_CONTOUR_OFFSET_IN
+  return Math.min(MAX_CONTOUR_OFFSET_IN, Math.max(MIN_CONTOUR_OFFSET_IN, value))
+}
 
 function toUnits(inches: number) {
   return Math.round(inches * PLT_UNITS_PER_IN)
@@ -104,6 +114,7 @@ async function contourPointsForPiece(
   piece: PlacedSheetPiece,
   sheetWidthIn: number,
   sheetHeightIn: number,
+  offsetIn: number,
 ): Promise<Array<{ xIn: number; yIn: number }>> {
   if (!piece.previewUrl) return boxPoints(cutBoxForPiece(piece, sheetWidthIn, sheetHeightIn))
 
@@ -190,8 +201,8 @@ async function contourPointsForPiece(
     const dy = py - cy
     const len = Math.hypot(dx, dy) || 1
     points.push({
-      xIn: px + (dx / len) * CONTOUR_OFFSET_IN,
-      yIn: py + (dy / len) * CONTOUR_OFFSET_IN,
+      xIn: px + (dx / len) * offsetIn,
+      yIn: py + (dy / len) * offsetIn,
     })
   }
   return points.length >= 3 ? points : boxPoints(cutBoxForPiece(piece, sheetWidthIn, sheetHeightIn))
@@ -202,7 +213,10 @@ export async function buildCutShapes(
   mode: CutMode,
   sheetWidthIn: number,
   sheetHeightIn: number,
+  /** Contour expand/contract in inches. Positive expands; negative contracts into the art. */
+  contourOffsetIn: number = DEFAULT_CONTOUR_OFFSET_IN,
 ): Promise<CutShape[]> {
+  const offsetIn = clampContourOffsetIn(contourOffsetIn)
   const shapes: CutShape[] = []
   for (const piece of pieces) {
     const box = cutBoxForPiece(piece, sheetWidthIn, sheetHeightIn)
@@ -227,7 +241,7 @@ export async function buildCutShapes(
       continue
     }
 
-    const points = await contourPointsForPiece(piece, sheetWidthIn, sheetHeightIn)
+    const points = await contourPointsForPiece(piece, sheetWidthIn, sheetHeightIn, offsetIn)
     let minX = Infinity
     let minY = Infinity
     let maxX = -Infinity

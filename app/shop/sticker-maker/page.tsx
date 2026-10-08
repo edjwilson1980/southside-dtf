@@ -27,7 +27,9 @@ import {
 } from '@/lib/cut-layout'
 import {
   CUT_MODES,
+  DEFAULT_CONTOUR_OFFSET_IN,
   buildCutShapes,
+  clampContourOffsetIn,
   cutPltForShapes,
   shapeTooTallForCutter,
   type CutMode,
@@ -164,12 +166,14 @@ export default function StickerMakerPage() {
   const [sheetPreviewOpen, setSheetPreviewOpen] = useState(false)
   const [jobStamp, setJobStamp] = useState('')
   const [cutMode, setCutMode] = useState<CutMode>('box')
+  const [contourOffsetIn, setContourOffsetIn] = useState(DEFAULT_CONTOUR_OFFSET_IN)
   const [product, setProduct] = useState<StickerProduct>('uv-dtf')
   const [vinylWidthIn, setVinylWidthIn] = useState(DEFAULT_VINYL_WIDTH_IN)
   const [mediaHeightIn, setMediaHeightIn] = useState(DEFAULT_MEDIA_HEIGHT_IN)
   const [cutShapes, setCutShapes] = useState<CutShape[]>([])
   const [shapesBusy, setShapesBusy] = useState(false)
   const previewGen = useRef(0)
+  const contourRefreshGen = useRef(0)
 
   const mediaWidthIn = product === 'uv-dtf' ? UV_DTF_MEDIA_WIDTH_IN : vinylWidthIn
   const maxStickerWidthIn = mediaWidthIn
@@ -453,19 +457,33 @@ export default function StickerMakerPage() {
     return Math.max(24, Math.min(preferred, Math.floor(maxEdge / Math.max(printHeight, mediaWidthIn))))
   }
 
-  async function refreshCutShapes() {
+  async function refreshCutShapes(offsetIn = contourOffsetIn) {
     if (sheetLayout.pieces.length === 0) {
       setCutShapes([])
       return []
     }
+    const gen = ++contourRefreshGen.current
     setShapesBusy(true)
     try {
-      const shapes = await buildCutShapes(sheetLayout.pieces, cutMode, mediaWidthIn, printHeight)
+      const shapes = await buildCutShapes(
+        sheetLayout.pieces,
+        cutMode,
+        mediaWidthIn,
+        printHeight,
+        cutMode === 'contour' ? offsetIn : DEFAULT_CONTOUR_OFFSET_IN,
+      )
+      if (gen !== contourRefreshGen.current) return shapes
       setCutShapes(shapes)
       return shapes
     } finally {
-      setShapesBusy(false)
+      if (gen === contourRefreshGen.current) setShapesBusy(false)
     }
+  }
+
+  function handleContourOffsetChange(nextInches: number) {
+    const next = clampContourOffsetIn(nextInches)
+    setContourOffsetIn(next)
+    if (cutMode === 'contour') void refreshCutShapes(next)
   }
 
   async function composeCurrentSheet(pxPerIn: number, label: string, mapCmyk = false) {
@@ -890,12 +908,18 @@ export default function StickerMakerPage() {
               onClose={() => setSheetPreviewOpen(false)}
               onConfirm={() => void buildAndStore()}
               cutBoxes={cutShapes.map((shape) => shape.bounds)}
+              cutShapes={cutShapes}
               cutMarks={cutMarks}
               printHeightIn={printHeight}
               sheetWidthIn={mediaWidthIn}
               cutOut
               audience="shop"
               layoutPieces={layoutPieces}
+              contourOffsetEnabled={cutMode === 'contour'}
+              contourOffsetIn={contourOffsetIn}
+              contourOffsetBusy={shapesBusy}
+              onContourOffsetChange={handleContourOffsetChange}
+              confirmLabel="Confirm & Build Stickers"
             />
           )}
         </section>
