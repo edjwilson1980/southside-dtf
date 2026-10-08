@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  Check, Copy, Download, Eye, FileImage, FolderOpen, Image as ImageIcon, Maximize2,
+  Check, Copy, Download, Eye, FileImage, FolderOpen, HardDrive, Image as ImageIcon, Maximize2,
   Minus, Plus, Replace, RotateCw, Save, Scissors, Sticker, Trash2, Upload,
 } from 'lucide-react'
 import { DesignInspector } from '@/components/design-inspector'
@@ -1099,6 +1099,38 @@ export default function StickerMakerPage() {
 
   return (
     <main className="builder-shell">
+      <div className="sticker-utility-bar" aria-label="Job actions">
+        <button
+          type="button"
+          className="sticker-job-btn"
+          onClick={() => reopenInputRef.current?.click()}
+        >
+          <FolderOpen size={16} /> Reopen Job
+        </button>
+        <button
+          type="button"
+          className="sticker-job-btn"
+          onClick={() => void exportArtForPhotoshop()}
+          disabled={designs.length === 0}
+        >
+          <Download size={16} /> Save to Photoshop
+        </button>
+        <a className="sticker-job-btn" href="/shop/connect-drive">
+          <HardDrive size={16} /> Connect to Google Drive
+        </a>
+        <input
+          ref={reopenInputRef}
+          className="sr-only"
+          type="file"
+          accept=".json,.ssp.json,application/json"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) void reopenJobFile(file)
+            e.target.value = ''
+          }}
+        />
+      </div>
+
       <div className="builder-topbar">
         <img src={logoUrl} alt="South Side DTF" className="brand-logo" />
         <div className="title-block">
@@ -1106,35 +1138,7 @@ export default function StickerMakerPage() {
           <p className="lead">UV DTF (22 × 12 in min) or vinyl (8 × 11 in min) — crop, size, cut, and export.</p>
           <p className="sublead">Crop and clean art, then export print PNG + cutter PLT (box, circle, or cut around object).</p>
         </div>
-        <div className="sticker-top-actions">
-          <button
-            type="button"
-            className="sticker-job-btn"
-            onClick={() => reopenInputRef.current?.click()}
-          >
-            <FolderOpen size={16} /> Reopen Job
-          </button>
-          <button
-            type="button"
-            className="sticker-job-btn"
-            onClick={() => void exportArtForPhotoshop()}
-            disabled={designs.length === 0}
-          >
-            <Download size={16} /> Export to Photoshop
-          </button>
-          <input
-            ref={reopenInputRef}
-            className="sr-only"
-            type="file"
-            accept=".json,.ssp.json,application/json"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) void reopenJobFile(file)
-              e.target.value = ''
-            }}
-          />
-          <ShopNav current="sticker-maker" />
-        </div>
+        <ShopNav current="sticker-maker" hideConnectDrive />
       </div>
 
       <div className="sticker-product-tabs" role="tablist" aria-label="Sticker product">
