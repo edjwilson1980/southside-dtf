@@ -77,20 +77,20 @@ const PRODUCT_MODES: {
   {
     value: 'uv-dtf',
     label: 'UV DTF stickers',
-    hint: 'Media width locks to 22 in. Set the length (height) for the sheet.',
+    hint: 'Width is always 22 in (never wider). Min / default length 12 in.',
   },
   {
     value: 'vinyl',
     label: 'Vinyl sticker maker',
-    hint: 'Customize media width and length (min 8 × 11 in). Overflow becomes page 2, 3…',
+    hint: 'Default / min 8 × 11 in. Overflow becomes page 2, 3…',
   },
 ]
 
 const DEFAULT_STICKER_W = '3'
 const DEFAULT_STICKER_H = '3'
-/** UV DTF sticker media is always 22 in wide. */
+/** UV DTF sticker media is always exactly 22 in wide — never exceed. */
 const UV_DTF_MEDIA_WIDTH_IN = 22
-const MIN_UV_LENGTH_IN = 4
+const MIN_UV_LENGTH_IN = 12
 const MIN_VINYL_WIDTH_IN = 8
 const MIN_VINYL_LENGTH_IN = 11
 const MAX_VINYL_MEDIA_WIDTH_IN = 48
@@ -98,7 +98,7 @@ const MAX_MEDIA_HEIGHT_IN = 200
 const MAX_STICKER_H = 199
 const DEFAULT_VINYL_WIDTH_IN = MIN_VINYL_WIDTH_IN
 const DEFAULT_VINYL_LENGTH_IN = MIN_VINYL_LENGTH_IN
-const DEFAULT_UV_LENGTH_IN = 24
+const DEFAULT_UV_LENGTH_IN = MIN_UV_LENGTH_IN
 
 function clampVinylWidth(value: number) {
   return Math.min(MAX_VINYL_MEDIA_WIDTH_IN, Math.max(MIN_VINYL_WIDTH_IN, value))
@@ -131,8 +131,8 @@ function howToStepsFor(product: StickerProduct) {
       title: product === 'uv-dtf' ? 'Length & cut' : 'Media size & cut',
       detail:
         product === 'uv-dtf'
-          ? 'Width is 22 in. Set length, pick cut type, then build.'
-          : 'Set vinyl size (min 8 × 11 in). Extra stickers become page 2, 3…',
+          ? 'Width stays 22 in. Length min 12 in. Pick cut type, then build.'
+          : 'Vinyl defaults to 8 × 11 in. Extra stickers become page 2, 3…',
     },
   ]
 }
@@ -205,7 +205,10 @@ export default function StickerMakerPage() {
       setVinylLengthIn((current) =>
         clampVinylLength(current < MIN_VINYL_LENGTH_IN ? DEFAULT_VINYL_LENGTH_IN : current),
       )
+      return
     }
+    // UV DTF: width is always 22 in; length at least 12 in.
+    setUvLengthIn((current) => clampUvLength(current < MIN_UV_LENGTH_IN ? DEFAULT_UV_LENGTH_IN : current))
   }
 
   function revokePagePreviewUrls(urls: string[]) {
@@ -718,7 +721,7 @@ export default function StickerMakerPage() {
         <img src={logoUrl} alt="South Side DTF" className="brand-logo" />
         <div className="title-block">
           <h1>Sticker Maker</h1>
-          <p className="lead">UV DTF (22 in wide) or vinyl stickers — crop, size, cut, and export.</p>
+          <p className="lead">UV DTF (22 × 12 in min) or vinyl (8 × 11 in min) — crop, size, cut, and export.</p>
           <p className="sublead">Crop and clean art, then export print PNG + cutter PLT (box, circle, or cut around object).</p>
         </div>
         <ShopNav current="sticker-maker" />
@@ -1088,8 +1091,8 @@ export default function StickerMakerPage() {
               </h2>
               <p className="order-hint">
                 {product === 'uv-dtf'
-                  ? 'UV DTF media is 22 in wide. Set the length, pick how we cut, then build.'
-                  : 'Vinyl media stays at the size you set (min 8 × 11 in). Overflow becomes page 2, 3…'}
+                  ? 'UV DTF is 22 in wide (never wider). Length starts at 12 in — pick cut type, then build.'
+                  : 'Vinyl defaults to 8 × 11 in. Media stays fixed; overflow becomes page 2, 3…'}
               </p>
             </div>
           </div>
@@ -1109,6 +1112,7 @@ export default function StickerMakerPage() {
                   value={mediaWidthIn}
                   disabled={product === 'uv-dtf'}
                   readOnly={product === 'uv-dtf'}
+                  aria-label={product === 'uv-dtf' ? 'UV DTF width locked at 22 inches' : 'Vinyl media width'}
                   onChange={(e) => {
                     if (product !== 'vinyl') return
                     setVinylWidthIn(clampVinylWidth(Number(e.target.value) || MIN_VINYL_WIDTH_IN))
@@ -1133,8 +1137,8 @@ export default function StickerMakerPage() {
             </div>
             <small>
               {product === 'uv-dtf'
-                ? 'Width is fixed at 22 in for UV DTF stickers. Length grows automatically if stickers need more film.'
-                : `Min ${MIN_VINYL_WIDTH_IN} × ${MIN_VINYL_LENGTH_IN} in. Media size never grows — extra stickers become page 2, 3, 4…`}
+                ? `Width is locked at ${UV_DTF_MEDIA_WIDTH_IN} in (never exceeds). Minimum length ${MIN_UV_LENGTH_IN} in. Length grows on the roll if stickers need more film.`
+                : `Default / min ${MIN_VINYL_WIDTH_IN} × ${MIN_VINYL_LENGTH_IN} in. Media size never grows — extra stickers become page 2, 3, 4…`}
             </small>
           </div>
 
