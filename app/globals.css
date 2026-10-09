@@ -771,6 +771,25 @@ button.thumb:disabled { cursor: default; }
   border-radius: 10px;
   background: #f7fbfd;
 }
+.halftone-knockout-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid #d7e3ea;
+  border-radius: 10px;
+  background: #f7fbfd;
+}
+.halftone-knockout-bar.disabled {
+  opacity: 0.72;
+}
+.halftone-knockout-bar .halftone-color-row .upload-ghost-button {
+  width: auto;
+}
+.halftone-knockout-bar .upload-ghost-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
 .halftone-color-row { display: flex; align-items: center; gap: 9px; }
 .halftone-color-row input[type="color"] {
   width: 44px;

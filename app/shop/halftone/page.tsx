@@ -149,6 +149,15 @@ export default function HalftonePage() {
     setSettings((current) => ({ ...current, [key]: value }))
   }, [])
 
+  /** Picking or editing a knockout colour must leave a knockout mode active. */
+  const setKnockoutColor = useCallback((color: HalftoneSettings['knockoutColor']) => {
+    setSettings((current) => ({
+      ...current,
+      knockoutColor: color,
+      mode: current.mode === 'halftone' ? 'both' : current.mode,
+    }))
+  }, [])
+
   const screens = settings.mode !== 'knockout'
   const erases = settings.mode !== 'halftone'
 
@@ -646,12 +655,31 @@ export default function HalftonePage() {
     const point = maskPoint(event)
     if (!pixels || !point) return
     const index = (point.y * pixels.width + point.x) * 4
-    set('knockoutColor', {
+    setKnockoutColor({
       r: pixels.data[index],
       g: pixels.data[index + 1],
       b: pixels.data[index + 2],
     })
     setPicking(false)
+    // Original is only for sampling — jump back to Print so the erase is visible.
+    setView('print')
+  }
+
+  function togglePicking() {
+    setPicking((current) => {
+      const next = !current
+      if (next) {
+        setView('original')
+        setTool('none')
+        setCropMode(false)
+        setSettings((settings) =>
+          settings.mode === 'halftone' ? { ...settings, mode: 'both' } : settings,
+        )
+      } else {
+        setView('print')
+      }
+      return next
+    })
   }
 
   function zoomTo(next: number) {
@@ -840,9 +868,28 @@ export default function HalftonePage() {
             </p>
           )}
 
+          <div className="halftone-step">
+            <span className="halftone-step-title">Step 1 · Mode</span>
+            <div className="halftone-segment halftone-segment-stack">
+              {MODES.map((mode) => (
+                <button
+                  key={mode.value}
+                  type="button"
+                  className={settings.mode === mode.value ? 'active' : ''}
+                  onClick={() => set('mode', mode.value)}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+            <p className="halftone-hint">
+              Colour knockout lives at the top of the preview so you can pick and judge erase against the art.
+            </p>
+          </div>
+
           {measured && crop && (
             <div className="halftone-step">
-              <span className="halftone-step-title">Step 1 · Size &amp; crop</span>
+              <span className="halftone-step-title">Step 2 · Size &amp; crop</span>
 
               <div className="halftone-size-row">
                 <label>
@@ -933,7 +980,7 @@ export default function HalftonePage() {
           )}
 
           <div className="halftone-step">
-            <span className="halftone-step-title">Step 2 · Background removal</span>
+            <span className="halftone-step-title">Step 3 · Background removal</span>
             <label className="halftone-check">
               <input
                 type="checkbox"
@@ -992,46 +1039,9 @@ export default function HalftonePage() {
             )}
           </div>
 
-          <div className="halftone-field">
-            <span className="halftone-label">Step 3 · Mode</span>
-            <div className="halftone-segment halftone-segment-stack">
-              {MODES.map((mode) => (
-                <button
-                  key={mode.value}
-                  type="button"
-                  className={settings.mode === mode.value ? 'active' : ''}
-                  onClick={() => set('mode', mode.value)}
-                >
-                  {mode.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {erases && (
-            <div className="halftone-knockout-block">
-              <div className="halftone-field">
-                <span className="halftone-label">Knockout colour</span>
-                <div className="halftone-color-row">
-                  <input
-                    type="color"
-                    aria-label="Knockout colour"
-                    value={hexFromRgb(settings.knockoutColor)}
-                    onChange={(e) => set('knockoutColor', colorFromHex(e.target.value))}
-                  />
-                  <code>{hexFromRgb(settings.knockoutColor)}</code>
-                  <button
-                    type="button"
-                    className={`upload-ghost-button${picking ? ' picking' : ''}`}
-                    onClick={() => {
-                      setPicking((current) => !current)
-                      if (!picking) setView('original')
-                    }}
-                  >
-                    <Pipette size={15} /> {picking ? 'Click the art…' : 'Pick from art'}
-                  </button>
-                </div>
-              </div>
+            <div className="halftone-step">
+              <span className="halftone-step-title">Knockout options</span>
               <Slider
                 label="Tolerance"
                 min={0}
@@ -1077,7 +1087,10 @@ export default function HalftonePage() {
                       className={tool === option.value ? 'active' : ''}
                       onClick={() => {
                         setTool(option.value)
-                        if (option.value !== 'none') setPicking(false)
+                        if (option.value !== 'none') {
+                          setPicking(false)
+                          setView('print')
+                        }
                       }}
                     >
                       {option.icon}
@@ -1200,6 +1213,38 @@ export default function HalftonePage() {
         </section>
 
         <section className="panel halftone-preview">
+          <div className={`halftone-knockout-bar${!erases ? ' disabled' : ''}`}>
+            <div className="halftone-field">
+              <span className="halftone-label">
+                Colour knockout
+                {!erases && <b>Off — pick Halftone + knockout or Knockout only</b>}
+                {erases && knockedOut != null && <b>{Math.round(knockedOut * 100)}% erased</b>}
+              </span>
+              <div className="halftone-color-row">
+                <input
+                  type="color"
+                  aria-label="Knockout colour"
+                  value={hexFromRgb(settings.knockoutColor)}
+                  onChange={(e) => setKnockoutColor(colorFromHex(e.target.value))}
+                />
+                <code>{hexFromRgb(settings.knockoutColor)}</code>
+                <button
+                  type="button"
+                  className={`upload-ghost-button${picking ? ' picking' : ''}`}
+                  onClick={togglePicking}
+                  disabled={!measured || cropMode}
+                >
+                  <Pipette size={15} /> {picking ? 'Click the art…' : 'Pick from art'}
+                </button>
+              </div>
+            </div>
+            {picking && (
+              <p className="halftone-hint">
+                Click a pixel on the art to erase that colour. Print view returns as soon as you pick.
+              </p>
+            )}
+          </div>
+
           <div className="halftone-view-row">
             <div className="halftone-segment">
               {VIEWS.map((option) => (
