@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.1.0] — 2026-10-09
+
+### Changed
+- Shop Sticker Maker is **UV DTF only** (22 in width locked, length min 12 in).
+- Box 2 is Cut / No Cut only; Cut = fixed 2.5 mm Square Cut on every image.
+- Per-image Square / Circle / Contour picks and border steppers removed.
+- Vinyl product tab and vinyl media pagination removed from this app.
+- Contour / circle cut tracing removed from `lib/custom-cut.ts` (Square Cut only).
+- Vinyl sticker work parked in `docs/VINYL_STICKER_MAKER_SPEC.md` (separate project).
+- Reopen Job rejects vinyl job files with a Vinyl Sticker Maker message; ignores legacy per-image shape / offsetMm.
+
+### Removed
+- Vinyl sticker maker UI and product mode from `/shop/sticker-maker`.
+- Circle and contour cut modes from the DTF sticker maker.
+
 ## [2.0.0] — 2026-10-08
 
 ### Added

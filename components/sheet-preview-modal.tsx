@@ -1,28 +1,15 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Check, Minus, Plus, Shrink, Expand } from 'lucide-react'
+import { Check, Minus, Plus } from 'lucide-react'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
 import { CutShapeOverlay } from '@/components/cut-shape-overlay'
 import { SheetLayoutOverlay, type LayoutPiece } from '@/components/sheet-layout-overlay'
 import { CUT_MARGIN_IN, MARK_SECTION_IN, type CutBox } from '@/lib/cut-layout'
-import {
-  CONTOUR_OFFSET_STEP_IN,
-  DEFAULT_CONTOUR_OFFSET_IN,
-  MAX_CONTOUR_OFFSET_IN,
-  MIN_CONTOUR_OFFSET_IN,
-  clampContourOffsetIn,
-  type CutShape,
-} from '@/lib/custom-cut'
+import { type CutShape } from '@/lib/custom-cut'
 import { readImageSize } from '@/lib/image-utils'
 import { formatInches } from '@/lib/measure-file'
 import { SHEET_WIDTH_IN } from '@/lib/compose-sheet'
-
-function formatContourOffset(offsetIn: number) {
-  const mm = offsetIn * 25.4
-  const sign = mm > 0.05 ? '+' : ''
-  return `${sign}${mm.toFixed(1)} mm`
-}
 
 function cropMarkPreviewCopy(markCount: number, audience: 'customer' | 'shop') {
   const countLabel = markCount === 4 ? 'four' : markCount === 6 ? 'six' : String(markCount)
@@ -50,7 +37,7 @@ type SheetPreviewModalProps = {
   onConfirm: () => void
   cutOut?: boolean
   cutBoxes?: CutBox[]
-  /** When set, draws true cut paths (box / circle / contour) instead of only boxes. */
+  /** When set, draws true Square Cut paths instead of only boxes. */
   cutShapes?: CutShape[]
   cutMarks?: Array<CutBox & { first?: boolean }>
   printHeightIn?: number
@@ -59,11 +46,6 @@ type SheetPreviewModalProps = {
   /** customer = public builder; shop = production tools with cutter loading notes */
   audience?: 'customer' | 'shop'
   layoutPieces?: LayoutPiece[]
-  /** Show expand/contract controls for cut-around-object contour. */
-  contourOffsetEnabled?: boolean
-  contourOffsetIn?: number
-  contourOffsetBusy?: boolean
-  onContourOffsetChange?: (nextInches: number) => void
   confirmLabel?: string
 }
 
@@ -83,10 +65,6 @@ export function SheetPreviewModal({
   sheetWidthIn = SHEET_WIDTH_IN,
   audience = 'shop',
   layoutPieces = [],
-  contourOffsetEnabled = false,
-  contourOffsetIn = DEFAULT_CONTOUR_OFFSET_IN,
-  contourOffsetBusy = false,
-  onContourOffsetChange,
   confirmLabel,
 }: SheetPreviewModalProps) {
   const paneRef = useRef<HTMLDivElement>(null)
@@ -257,48 +235,6 @@ export function SheetPreviewModal({
             </button>
             <span className="zoom-readout">{fitZoom ? 'Fit' : `${Math.round(zoomScale * 100)}%`}</span>
           </div>
-          {contourOffsetEnabled && onContourOffsetChange ? (
-            <div className="contour-offset-controls" aria-label="Contour cut margin">
-              <strong>Cut around object</strong>
-              <button
-                type="button"
-                aria-label="Contract contour"
-                title="Contract cut closer to the object"
-                disabled={saving || contourOffsetBusy || contourOffsetIn <= MIN_CONTOUR_OFFSET_IN + 1e-9}
-                onClick={() =>
-                  onContourOffsetChange(clampContourOffsetIn(contourOffsetIn - CONTOUR_OFFSET_STEP_IN))
-                }
-              >
-                <Shrink size={14} /> Contract
-              </button>
-              <input
-                type="range"
-                min={MIN_CONTOUR_OFFSET_IN}
-                max={MAX_CONTOUR_OFFSET_IN}
-                step={CONTOUR_OFFSET_STEP_IN}
-                value={contourOffsetIn}
-                disabled={saving || contourOffsetBusy}
-                aria-label="Contour expand or contract amount"
-                onChange={(event) =>
-                  onContourOffsetChange(clampContourOffsetIn(Number(event.target.value)))
-                }
-              />
-              <button
-                type="button"
-                aria-label="Expand contour"
-                title="Expand cut farther from the object"
-                disabled={saving || contourOffsetBusy || contourOffsetIn >= MAX_CONTOUR_OFFSET_IN - 1e-9}
-                onClick={() =>
-                  onContourOffsetChange(clampContourOffsetIn(contourOffsetIn + CONTOUR_OFFSET_STEP_IN))
-                }
-              >
-                <Expand size={14} /> Expand
-              </button>
-              <span className="contour-offset-readout" aria-live="polite">
-                {contourOffsetBusy ? 'Updating…' : formatContourOffset(contourOffsetIn)}
-              </span>
-            </div>
-          ) : null}
         </div>
 
         <div className="sheet-preview-stage">
@@ -343,7 +279,7 @@ export function SheetPreviewModal({
           <button
             type="button"
             className="confirm-button sheet-preview-confirm"
-            disabled={saving || contourOffsetBusy}
+            disabled={saving}
             onClick={onConfirm}
           >
             <Check size={18} />{' '}

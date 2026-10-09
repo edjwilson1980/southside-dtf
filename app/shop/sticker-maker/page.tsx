@@ -12,7 +12,6 @@ import { CutShapeOverlay } from '@/components/cut-shape-overlay'
 import {
   composeGangSheet,
   packSheetBestGutter,
-  packSheetIntoPages,
   piecePrintSize,
   ART_INSET_IN,
   CUT_ART_START_IN,
@@ -28,34 +27,11 @@ import {
   startMarkArrowPoints,
 } from '@/lib/cut-layout'
 import {
-  CUT_MODES,
   buildCutShapes,
   cutPltForShapes,
   shapeTooTallForCutter,
-  type CutMode,
   type CutShape,
-  type PieceCutSettings,
 } from '@/lib/custom-cut'
-
-/** Spec SPE2C cut borders (mm). */
-const VINYL_DEFAULT_BORDER_MM = 2
-/** UV DTF Cut is always a fixed Square Cut at 2.5 mm. */
-const UV_BORDER_MM = 2.5
-const BORDER_STEP_MM = 0.5
-const MIN_BORDER_MM_BOX = 0
-const MIN_BORDER_MM_SHAPE = 0.5
-const MAX_BORDER_MM = 12
-
-function mmToInches(mm: number) {
-  return mm / 25.4
-}
-
-function clampBorderMm(mm: number, shape: CutMode) {
-  const min = shape === 'box' ? MIN_BORDER_MM_BOX : MIN_BORDER_MM_SHAPE
-  if (!Number.isFinite(mm)) return VINYL_DEFAULT_BORDER_MM
-  return Math.min(MAX_BORDER_MM, Math.max(min, Math.round(mm / BORDER_STEP_MM) * BORDER_STEP_MM))
-}
-
 import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
@@ -65,6 +41,12 @@ import { prepareEditableUpload } from '@/lib/rasterize-upload'
 
 /** Spec A7: minimum gap between cut lines when nesting cut footprints. */
 const CUT_MIN_GAP_IN = 0.125
+/** UV DTF Cut is always a fixed Square Cut at 2.5 mm. */
+const UV_BORDER_MM = 2.5
+
+function mmToInches(mm: number) {
+  return mm / 25.4
+}
 
 type PackDesignPiece = {
   previewUrl: string
@@ -72,8 +54,6 @@ type PackDesignPiece = {
   heightIn: number
   allowRotate: boolean
   designId: number
-  cutShape: CutMode
-  borderMm: number
   /** Art size before cut padding (and before packer rotation). */
   artWidthIn: number
   artHeightIn: number
@@ -81,8 +61,6 @@ type PackDesignPiece = {
 
 type PackedCutPiece = PlacedSheetPiece & {
   designId?: number
-  cutShape?: CutMode
-  borderMm?: number
   artWidthIn?: number
   artHeightIn?: number
 }
@@ -124,55 +102,19 @@ type Design = {
   pixelWidth: number
   pixelHeight: number
   keepUpright: boolean
-  /** Vinyl per-image cut shape; UV DTF always uses box (Square Cut). */
-  cutShape: CutMode
-  /** Vinyl per-image border in mm; UV DTF ignores this and uses 2.5 mm. */
-  borderMm: number
 }
 
 const logoUrl =
   'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/SSP%20Logo%20%28Black%20Outline%29-A5PrDBPZRDhydxNxRumbsTUFufpLv9.png'
-
-type StickerProduct = 'uv-dtf' | 'vinyl'
-
-const PRODUCT_MODES: {
-  value: StickerProduct
-  label: string
-  hint: string
-}[] = [
-  {
-    value: 'uv-dtf',
-    label: 'UV DTF stickers',
-    hint: 'Width is always 22 in (never wider). Min / default length 12 in.',
-  },
-  {
-    value: 'vinyl',
-    label: 'Vinyl sticker maker',
-    hint: 'Default / min 8 × 11 in. Overflow becomes page 2, 3…',
-  },
-]
 
 const DEFAULT_STICKER_W = '3'
 const DEFAULT_STICKER_H = '3'
 /** UV DTF sticker media is always exactly 22 in wide — never exceed. */
 const UV_DTF_MEDIA_WIDTH_IN = 22
 const MIN_UV_LENGTH_IN = 12
-const MIN_VINYL_WIDTH_IN = 8
-const MIN_VINYL_LENGTH_IN = 11
-const MAX_VINYL_MEDIA_WIDTH_IN = 48
 const MAX_MEDIA_HEIGHT_IN = 200
 const MAX_STICKER_H = 199
-const DEFAULT_VINYL_WIDTH_IN = MIN_VINYL_WIDTH_IN
-const DEFAULT_VINYL_LENGTH_IN = MIN_VINYL_LENGTH_IN
 const DEFAULT_UV_LENGTH_IN = MIN_UV_LENGTH_IN
-
-function clampVinylWidth(value: number) {
-  return Math.min(MAX_VINYL_MEDIA_WIDTH_IN, Math.max(MIN_VINYL_WIDTH_IN, value))
-}
-
-function clampVinylLength(value: number) {
-  return Math.min(MAX_MEDIA_HEIGHT_IN, Math.max(MIN_VINYL_LENGTH_IN, value))
-}
 
 function clampUvLength(value: number) {
   return Math.min(MAX_MEDIA_HEIGHT_IN, Math.max(MIN_UV_LENGTH_IN, value))
@@ -186,35 +128,23 @@ function stickerSizeLabel(width: string, height: string) {
   return `${width || '0'} × ${height || '0'} in`
 }
 
-function howToStepsFor(product: StickerProduct) {
-  return [
-    { id: 'step-1', number: 1, title: 'Customer name', detail: 'Type the customer name first.' },
-    {
-      id: 'step-2',
-      number: 2,
-      title: 'Cut / No Cut',
-      detail:
-        product === 'uv-dtf'
-          ? 'Cut = fixed 2.5 mm Square Cut. Or No Cut.'
-          : 'Cut on: set Circle / Square / Contour per image.',
-    },
-    { id: 'step-3', number: 3, title: 'Upload artwork', detail: 'Drop or click to add sticker art.' },
-    { id: 'step-4', number: 4, title: 'Sticker size & edit', detail: 'Set each sticker W×H, crop, and quantity.' },
-    {
-      id: 'step-5',
-      number: 5,
-      title: product === 'uv-dtf' ? 'Length & build' : 'Media size & build',
-      detail:
-        product === 'uv-dtf'
-          ? 'Width stays 22 in. Length min 12 in. Then preview and build.'
-          : 'Vinyl defaults to 8 × 11 in. Extra stickers become page 2, 3…',
-    },
-  ]
-}
-
-function pageFileSuffix(pageNumber: number, pageCount: number) {
-  return pageCount > 1 ? ` p${pageNumber}` : ''
-}
+const HOW_TO_STEPS = [
+  { id: 'step-1', number: 1, title: 'Customer name', detail: 'Type the customer name first.' },
+  {
+    id: 'step-2',
+    number: 2,
+    title: 'Cut / No Cut',
+    detail: 'Cut = fixed 2.5 mm Square Cut. Or No Cut.',
+  },
+  { id: 'step-3', number: 3, title: 'Upload artwork', detail: 'Drop or click to add sticker art.' },
+  { id: 'step-4', number: 4, title: 'Sticker size & edit', detail: 'Set each sticker W×H, crop, and quantity.' },
+  {
+    id: 'step-5',
+    number: 5,
+    title: 'Length & build',
+    detail: 'Width stays 22 in. Length min 12 in. Then preview and build.',
+  },
+]
 
 function GuideHeading({ number, title, hint }: { number: number; title: string; hint: string }) {
   return (
@@ -256,53 +186,18 @@ export default function StickerMakerPage() {
   /** Spec: No Cut by default. */
   const [cutEnabled, setCutEnabled] = useState(false)
   const [jobStatus, setJobStatus] = useState<string | null>(null)
-  const [product, setProduct] = useState<StickerProduct>('uv-dtf')
-  const [vinylWidthIn, setVinylWidthIn] = useState(DEFAULT_VINYL_WIDTH_IN)
-  const [vinylLengthIn, setVinylLengthIn] = useState(DEFAULT_VINYL_LENGTH_IN)
   const [uvLengthIn, setUvLengthIn] = useState(DEFAULT_UV_LENGTH_IN)
-  const [activePageIndex, setActivePageIndex] = useState(0)
   const [pagePreviewUrls, setPagePreviewUrls] = useState<string[]>([])
   const [cutShapes, setCutShapes] = useState<CutShape[]>([])
   const [shapesBusy, setShapesBusy] = useState(false)
   const previewGen = useRef(0)
-  const contourRefreshGen = useRef(0)
+  const shapesRefreshGen = useRef(0)
 
-  const mediaWidthIn = product === 'uv-dtf' ? UV_DTF_MEDIA_WIDTH_IN : vinylWidthIn
-  const mediaHeightIn = product === 'uv-dtf' ? uvLengthIn : vinylLengthIn
+  const mediaWidthIn = UV_DTF_MEDIA_WIDTH_IN
+  const mediaHeightIn = uvLengthIn
   const maxStickerWidthIn = mediaWidthIn
-  const howToSteps = howToStepsFor(product)
-  const productLabel = PRODUCT_MODES.find((mode) => mode.value === product)?.label ?? 'Sticker Maker'
-  const paginateVinyl = product === 'vinyl'
-  const cutLabel = !cutEnabled
-    ? 'No Cut'
-    : product === 'uv-dtf'
-      ? 'Square Cut · 2.5 mm'
-      : 'Cut (per image)'
-
-  function designCutShape(design: Design): CutMode {
-    return product === 'uv-dtf' ? 'box' : design.cutShape
-  }
-
-  function designBorderMm(design: Design): number {
-    return product === 'uv-dtf' ? UV_BORDER_MM : clampBorderMm(design.borderMm, design.cutShape)
-  }
-
-  function designBorderIn(design: Design): number {
-    return mmToInches(designBorderMm(design))
-  }
-
-  function selectProduct(next: StickerProduct) {
-    setProduct(next)
-    setActivePageIndex(0)
-    if (next === 'uv-dtf') {
-      setUvLengthIn((current) => clampUvLength(current < MIN_UV_LENGTH_IN ? DEFAULT_UV_LENGTH_IN : current))
-      return
-    }
-    setVinylWidthIn((current) => clampVinylWidth(current < MIN_VINYL_WIDTH_IN ? DEFAULT_VINYL_WIDTH_IN : current))
-    setVinylLengthIn((current) =>
-      clampVinylLength(current < MIN_VINYL_LENGTH_IN ? DEFAULT_VINYL_LENGTH_IN : current),
-    )
-  }
+  const cutLabel = !cutEnabled ? 'No Cut' : 'Square Cut · 2.5 mm'
+  const borderIn = cutEnabled ? mmToInches(UV_BORDER_MM) : 0
 
   function setCuttingOn(enabled: boolean) {
     setCutEnabled(enabled)
@@ -347,8 +242,6 @@ export default function StickerMakerPage() {
         pixelWidth: item.measured.pixelWidth,
         pixelHeight: item.measured.pixelHeight,
         keepUpright: false,
-        cutShape: 'box' as const,
-        borderMm: VINYL_DEFAULT_BORDER_MM,
       } satisfies Design
     })
 
@@ -418,28 +311,12 @@ export default function StickerMakerPage() {
   const pieceInputs: PackDesignPiece[] = previewPieces.map((design) => {
     const artWidthIn = getDesignWidth(design)
     const artHeightIn = getDesignHeight(design)
-    const shape = designCutShape(design)
-    const borderIn = cutEnabled ? designBorderIn(design) : 0
-    let widthIn = artWidthIn
-    let heightIn = artHeightIn
-    if (cutEnabled) {
-      if (shape === 'circle') {
-        const diameter = Math.max(artWidthIn, artHeightIn) + borderIn * 2
-        widthIn = diameter
-        heightIn = diameter
-      } else {
-        widthIn = artWidthIn + borderIn * 2
-        heightIn = artHeightIn + borderIn * 2
-      }
-    }
     return {
       previewUrl: design.previewUrl,
-      widthIn,
-      heightIn,
+      widthIn: artWidthIn + borderIn * 2,
+      heightIn: artHeightIn + borderIn * 2,
       allowRotate: !design.keepUpright,
       designId: design.id,
-      cutShape: shape,
-      borderMm: designBorderMm(design),
       artWidthIn,
       artHeightIn,
     }
@@ -458,22 +335,10 @@ export default function StickerMakerPage() {
     rotatePolicy: 'none' as const,
   })
 
-  const vinylPacked = paginateVinyl
-    ? packSheetIntoPages(pieceInputs, { ...packOpts, pageHeightIn: mediaHeightIn })
-    : null
-  const uvLayout = paginateVinyl
-    ? null
-    : packSheetBestGutter(pieceInputs, packOpts)
-
-  const pageLayouts = paginateVinyl
-    ? vinylPacked!.pages
-    : uvLayout && uvLayout.pieces.length > 0
-      ? [uvLayout]
-      : []
-  const tooLargePieces = vinylPacked?.tooLarge ?? []
-  const pageCount = Math.max(1, pageLayouts.length)
-  const safePageIndex = Math.min(activePageIndex, Math.max(0, pageLayouts.length - 1))
-  const sheetLayout = pageLayouts[safePageIndex] ?? {
+  const uvLayout = packSheetBestGutter(pieceInputs, packOpts)
+  const pageLayouts =
+    uvLayout && uvLayout.pieces.length > 0 ? [uvLayout] : []
+  const sheetLayout = pageLayouts[0] ?? {
     pieces: [] as PlacedSheetPiece[],
     unplaced: [],
     contentBottom: CUT_ART_START_IN,
@@ -482,21 +347,9 @@ export default function StickerMakerPage() {
     rotatedCount: 0,
   }
 
-  /** Vinyl keeps the chosen media size; UV DTF roll can grow in length. */
-  const printHeight = paginateVinyl
-    ? mediaHeightIn
-    : Math.max(mediaHeightIn, (uvLayout?.contentEndY ?? CUT_ART_START_IN) + CUT_ART_START_IN)
-  const artLayoutPieces = toArtPieces(
-    sheetLayout.pieces as Array<
-      PlacedSheetPiece & {
-        designId?: number
-        cutShape?: CutMode
-        borderMm?: number
-        artWidthIn?: number
-        artHeightIn?: number
-      }
-    >,
-  )
+  /** UV DTF roll can grow in length. */
+  const printHeight = Math.max(mediaHeightIn, (uvLayout?.contentEndY ?? CUT_ART_START_IN) + CUT_ART_START_IN)
+  const artLayoutPieces = toArtPieces(sheetLayout.pieces as PackedCutPiece[])
   const cutMarks = cutEnabled
     ? registrationMarkBounds(printHeight, mediaWidthIn, artLayoutPieces)
     : []
@@ -508,10 +361,10 @@ export default function StickerMakerPage() {
     widthIn: piece.widthIn,
     heightIn: piece.heightIn,
   }))
-  const rotatedCount = pageLayouts.reduce((sum, page) => sum + page.rotatedCount, 0)
+  const rotatedCount = sheetLayout.rotatedCount
   const filmSavedIn = Math.max(0, uprightLayout.contentBottom - (uvLayout?.contentBottom ?? uprightLayout.contentBottom))
   const rotateSaveMessage =
-    !paginateVinyl && rotatedCount > 0 && filmSavedIn > 0.05
+    rotatedCount > 0 && filmSavedIn > 0.05
       ? `Turned ${rotatedCount} design${rotatedCount === 1 ? '' : 's'} a quarter turn to fit more across — saves ${filmSavedIn.toFixed(1)} in of film.`
       : null
   const layoutKey =
@@ -529,10 +382,7 @@ export default function StickerMakerPage() {
           design.pixelHeight,
         ].join(':'),
       )
-      .join('|') +
-    `|product:${product}|cutOn:${cutEnabled}|cuts:${designs
-      .map((d) => `${d.id}:${designCutShape(d)}:${designBorderMm(d)}`)
-      .join(',')}|media:${mediaWidthIn}x${mediaHeightIn}`
+      .join('|') + `|cutOn:${cutEnabled}|media:${mediaWidthIn}x${mediaHeightIn}`
   const sheetLabelText = mediaLabel(mediaWidthIn, billedLength)
   const fillPercent =
     mediaHeightIn > 0
@@ -541,17 +391,11 @@ export default function StickerMakerPage() {
   const sheetFillMessage =
     designs.length === 0
       ? null
-      : tooLargePieces.length > 0
-        ? `${tooLargePieces.length} sticker${tooLargePieces.length === 1 ? '' : 's'} too large for ${sheetLabelText} media. Shrink the sticker or enlarge media.`
-        : paginateVinyl
-          ? pageCount > 1
-            ? `${pageCount} pages at ${sheetLabelText} (media size stays fixed — overflow becomes the next page).`
-            : `Page 1 of 1 · ${sheetLabelText}`
-          : printHeight > mediaHeightIn + 1e-6
-            ? `Art needs ${printHeight.toFixed(1)} in — UV DTF length grew to fit.`
-            : `Media is ${fillPercent}% used (${printHeight.toFixed(1)} of ${mediaHeightIn} in)`
+      : printHeight > mediaHeightIn + 1e-6
+        ? `Art needs ${printHeight.toFixed(1)} in — UV DTF length grew to fit.`
+        : `Media is ${fillPercent}% used (${printHeight.toFixed(1)} of ${mediaHeightIn} in)`
   const sheetName = customerName.trim() || 'Sticker Maker'
-  const sheetPreviewUrl = pagePreviewUrls[safePageIndex] ?? null
+  const sheetPreviewUrl = pagePreviewUrls[0] ?? null
   const currentGuideStep = !customerName.trim()
     ? 1
     : designs.length === 0
@@ -650,55 +494,14 @@ export default function StickerMakerPage() {
     setSheetPreviewOpen(false)
     setJobStamp('')
     setBuilt(false)
-    setActivePageIndex(0)
     setPagePreviewUrls((urls) => {
       revokePagePreviewUrls(urls)
       return []
     })
   }, [layoutKey, customerName])
 
-  useEffect(() => {
-    if (activePageIndex > pageLayouts.length - 1) {
-      setActivePageIndex(Math.max(0, pageLayouts.length - 1))
-    }
-  }, [activePageIndex, pageLayouts.length])
-
   function sheetPxPerIn(maxEdge: number, preferred: number) {
     return Math.max(24, Math.min(preferred, Math.floor(maxEdge / Math.max(printHeight, mediaWidthIn))))
-  }
-
-  function pieceCutSettings(
-    pieces: Array<PlacedSheetPiece & { designId?: number; cutShape?: CutMode; borderMm?: number }>,
-  ): PieceCutSettings[] {
-    return pieces.map((piece) => {
-      const design = designs.find((item) => item.id === piece.designId)
-      if (design) {
-        return { mode: designCutShape(design), offsetIn: designBorderIn(design) }
-      }
-      return {
-        mode: piece.cutShape ?? 'box',
-        offsetIn: mmToInches(piece.borderMm ?? UV_BORDER_MM),
-      }
-    })
-  }
-
-  function updateDesignCut(id: number, shape: CutMode, borderMm: number) {
-    updateDesign(id, {
-      cutShape: shape,
-      borderMm: clampBorderMm(borderMm, shape),
-    })
-  }
-
-  function applyCutToAll(sourceId: number) {
-    const source = designs.find((design) => design.id === sourceId)
-    if (!source) return
-    setDesigns((items) =>
-      items.map((item) => ({
-        ...item,
-        cutShape: source.cutShape,
-        borderMm: source.borderMm,
-      })),
-    )
   }
 
   async function refreshCutShapes(
@@ -708,45 +511,35 @@ export default function StickerMakerPage() {
       setCutShapes([])
       return []
     }
-    const gen = ++contourRefreshGen.current
+    const gen = ++shapesRefreshGen.current
     setShapesBusy(true)
     try {
-      const typed = pieces as Array<
-        PlacedSheetPiece & {
-          designId?: number
-          cutShape?: CutMode
-          borderMm?: number
-          artWidthIn?: number
-          artHeightIn?: number
-        }
-      >
-      const artPieces = toArtPieces(typed)
+      const artPieces = toArtPieces(pieces as PackedCutPiece[])
       const shapes = await buildCutShapes(
         artPieces,
         'box',
         mediaWidthIn,
         printHeight,
-        mmToInches(product === 'uv-dtf' ? UV_BORDER_MM : VINYL_DEFAULT_BORDER_MM),
-        pieceCutSettings(artPieces),
+        mmToInches(UV_BORDER_MM),
       )
-      if (gen !== contourRefreshGen.current) return shapes
+      if (gen !== shapesRefreshGen.current) return shapes
       setCutShapes(shapes)
       return shapes
     } finally {
-      if (gen === contourRefreshGen.current) setShapesBusy(false)
+      if (gen === shapesRefreshGen.current) setShapesBusy(false)
     }
   }
 
-  /** SPEC_2: red cut traces appear as soon as cut is on / art is laid out. */
+  /** Red cut traces appear as soon as cut is on / art is laid out. */
   useEffect(() => {
     if (!cutEnabled || sheetLayout.pieces.length === 0) {
       setCutShapes([])
       return
     }
     void refreshCutShapes(sheetLayout.pieces)
-    // layoutKey covers cut settings, media, and designs; safePageIndex picks the page.
+    // layoutKey covers cut settings, media, and designs.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshCutShapes closes over current layout
-  }, [layoutKey, cutEnabled, safePageIndex])
+  }, [layoutKey, cutEnabled])
 
   async function exportArtForPhotoshop() {
     if (designs.length === 0) {
@@ -805,19 +598,15 @@ export default function StickerMakerPage() {
           pixelWidth: design.pixelWidth,
           pixelHeight: design.pixelHeight,
           dataUrl,
-          cut: {
-            shape: designCutShape(design),
-            offsetMm: designBorderMm(design),
-          },
         })
       }
       const payload = {
         format: 'ssp-gangsheet-project',
-        schemaVersion: 1,
+        schemaVersion: 2,
         name: customerName.trim(),
         updatedAt: new Date().toISOString(),
         product: {
-          printType: product,
+          printType: 'uv-dtf',
           widthIn: mediaWidthIn,
           heightIn: mediaHeightIn,
         },
@@ -844,7 +633,7 @@ export default function StickerMakerPage() {
         format?: string
         name?: string
         product?: { printType?: string; widthIn?: number; heightIn?: number }
-        cut?: { enabled?: boolean; shape?: CutMode; offsetMm?: number }
+        cut?: { enabled?: boolean; shape?: string; offsetMm?: number }
         images?: Array<{
           id?: number
           name: string
@@ -856,37 +645,26 @@ export default function StickerMakerPage() {
           pixelWidth?: number
           pixelHeight?: number
           dataUrl?: string
-          cut?: { shape?: CutMode; offsetMm?: number }
+          cut?: { shape?: string; offsetMm?: number }
         }>
       }
       if (data.format !== 'ssp-gangsheet-project') {
         throw new Error('This file is not a Sticker Maker job (.ssp.json).')
       }
+      const printType = data.product?.printType
+      if (printType === 'vinyl' || printType === 'vinyl-sticker') {
+        throw new Error(
+          'Vinyl stickers are handled in the Vinyl Sticker Maker. This DTF Sticker Maker opens UV DTF jobs only.',
+        )
+      }
       if (data.name) setCustomerName(data.name)
-      const nextProduct = data.product?.printType === 'vinyl' ? 'vinyl' : 'uv-dtf'
-      selectProduct(nextProduct)
-      if (nextProduct === 'vinyl') {
-        if (data.product?.widthIn) setVinylWidthIn(clampVinylWidth(data.product.widthIn))
-        if (data.product?.heightIn) setVinylLengthIn(clampVinylLength(data.product.heightIn))
-      } else if (data.product?.heightIn) {
+      if (data.product?.heightIn) {
         setUvLengthIn(clampUvLength(data.product.heightIn))
       }
       setCutEnabled(Boolean(data.cut?.enabled))
-      /** Legacy sheet-level cut shape/border — used when an image has no per-image cut. */
-      const legacyShape =
-        data.cut?.shape === 'circle' || data.cut?.shape === 'contour' || data.cut?.shape === 'box'
-          ? data.cut.shape
-          : 'box'
-      const legacyBorderMm =
-        typeof data.cut?.offsetMm === 'number' ? data.cut.offsetMm : VINYL_DEFAULT_BORDER_MM
+      /** Ignore legacy per-image shape / offsetMm — always Square Cut 2.5 mm when Cut is on. */
       const nextDesigns: Design[] = (data.images || []).map((image, index) => {
         const url = image.dataUrl || ''
-        const shape =
-          image.cut?.shape === 'circle' || image.cut?.shape === 'contour' || image.cut?.shape === 'box'
-            ? image.cut.shape
-            : legacyShape
-        const rawBorder =
-          typeof image.cut?.offsetMm === 'number' ? image.cut.offsetMm : legacyBorderMm
         return {
           id: image.id ?? Date.now() + index,
           designNumber: index + 1,
@@ -904,9 +682,6 @@ export default function StickerMakerPage() {
           pixelWidth: image.pixelWidth || 0,
           pixelHeight: image.pixelHeight || 0,
           keepUpright: Boolean(image.keepUpright),
-          cutShape: nextProduct === 'uv-dtf' ? 'box' : shape,
-          borderMm:
-            nextProduct === 'uv-dtf' ? UV_BORDER_MM : clampBorderMm(rawBorder, shape),
         }
       })
       setDesigns((current) => {
@@ -931,17 +706,7 @@ export default function StickerMakerPage() {
     mapCmyk = false,
   ) {
     if (pieces.length === 0) throw new Error('Add a design before previewing the sheet.')
-    const artPieces = toArtPieces(
-      pieces as Array<
-        PlacedSheetPiece & {
-          designId?: number
-          cutShape?: CutMode
-          borderMm?: number
-          artWidthIn?: number
-          artHeightIn?: number
-        }
-      >,
-    )
+    const artPieces = toArtPieces(pieces as PackedCutPiece[])
     const marks = cutEnabled ? registrationMarkRects(printHeight, mediaWidthIn, artPieces) : []
     const markBounds = cutEnabled ? registrationMarkBounds(printHeight, mediaWidthIn, artPieces) : []
     const first = markBounds.find((mark) => mark.first)
@@ -959,12 +724,6 @@ export default function StickerMakerPage() {
 
   async function previewStickerSheet() {
     if (!customerName.trim() || designs.length === 0 || previewBusy || saving) return
-    if (tooLargePieces.length > 0) {
-      setSaveError(
-        `${tooLargePieces.length} sticker${tooLargePieces.length === 1 ? '' : 's'} do not fit the ${sheetLabelText} media. Reduce sticker size or increase media size.`,
-      )
-      return
-    }
     if (pageLayouts.length === 0) {
       setSaveError('Add a design before previewing the sheet.')
       return
@@ -980,32 +739,18 @@ export default function StickerMakerPage() {
     setSaveError(null)
     setBuilt(false)
     try {
-      const urls: string[] = []
-      for (let i = 0; i < pageLayouts.length; i += 1) {
-        const pageNumber = i + 1
-        const label =
-          sheetJobName(customerName.trim(), billedLength, stamp) +
-          pageFileSuffix(pageNumber, pageLayouts.length)
-        const blob = await composePageSheet(
-          pageLayouts[i].pieces,
-          sheetPxPerIn(3600, 72),
-          label,
-        )
-        if (gen !== previewGen.current) {
-          revokePagePreviewUrls(urls)
-          return
-        }
-        urls.push(URL.createObjectURL(blob))
-      }
-      if (gen !== previewGen.current) {
-        revokePagePreviewUrls(urls)
-        return
-      }
+      const label = sheetJobName(customerName.trim(), billedLength, stamp)
+      const blob = await composePageSheet(
+        pageLayouts[0].pieces,
+        sheetPxPerIn(3600, 72),
+        label,
+      )
+      if (gen !== previewGen.current) return
+      const url = URL.createObjectURL(blob)
       setPagePreviewUrls((prev) => {
         revokePagePreviewUrls(prev)
-        return urls
+        return [url]
       })
-      setActivePageIndex(0)
       await refreshCutShapes(pageLayouts[0].pieces)
       if (gen !== previewGen.current) return
       setPreviewing(true)
@@ -1018,64 +763,37 @@ export default function StickerMakerPage() {
     }
   }
 
-  async function selectPreviewPage(index: number) {
-    setActivePageIndex(index)
-    const page = pageLayouts[index]
-    if (page) await refreshCutShapes(page.pieces)
-  }
-
   async function buildAndStore() {
     if (!customerName.trim() || designs.length === 0 || saving || !previewing) return
-    if (tooLargePieces.length > 0 || pageLayouts.length === 0) return
+    if (pageLayouts.length === 0) return
     setSaving(true)
     setSaveError(null)
     setDriveFolderUrl(null)
     try {
       const stamp = jobStamp || sheetStamp()
-      const pngFiles: Array<{ name: string; mimeType: string; blob: Blob }> = []
+      const label = sheetJobName(customerName.trim(), billedLength, stamp)
+      const fileName = sheetFileName(customerName.trim(), billedLength, stamp)
+      const pieces = pageLayouts[0].pieces
+      const png = await composePageSheet(pieces, sheetPxPerIn(14000, 150), label, true)
+      downloadBlob(png, fileName)
+      const pngFiles = [{ name: fileName, mimeType: 'image/png', blob: png }]
       const pltFiles: Array<{ name: string; content: string }> = []
 
-      for (let i = 0; i < pageLayouts.length; i += 1) {
-        const pageNumber = i + 1
-        const suffix = pageFileSuffix(pageNumber, pageLayouts.length)
-        const label = sheetJobName(customerName.trim(), billedLength, stamp) + suffix
-        const fileName = sheetFileName(customerName.trim(), billedLength, stamp).replace(
-          /\.png$/i,
-          `${suffix}.png`,
+      if (cutEnabled) {
+        const artPieces = toArtPieces(pieces as PackedCutPiece[])
+        const shapes = await buildCutShapes(
+          artPieces,
+          'box',
+          mediaWidthIn,
+          printHeight,
+          mmToInches(UV_BORDER_MM),
         )
-        const pieces = pageLayouts[i].pieces
-        const png = await composePageSheet(pieces, sheetPxPerIn(14000, 150), label, true)
-        downloadBlob(png, fileName)
-        pngFiles.push({ name: fileName, mimeType: 'image/png', blob: png })
-        if (cutEnabled) {
-          const typed = pieces as Array<
-            PlacedSheetPiece & {
-              designId?: number
-              cutShape?: CutMode
-              borderMm?: number
-              artWidthIn?: number
-              artHeightIn?: number
-            }
-          >
-          const artPieces = toArtPieces(typed)
-          const shapes = await buildCutShapes(
-            artPieces,
-            'box',
-            mediaWidthIn,
-            printHeight,
-            mmToInches(product === 'uv-dtf' ? UV_BORDER_MM : VINYL_DEFAULT_BORDER_MM),
-            pieceCutSettings(artPieces),
-          )
-          const plt = cutPltForShapes(shapes, printHeight, mediaWidthIn, artPieces)
-          if (!plt) throw new Error(`Could not build the cutter PLT for page ${pageNumber}.`)
-          const cutName = sheetCutFileName(customerName.trim(), billedLength, stamp).replace(
-            / cut\.plt$/i,
-            `${suffix} cut.plt`,
-          )
-          await wait(200)
-          downloadBlob(new Blob([plt], { type: 'text/plain' }), cutName)
-          pltFiles.push({ name: cutName, content: plt })
-        }
+        const plt = cutPltForShapes(shapes, printHeight, mediaWidthIn, artPieces)
+        if (!plt) throw new Error('Could not build the cutter PLT.')
+        const cutName = sheetCutFileName(customerName.trim(), billedLength, stamp)
+        await wait(200)
+        downloadBlob(new Blob([plt], { type: 'text/plain' }), cutName)
+        pltFiles.push({ name: cutName, content: plt })
       }
 
       const [firstPlt, ...otherPlts] = pltFiles
@@ -1145,31 +863,15 @@ export default function StickerMakerPage() {
       <div className="builder-topbar">
         <img src={logoUrl} alt="South Side DTF" className="brand-logo" />
         <div className="title-block">
-          <h1>Sticker Maker</h1>
-          <p className="lead">UV DTF (22 × 12 in min) or vinyl (8 × 11 in min) — crop, size, cut, and export.</p>
-          <p className="sublead">Crop and clean art, then export print PNG + cutter PLT (box, circle, or cut around object).</p>
+          <h1>DTF Sticker Maker</h1>
+          <p className="lead">UV DTF stickers — 22 in wide, length from 12 in. Crop, size, cut, and export.</p>
+          <p className="sublead">Crop and clean art, then export print PNG + cutter PLT (fixed 2.5 mm Square Cut).</p>
         </div>
         <ShopNav current="sticker-maker" hideConnectDrive />
       </div>
 
-      <div className="sticker-product-tabs" role="tablist" aria-label="Sticker product">
-        {PRODUCT_MODES.map((mode) => (
-          <button
-            key={mode.value}
-            type="button"
-            role="tab"
-            aria-selected={product === mode.value}
-            className={`sticker-product-tab ${product === mode.value ? 'selected' : ''}`}
-            onClick={() => selectProduct(mode.value)}
-          >
-            <strong>{mode.label}</strong>
-            <span>{mode.hint}</span>
-          </button>
-        ))}
-      </div>
-
       <ol className="how-to" aria-label="How to make stickers">
-        {howToSteps.map((step) => (
+        {HOW_TO_STEPS.map((step) => (
           <li key={step.id}>
             <a
               href={`#${step.id}`}
@@ -1204,11 +906,7 @@ export default function StickerMakerPage() {
             <GuideHeading
               number={2}
               title="Cut"
-              hint={
-                product === 'uv-dtf'
-                  ? 'Cut = fixed 2.5 mm Square Cut on every image. Or No Cut.'
-                  : 'Cut on: set Circle / Square / Contour and border on each uploaded image.'
-              }
+              hint="Cut = fixed 2.5 mm Square Cut on every image. Or No Cut."
             />
             <div className="sticker-cut-option-row" role="radiogroup" aria-label="Cut or No Cut">
               <label className={`sticker-cut-choice ${cutEnabled ? 'selected' : ''}`}>
@@ -1219,11 +917,7 @@ export default function StickerMakerPage() {
                   onChange={() => setCuttingOn(true)}
                 />
                 <strong>Cut</strong>
-                <span>
-                  {product === 'uv-dtf'
-                    ? 'Square Cut · 2.5 mm on every image'
-                    : 'Per-image Circle / Square / Contour'}
-                </span>
+                <span>Square Cut · 2.5 mm on every image</span>
               </label>
               <label className={`sticker-cut-choice ${!cutEnabled ? 'selected' : ''}`}>
                 <input
@@ -1236,7 +930,7 @@ export default function StickerMakerPage() {
                 <span>Print only — no knife path</span>
               </label>
             </div>
-            {cutEnabled && product === 'uv-dtf' && (
+            {cutEnabled && (
               <p className="sticker-cut-fixed-note">
                 <Scissors size={14} /> UV DTF uses a standard 2.5 mm Square Cut.
               </p>
@@ -1326,18 +1020,10 @@ export default function StickerMakerPage() {
             {designs.map((design) => {
               const dpi = printDpi(design.pixelWidth, getDesignWidth(design))
               const quality = qualityFromDpi(dpi)
-              const shape = designCutShape(design)
-              const border = designBorderMm(design)
               const artW = getDesignWidth(design)
               const artH = getDesignHeight(design)
-              const finishedW =
-                shape === 'circle'
-                  ? Math.max(artW, artH) + mmToInches(border) * 2
-                  : artW + mmToInches(border) * 2
-              const finishedH =
-                shape === 'circle'
-                  ? Math.max(artW, artH) + mmToInches(border) * 2
-                  : artH + mmToInches(border) * 2
+              const finishedW = artW + borderIn * 2
+              const finishedH = artH + borderIn * 2
               return (
                 <div className="design-row" key={design.id}>
                   <div className="drag-handle">
@@ -1386,83 +1072,13 @@ export default function StickerMakerPage() {
                     </button>
                     {cutEnabled && (
                       <div className="sticker-image-cut">
-                        {product === 'uv-dtf' ? (
-                          <>
-                            <span className="sticker-image-cut-label">Cut</span>
-                            <span className="sticker-image-cut-fixed">
-                              <span aria-hidden="true">▢</span> Square Cut · 2.5 mm
-                            </span>
-                            <small>
-                              Finished size: {finishedW.toFixed(2)}" × {finishedH.toFixed(2)}"
-                            </small>
-                          </>
-                        ) : (
-                          <>
-                            <span className="sticker-image-cut-label">Cut</span>
-                            <div
-                              className="sticker-shape-picks"
-                              role="radiogroup"
-                              aria-label={`Cut shape for ${design.name}`}
-                            >
-                              {CUT_MODES.map((mode) => (
-                                <button
-                                  key={mode.value}
-                                  type="button"
-                                  className={shape === mode.value ? 'selected' : undefined}
-                                  aria-pressed={shape === mode.value}
-                                  onClick={() => updateDesignCut(design.id, mode.value, design.borderMm)}
-                                >
-                                  <span className="cut-pick-icon" aria-hidden="true">
-                                    {mode.icon}
-                                  </span>
-                                  <span className="cut-pick-label-full">{mode.label}</span>
-                                  <span className="cut-pick-label-short">{mode.shortLabel}</span>
-                                </button>
-                              ))}
-                            </div>
-                            <div className="sticker-image-cut-border-row">
-                              <div className="sticker-border-stepper">
-                                <button
-                                  type="button"
-                                  aria-label={`Decrease border for ${design.name}`}
-                                  disabled={border <= (shape === 'box' ? MIN_BORDER_MM_BOX : MIN_BORDER_MM_SHAPE)}
-                                  onClick={() => updateDesignCut(design.id, shape, border - BORDER_STEP_MM)}
-                                >
-                                  <Minus size={14} />
-                                </button>
-                                <strong>
-                                  {border.toFixed(1)} mm{' '}
-                                  <em>({mmToInches(border).toFixed(3)}")</em>
-                                </strong>
-                                <button
-                                  type="button"
-                                  aria-label={`Increase border for ${design.name}`}
-                                  disabled={border >= MAX_BORDER_MM}
-                                  onClick={() => updateDesignCut(design.id, shape, border + BORDER_STEP_MM)}
-                                >
-                                  <Plus size={14} />
-                                </button>
-                              </div>
-                              <span className="finished-size">
-                                Finished {finishedW.toFixed(2)}" × {finishedH.toFixed(2)}"
-                              </span>
-                            </div>
-                            {border < 1.5 && shape !== 'box' && (
-                              <small className="sticker-cut-warn">
-                                Very tight border — small cutting shifts may clip your art.
-                              </small>
-                            )}
-                            {designs.length > 1 && (
-                              <button
-                                type="button"
-                                className="compare-link"
-                                onClick={() => applyCutToAll(design.id)}
-                              >
-                                Apply to all
-                              </button>
-                            )}
-                          </>
-                        )}
+                        <span className="sticker-image-cut-label">Cut</span>
+                        <span className="sticker-image-cut-fixed">
+                          <span aria-hidden="true">▢</span> Square Cut · 2.5 mm
+                        </span>
+                        <small>
+                          Finished size: {finishedW.toFixed(2)}" × {finishedH.toFixed(2)}"
+                        </small>
                       </div>
                     )}
                   </div>
@@ -1619,11 +1235,7 @@ export default function StickerMakerPage() {
           {sheetPreviewOpen && sheetPreviewUrl && (
             <SheetPreviewModal
               url={sheetPreviewUrl}
-              sheetLabel={
-                pageLayouts.length > 1
-                  ? `${sheetLabelText} · Page ${safePageIndex + 1} of ${pageLayouts.length}`
-                  : sheetLabelText
-              }
+              sheetLabel={sheetLabelText}
               sheetLengthIn={billedLength}
               totalTransfers={sheetLayout.pieces.length}
               saving={saving}
@@ -1637,13 +1249,7 @@ export default function StickerMakerPage() {
               cutOut={cutEnabled}
               audience="shop"
               layoutPieces={layoutPieces}
-              contourOffsetEnabled={false}
-              contourOffsetBusy={shapesBusy}
-              confirmLabel={
-                pageLayouts.length > 1
-                  ? `Confirm & Build ${pageLayouts.length} Pages`
-                  : 'Confirm & Build Stickers'
-              }
+              confirmLabel="Confirm & Build Stickers"
             />
           )}
         </section>
@@ -1652,59 +1258,48 @@ export default function StickerMakerPage() {
           <div id="step-5" className="order-title">
             <span className="guide-num">5</span>
             <div>
-              <h2>
-                {product === 'uv-dtf' ? 'Length & build' : 'Media size & build'}
-              </h2>
+              <h2>Length & build</h2>
               <p className="order-hint">
-                {product === 'uv-dtf'
-                  ? 'UV DTF is 22 in wide (never wider). Length starts at 12 in. Cut / No Cut is set in step 2.'
-                  : 'Vinyl defaults to 8 × 11 in. Media stays fixed; overflow becomes page 2, 3… Cut / No Cut is in step 2.'}
+                UV DTF is 22 in wide (never wider). Length starts at 12 in. Cut / No Cut is set in step 2.
               </p>
             </div>
           </div>
 
           <div className="sticker-media-size">
             <span className="precut-button-title">
-              <Maximize2 size={18} /> {product === 'uv-dtf' ? 'UV DTF media' : 'Vinyl media size'}
+              <Maximize2 size={18} /> UV DTF media
             </span>
             <div className="sticker-size-fields">
               <label>
                 Width (in)
                 <input
                   type="number"
-                  min={product === 'uv-dtf' ? UV_DTF_MEDIA_WIDTH_IN : MIN_VINYL_WIDTH_IN}
-                  max={product === 'uv-dtf' ? UV_DTF_MEDIA_WIDTH_IN : MAX_VINYL_MEDIA_WIDTH_IN}
+                  min={UV_DTF_MEDIA_WIDTH_IN}
+                  max={UV_DTF_MEDIA_WIDTH_IN}
                   step="0.25"
                   value={mediaWidthIn}
-                  disabled={product === 'uv-dtf'}
-                  readOnly={product === 'uv-dtf'}
-                  aria-label={product === 'uv-dtf' ? 'UV DTF width locked at 22 inches' : 'Vinyl media width'}
-                  onChange={(e) => {
-                    if (product !== 'vinyl') return
-                    setVinylWidthIn(clampVinylWidth(Number(e.target.value) || MIN_VINYL_WIDTH_IN))
-                  }}
+                  disabled
+                  readOnly
+                  aria-label="UV DTF width locked at 22 inches"
                 />
               </label>
               <label>
                 Length (in)
                 <input
                   type="number"
-                  min={product === 'uv-dtf' ? MIN_UV_LENGTH_IN : MIN_VINYL_LENGTH_IN}
+                  min={MIN_UV_LENGTH_IN}
                   max={MAX_MEDIA_HEIGHT_IN}
                   step="0.25"
                   value={mediaHeightIn}
                   onChange={(e) => {
                     const raw = Number(e.target.value) || 0
-                    if (product === 'vinyl') setVinylLengthIn(clampVinylLength(raw || MIN_VINYL_LENGTH_IN))
-                    else setUvLengthIn(clampUvLength(raw || MIN_UV_LENGTH_IN))
+                    setUvLengthIn(clampUvLength(raw || MIN_UV_LENGTH_IN))
                   }}
                 />
               </label>
             </div>
             <small>
-              {product === 'uv-dtf'
-                ? `Width is locked at ${UV_DTF_MEDIA_WIDTH_IN} in (never exceeds). Minimum length ${MIN_UV_LENGTH_IN} in. Length grows on the roll if stickers need more film.`
-                : `Default / min ${MIN_VINYL_WIDTH_IN} × ${MIN_VINYL_LENGTH_IN} in. Media size never grows — extra stickers become page 2, 3, 4…`}
+              {`Width is locked at ${UV_DTF_MEDIA_WIDTH_IN} in (never exceeds). Minimum length ${MIN_UV_LENGTH_IN} in. Length grows on the roll if stickers need more film.`}
             </small>
           </div>
 
@@ -1713,14 +1308,7 @@ export default function StickerMakerPage() {
               <Scissors size={18} /> Cut
             </span>
             <strong>{cutLabel}</strong>
-            {cutEnabled && product === 'vinyl' && (
-              <small>
-                Per image — set Circle / Square / Contour next to each upload.
-              </small>
-            )}
-            {cutEnabled && product === 'uv-dtf' && (
-              <small>Fixed Square Cut · 2.5 mm on every image.</small>
-            )}
+            {cutEnabled && <small>Fixed Square Cut · 2.5 mm on every image.</small>}
             {!cutEnabled && <small>Toggle Cut in step 2 under Customer name.</small>}
           </div>
 
@@ -1738,22 +1326,15 @@ export default function StickerMakerPage() {
           <div className="metrics">
             <Metric label="Stickers" value={designs.length} icon={<ImageIcon size={24} />} />
             <Metric label="Total pieces" value={totalTransfers} icon={<Sticker size={25} />} />
-            <Metric label="Product" value={product === 'uv-dtf' ? 'UV DTF' : 'Vinyl'} icon={<Sticker size={22} />} green />
+            <Metric label="Product" value="UV DTF" icon={<Sticker size={22} />} green />
             <Metric label="Media size" value={sheetLabelText} icon={<Maximize2 size={21} />} green />
-            <Metric
-              label="Pages"
-              value={pageLayouts.length || (designs.length ? 0 : 1)}
-              icon={<FileImage size={22} />}
-              green
-            />
             <Metric label="Cut" value={cutLabel} icon={<Scissors size={22} />} green />
             <div className="price-breakdown">
               <strong>{sheetName}</strong>
               <span>
-                {productLabel} · {sheetLabelText}
-                {pageLayouts.length > 1 ? ` · ${pageLayouts.length} pages` : ''} · {cutLabel}
+                UV DTF stickers · {sheetLabelText} · {cutLabel}
               </span>
-              {shapesBusy && <span>Tracing cut paths…</span>}
+              {shapesBusy && <span>Adding cut line…</span>}
             </div>
           </div>
 
@@ -1763,28 +1344,10 @@ export default function StickerMakerPage() {
           {sheetFillMessage && (
             <p className="sheet-fill-readout" aria-live="polite">
               {sheetFillMessage}
-              {!paginateVinyl && (
-                <span className="sheet-fill-bar" aria-hidden="true">
-                  <span style={{ width: `${fillPercent}%` }} />
-                </span>
-              )}
+              <span className="sheet-fill-bar" aria-hidden="true">
+                <span style={{ width: `${fillPercent}%` }} />
+              </span>
             </p>
-          )}
-          {pageLayouts.length > 1 && (
-            <div className="sticker-page-tabs" role="tablist" aria-label="Sticker pages">
-              {pageLayouts.map((_, index) => (
-                <button
-                  key={`page-${index + 1}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={safePageIndex === index}
-                  className={`sticker-page-tab ${safePageIndex === index ? 'selected' : ''}`}
-                  onClick={() => void selectPreviewPage(index)}
-                >
-                  Page {index + 1}
-                </button>
-              ))}
-            </div>
           )}
           <div className="sheet-preview">
             <span className="dimension horizontal">{mediaWidthIn} in</span>
@@ -1798,11 +1361,7 @@ export default function StickerMakerPage() {
                   <img
                     className="sheet-final-preview"
                     src={sheetPreviewUrl}
-                    alt={
-                      pageLayouts.length > 1
-                        ? `Sticker sheet page ${safePageIndex + 1} preview`
-                        : 'Sticker sheet preview'
-                    }
+                    alt="Sticker sheet preview"
                   />
                   <CutShapeOverlay
                     shapes={cutShapes}
@@ -1844,26 +1403,15 @@ export default function StickerMakerPage() {
                 previewBusy ||
                 saving ||
                 designs.length === 0 ||
-                !customerName.trim() ||
-                tooLargePieces.length > 0
+                !customerName.trim()
               }
               onClick={() => void previewStickerSheet()}
             >
-              <Eye size={18} />{' '}
-              {previewBusy
-                ? 'Building preview…'
-                : pageLayouts.length > 1
-                  ? `Preview ${pageLayouts.length} Pages`
-                  : 'Preview Sticker Sheet'}
+              <Eye size={18} /> {previewBusy ? 'Building preview…' : 'Preview Sticker Sheet'}
             </button>
             {previewing && pagePreviewUrls.length > 0 && (
               <button className="confirm-button" disabled={saving || shapesBusy} onClick={() => void buildAndStore()}>
-                <Check size={18} />{' '}
-                {saving
-                  ? 'Saving to Drive…'
-                  : pageLayouts.length > 1
-                    ? `Confirm & Build ${pageLayouts.length} Pages`
-                    : 'Confirm & Build Stickers'}
+                <Check size={18} /> {saving ? 'Saving to Drive…' : 'Confirm & Build Stickers'}
               </button>
             )}
             {saveError && <p className="save-error">{saveError}</p>}
@@ -1878,9 +1426,7 @@ export default function StickerMakerPage() {
                 <strong>Your sticker sheet is built.</strong>
               </div>
               <p>
-                {sheetLabelText}
-                {pageLayouts.length > 1 ? ` · ${pageLayouts.length} pages` : ''} · {totalTransfers} pieces ·{' '}
-                {cutLabel} · Ready
+                {sheetLabelText} · {totalTransfers} pieces · {cutLabel} · Ready
               </p>
               {driveFolderUrl && (
                 <a className="drive-link" href={driveFolderUrl} target="_blank" rel="noreferrer">

@@ -1,6 +1,6 @@
 /**
- * Cut shapes for the staff Sticker Maker: rectangular box, circle, or
- * silhouette contour around the artwork. PLT generation reuses the Teneth
+ * Square cut shapes for the DTF Sticker Maker (UV DTF only).
+ * Fixed 2.5 mm box around art. PLT generation reuses the Teneth
  * mark-row / section structure from cut-layout.
  */
 
@@ -13,42 +13,10 @@ import {
   registrationMarkBounds,
   type CutBox,
 } from '@/lib/cut-layout'
-import { loadImage } from '@/lib/image-utils'
 
-export type CutMode = 'box' | 'circle' | 'contour'
+/** UV DTF sticker maker supports Square Cut only. */
+export type CutMode = 'box'
 
-/** Order: Square · Circle · Contour (SPEC_2 segmented row). */
-export const CUT_MODES: {
-  value: CutMode
-  label: string
-  shortLabel: string
-  icon: string
-  hint: string
-}[] = [
-  {
-    value: 'box',
-    label: 'Square Cut',
-    shortLabel: 'Square',
-    icon: '▢',
-    hint: 'Rectangle or square that hugs the art — never padded out to a perfect square.',
-  },
-  {
-    value: 'circle',
-    label: 'Circle Cut',
-    shortLabel: 'Circle',
-    icon: '◯',
-    hint: 'Round cut sized to the design’s longer side plus border.',
-  },
-  {
-    value: 'contour',
-    label: 'Contour Cut',
-    shortLabel: 'Contour',
-    icon: '☁',
-    hint: 'Follows the artwork silhouette (alpha edge) with a border offset.',
-  },
-]
-
-/** Per-piece cut settings (vinyl can differ per image; UV DTF is fixed Square 2.5 mm). */
 export type PieceCutSettings = {
   mode: CutMode
   /** Border outside the art, in inches. */
@@ -64,19 +32,8 @@ export type CutShape = {
 }
 
 const EPS = 1e-6
-const CIRCLE_SEGMENTS = 48
-/** Default how far outside the alpha the contour sits (matches box margin feel). */
-export const DEFAULT_CONTOUR_OFFSET_IN = CUT_MARGIN_IN
-/** Tightest allowed inset (negative = cut into the artwork). */
-export const MIN_CONTOUR_OFFSET_IN = -0.1
-/** Widest allowed expand around the object. */
-export const MAX_CONTOUR_OFFSET_IN = 0.5
-export const CONTOUR_OFFSET_STEP_IN = 0.025
-
-export function clampContourOffsetIn(value: number) {
-  if (!Number.isFinite(value)) return DEFAULT_CONTOUR_OFFSET_IN
-  return Math.min(MAX_CONTOUR_OFFSET_IN, Math.max(MIN_CONTOUR_OFFSET_IN, value))
-}
+/** Default Square Cut border (2.5 mm) — same as CUT_MARGIN_IN. */
+export const DEFAULT_BOX_OFFSET_IN = CUT_MARGIN_IN
 
 function toUnits(inches: number) {
   return Math.round(inches * PLT_UNITS_PER_IN)
@@ -111,15 +68,6 @@ function polygonPath(
   return out
 }
 
-function circlePoints(cx: number, cy: number, radius: number, segments = CIRCLE_SEGMENTS) {
-  const points: Array<{ xIn: number; yIn: number }> = []
-  for (let i = 0; i < segments; i += 1) {
-    const angle = (Math.PI * 2 * i) / segments
-    points.push({ xIn: cx + Math.cos(angle) * radius, yIn: cy + Math.sin(angle) * radius })
-  }
-  return points
-}
-
 function boxPoints(box: CutBox) {
   return [
     { xIn: box.xIn, yIn: box.yIn },
@@ -127,105 +75,6 @@ function boxPoints(box: CutBox) {
     { xIn: box.xIn + box.widthIn, yIn: box.yIn + box.heightIn },
     { xIn: box.xIn, yIn: box.yIn + box.heightIn },
   ]
-}
-
-/** Marching-squares style outline of opaque pixels → sheet-inch polygon. */
-async function contourPointsForPiece(
-  piece: PlacedSheetPiece,
-  sheetWidthIn: number,
-  sheetHeightIn: number,
-  offsetIn: number,
-): Promise<Array<{ xIn: number; yIn: number }>> {
-  if (!piece.previewUrl) return boxPoints(cutBoxForPiece(piece, sheetWidthIn, sheetHeightIn))
-
-  const image = await loadImage(piece.previewUrl)
-  const sampleW = Math.min(240, Math.max(32, image.naturalWidth))
-  const sampleH = Math.max(32, Math.round((sampleW * image.naturalHeight) / Math.max(1, image.naturalWidth)))
-  const canvas = document.createElement('canvas')
-  canvas.width = sampleW
-  canvas.height = sampleH
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  if (!ctx) return boxPoints(cutBoxForPiece(piece, sheetWidthIn, sheetHeightIn))
-  ctx.clearRect(0, 0, sampleW, sampleH)
-  ctx.drawImage(image, 0, 0, sampleW, sampleH)
-  const { data } = ctx.getImageData(0, 0, sampleW, sampleH)
-
-  const solid = (x: number, y: number) => {
-    if (x < 0 || y < 0 || x >= sampleW || y >= sampleH) return false
-    return data[(y * sampleW + x) * 4 + 3] > 24
-  }
-
-  // Boundary walk: start at left-most solid pixel, walk 8-connected edge.
-  let startX = -1
-  let startY = -1
-  outer: for (let x = 0; x < sampleW; x += 1) {
-    for (let y = 0; y < sampleH; y += 1) {
-      if (solid(x, y)) {
-        startX = x
-        startY = y
-        break outer
-      }
-    }
-  }
-  if (startX < 0) return boxPoints(cutBoxForPiece(piece, sheetWidthIn, sheetHeightIn))
-
-  const dirs = [
-    [1, 0],
-    [1, 1],
-    [0, 1],
-    [-1, 1],
-    [-1, 0],
-    [-1, -1],
-    [0, -1],
-    [1, -1],
-  ] as const
-
-  const edge: Array<{ x: number; y: number }> = []
-  let x = startX
-  let y = startY
-  let dir = 0
-  const maxSteps = sampleW * sampleH * 4
-  for (let step = 0; step < maxSteps; step += 1) {
-    edge.push({ x, y })
-    let found = false
-    for (let turn = 0; turn < 8; turn += 1) {
-      const nextDir = (dir + 6 + turn) % 8 // prefer left turns to stay on outer edge
-      const nx = x + dirs[nextDir][0]
-      const ny = y + dirs[nextDir][1]
-      if (!solid(nx, ny)) continue
-      // Edge pixel if any 4-neighbour is empty
-      const isEdge =
-        !solid(nx + 1, ny) || !solid(nx - 1, ny) || !solid(nx, ny + 1) || !solid(nx, ny - 1)
-      if (!isEdge && !(nx === startX && ny === startY)) continue
-      x = nx
-      y = ny
-      dir = nextDir
-      found = true
-      break
-    }
-    if (!found) break
-    if (edge.length > 8 && x === startX && y === startY) break
-  }
-
-  if (edge.length < 8) return boxPoints(cutBoxForPiece(piece, sheetWidthIn, sheetHeightIn))
-
-  // Decimate + expand slightly outward from piece centre.
-  const stride = Math.max(1, Math.floor(edge.length / 80))
-  const cx = piece.xIn + piece.widthIn / 2
-  const cy = piece.yIn + piece.heightIn / 2
-  const points: Array<{ xIn: number; yIn: number }> = []
-  for (let i = 0; i < edge.length; i += stride) {
-    const px = piece.xIn + (edge[i].x / sampleW) * piece.widthIn
-    const py = piece.yIn + (edge[i].y / sampleH) * piece.heightIn
-    const dx = px - cx
-    const dy = py - cy
-    const len = Math.hypot(dx, dy) || 1
-    points.push({
-      xIn: px + (dx / len) * offsetIn,
-      yIn: py + (dy / len) * offsetIn,
-    })
-  }
-  return points.length >= 3 ? points : boxPoints(cutBoxForPiece(piece, sheetWidthIn, sheetHeightIn))
 }
 
 function artBounds(piece: PlacedSheetPiece): CutBox {
@@ -247,52 +96,20 @@ function expandBounds(box: CutBox, offsetIn: number): CutBox {
   }
 }
 
-async function shapeForPiece(
+function shapeForPiece(
   piece: PlacedSheetPiece,
-  mode: CutMode,
   sheetWidthIn: number,
   sheetHeightIn: number,
   offsetIn: number,
-): Promise<CutShape | null> {
+): CutShape | null {
   const art = artBounds(piece)
   if (art.widthIn <= EPS || art.heightIn <= EPS) return null
   const pad = Math.max(0, offsetIn)
-
-  if (mode === 'box') {
-    // Prefer art + border. Fall back to layout cut box if art has no size.
-    const box = pad > 0 || art.widthIn > 0 ? expandBounds(art, pad) : cutBoxForPiece(piece, sheetWidthIn, sheetHeightIn)
-    return { kind: 'box', bounds: box, points: boxPoints(box) }
-  }
-
-  if (mode === 'circle') {
-    const cx = art.xIn + art.widthIn / 2
-    const cy = art.yIn + art.heightIn / 2
-    const radius = Math.max(art.widthIn, art.heightIn) / 2 + pad
-    const bounds: CutBox = {
-      xIn: cx - radius,
-      yIn: cy - radius,
-      widthIn: radius * 2,
-      heightIn: radius * 2,
-    }
-    return { kind: 'circle', bounds, points: circlePoints(cx, cy, Math.max(0.05, radius)) }
-  }
-
-  const points = await contourPointsForPiece(piece, sheetWidthIn, sheetHeightIn, pad)
-  let minX = Infinity
-  let minY = Infinity
-  let maxX = -Infinity
-  let maxY = -Infinity
-  for (const point of points) {
-    minX = Math.min(minX, point.xIn)
-    minY = Math.min(minY, point.yIn)
-    maxX = Math.max(maxX, point.xIn)
-    maxY = Math.max(maxY, point.yIn)
-  }
-  return {
-    kind: 'contour',
-    bounds: { xIn: minX, yIn: minY, widthIn: maxX - minX, heightIn: maxY - minY },
-    points,
-  }
+  const box =
+    pad > 0 || art.widthIn > 0
+      ? expandBounds(art, pad)
+      : cutBoxForPiece(piece, sheetWidthIn, sheetHeightIn)
+  return { kind: 'box', bounds: box, points: boxPoints(box) }
 }
 
 export async function buildCutShapes(
@@ -301,18 +118,18 @@ export async function buildCutShapes(
   sheetWidthIn: number,
   sheetHeightIn: number,
   /** Border outside the art, in inches. */
-  contourOffsetIn: number = DEFAULT_CONTOUR_OFFSET_IN,
-  /** Optional per-piece overrides (vinyl). */
+  boxOffsetIn: number = DEFAULT_BOX_OFFSET_IN,
+  /** Optional per-piece overrides — non-box modes are ignored (always Square Cut). */
   perPiece?: Array<PieceCutSettings | undefined>,
 ): Promise<CutShape[]> {
-  const fallbackOffset = Math.max(0, contourOffsetIn)
+  void mode
+  const fallbackOffset = Math.max(0, boxOffsetIn)
   const shapes: CutShape[] = []
   for (let i = 0; i < pieces.length; i += 1) {
     const piece = pieces[i]
     const settings = perPiece?.[i]
-    const pieceMode = settings?.mode ?? mode
     const offsetIn = settings ? Math.max(0, settings.offsetIn) : fallbackOffset
-    const shape = await shapeForPiece(piece, pieceMode, sheetWidthIn, sheetHeightIn, offsetIn)
+    const shape = shapeForPiece(piece, sheetWidthIn, sheetHeightIn, offsetIn)
     if (shape) shapes.push(shape)
   }
   return shapes
