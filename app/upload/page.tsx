@@ -15,6 +15,7 @@ import {
   type ScaledSheet,
 } from '@/lib/upload-scale'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
+import { autoSaveProjectJson, imagesFromDriveFiles } from '@/lib/project/auto-save'
 import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
 import { sheetStamp } from '@/lib/sheet-name'
 import { SHEET_ACCEPT, SHEET_ACCEPT_LABEL, isAcceptedSheetFile } from '@/lib/accepted-uploads'
@@ -312,6 +313,21 @@ function UploadFlow() {
         onProgress: setUploadProgress,
       })
       setDriveFolderUrl(drive.folderUrl)
+
+      /** SPEC E3: automatic project.ssp.json for customer upload jobs. */
+      void autoSaveProjectJson({
+        folderId: drive.folderId,
+        source: 'customer-site',
+        name: customerName.trim(),
+        customer: { name: customerName.trim() },
+        product: { printType: 'uv-dtf', sheetType: 'uploaded' },
+        images: imagesFromDriveFiles(
+          drive.files.map((file) => ({ name: file.name, id: file.id })),
+        ),
+        fromUpload: true,
+      }).catch((err) => {
+        console.warn('[project] customer upload auto-save failed', err)
+      })
 
       // One cart line per uploaded sheet, each with its own Drive link and price.
       for (const [index, job] of jobs.entries()) {

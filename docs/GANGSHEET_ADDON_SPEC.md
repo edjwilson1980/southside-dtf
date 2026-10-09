@@ -2,7 +2,7 @@
 
 **Project:** Southside Gang Sheet Builder (Next.js 15, WooCommerce checkout)
 **Where this goes:** `docs/GANGSHEET_ADDON_SPEC.md` — one spec for Cursor covering everything below.
-**Release:** **v2.2.0** — shown in the builder's page footer (Part C).
+**Release:** **v2.3.0** — shown in the builder's page footer (Part C).
 **DTF only:** vinyl stickers have been removed from this project and moved to their own spec, `VINYL_STICKER_MAKER_SPEC.md`.
 
 | Part | What it covers | Applies to |
@@ -11,8 +11,11 @@
 | **B. Save & Reopen Projects + Staff Tools** | Save Job / Reopen Job, Google Drive project JSON, staff Fix mode, staff as-is JSON load, Photoshop export/import | Save/Reopen Job: DTF sticker maker only · staff tools: all orders |
 | **C. Version Footer & Release Notes** | Version number in the page footer, versioning rules, changelog | Whole builder |
 | **D. Top Menu** | Shop Builder · DTF Stickers · Vinyl Stickers · Halftone Generator | Every page |
+| **E. Shop Builder Projects & Customer Project Files** | Reopen Project button (Shop Builder), a JSON for every project, customer-site projects saved to Drive for staff | Shop Builder + customer site |
 
 ### Summary of decisions
+- **Shop Builder:** **Reopen Project** button in the **top-right corner**. **Every project gets a JSON file** in Google Drive (Part E).
+- **Customer site:** when a customer's files are created, a **project JSON is written to Google Drive automatically**, so staff can open that project in the Shop Builder (Part E).
 - **Top menu** on every page: **Shop Builder · DTF Stickers · Vinyl Stickers · Halftone Generator** (Part D).
 - **Automatic project JSON:** as soon as files upload to Google Drive, the job's `project.ssp.json` is created or updated in the same folder automatically (Section B2).
 - **This project is DTF only.** Vinyl stickers are a separate project (`VINYL_STICKER_MAKER_SPEC.md`); all vinyl code comes out of this one (Section A14).
@@ -418,7 +421,8 @@ Vinyl stickers now live in their own project (`VINYL_STICKER_MAKER_SPEC.md`). Re
 **Goal:** Save the full gang-sheet project as a **JSON file in Google Drive**, with **Save Job** and **Reopen Job** buttons on the DTF sticker maker, so the customer or shop staff can open it later to edit or fix it.
 
 **Scope:**
-- **Save Job / Reopen Job buttons and autosave:** the DTF sticker maker only (UV DTF).
+- **Project JSON in Google Drive:** **every project** — DTF Stickers, Shop Builder and the customer site (Part E).
+- **Save Job / Reopen Job buttons:** the DTF sticker maker. The Shop Builder has its own **Reopen Project** button (Part E). The customer site has no buttons; its JSON is written automatically.
 - **Order snapshots and staff tools** (Fix mode, as-is load, Photoshop export/import): every order, so staff can fix any job.
 
 - B1. What the Customer Sees — Save Job / Reopen Job (DTF sticker maker only)
@@ -550,7 +554,10 @@ Gang Sheet Projects/                      ← GDRIVE_ROOT_FOLDER_ID
   "createdAt": "2026-10-08T19:41:00Z",
   "updatedAt": "2026-10-08T19:55:12Z",
   "lastUploadAt": "2026-10-08T19:54:40Z",
+  "source": "customer-site",
+  "revision": 7,
   "owner": { "wcCustomerId": 1182 },
+  "customer": { "name": "Crash Out Club", "email": "orders@example.com", "phone": null },
   "product": {
     "wcProductId": 512,
     "printType": "uv-dtf",
@@ -589,7 +596,7 @@ Written when an order is frozen, when staff save in Fix mode, and when staff dow
 "snapshot": {
   "frozenAt": "2026-10-08T20:02:44Z",
   "orderId": 48213,
-  "codeVersion": { "builder": "2.2.0", "cutline": "1.1.0", "alpha": "1.0.3" },
+  "codeVersion": { "builder": "2.3.0", "cutline": "1.1.0", "alpha": "1.0.3" },
   "sheet": { "widthIn": 22, "lengthIn": 64.5 },
   "placements": [
     { "imageId": "img_01", "copy": 1, "xIn": 0.25, "yIn": 0.25, "rotationDeg": 0 },
@@ -752,7 +759,7 @@ After editing in Photoshop, staff click **Import edited PSD** and drop the edite
 | Logged-in customer | Their own projects (`owner.wcCustomerId` matches) |
 | Guest with reopen link | The one project in the link. The `t` token is an HMAC of `projectId`; it never expires, but staff can revoke it by rotating the project's `linkSalt` |
 | Uploaded `.ssp.json` | Only when `sig` is valid. Its images load only from that project's own Drive folder |
-| Staff (WP `manage_woocommerce`) | Any project, including Fix mode, as-is JSON load, PSD export and PSD import |
+| Staff (WP `manage_woocommerce`) | Any project from any source (Shop Builder, customer site, DTF Stickers) via **Reopen Project**, including Fix mode, as-is JSON load, PSD export and PSD import |
 
 - The Drive credentials live **only on the server**.
 - Rate-limit `/api/project/*` (e.g. 30 requests/min per IP).
@@ -915,7 +922,7 @@ scripts/
 
 ## C1. This Release
 
-**Version: `2.2.0`** — everything in Parts A, B and D ships together as this release. 2.2.0 adds the top menu (Part D) and the automatic project JSON on upload (Section B2) on top of 2.1.0, which removed vinyl and made the project UV DTF only. Set the footer and `package.json` to 2.2.0.
+**Version: `2.3.0`** — everything in Parts A, B, D and E ships together as this release. 2.3.0 adds the Shop Builder's **Reopen Project** button and a project JSON for every project, including customer-site projects (Part E). 2.2.0 added the top menu and automatic JSON on upload; 2.1.0 removed vinyl. Set the footer and `package.json` to 2.3.0.
 
 ## C2. The Footer
 
@@ -924,11 +931,11 @@ scripts/
 │  ... builder ...                                                     │
 │                                                                      │
 ├──────────────────────────────────────────────────────────────────────┤
-│  South Side DTF Gang Sheet Builder  ·  v2.2.0  ·  What's new         │  ← customer
+│  South Side DTF Gang Sheet Builder  ·  v2.3.0  ·  What's new         │  ← customer
 └──────────────────────────────────────────────────────────────────────┘
 
 ├──────────────────────────────────────────────────────────────────────┤
-│  South Side DTF Gang Sheet Builder  ·  v2.2.0  ·  build 3f9c2a1  ·    │  ← staff
+│  South Side DTF Gang Sheet Builder  ·  v2.3.0  ·  build 3f9c2a1  ·    │  ← staff
 │  2026-10-08 14:02 CT  ·  cutline 1.1.0  ·  alpha 1.0.3  ·  What's new │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -936,13 +943,13 @@ scripts/
 - **Placement:** a slim footer bar pinned to the bottom of every builder page (full width, small grey text, ~32 px tall). It sits below the builder content and never covers the canvas or the Add-to-cart button. On phones it wraps to two lines.
 - **Customers see:** app name, version, and a **What's new** link.
 - **Staff see** (WP `manage_woocommerce`): also the git commit (short hash), build date/time in Chicago time, and the `cutline` and `alpha` module versions — the same values written into a project's `snapshot.codeVersion`.
-- **Click the version** to copy `v2.2.0 (3f9c2a1)` to the clipboard, with a "Copied" toast, so it can be pasted into a bug report.
+- **Click the version** to copy `v2.3.0 (3f9c2a1)` to the clipboard, with a "Copied" toast, so it can be pasted into a bug report.
 - **What's new** opens a small modal showing the `CHANGELOG.md` entry for the current version.
-- Also shown in the footer of the **staff PSD export `README.txt`** and in the production PDF metadata (`Producer: SSP Gang Sheet Builder v2.2.0`).
+- Also shown in the footer of the **staff PSD export `README.txt`** and in the production PDF metadata (`Producer: SSP Gang Sheet Builder v2.3.0`).
 
 ## C3. Where the Number Comes From
 
-- **One source of truth:** `"version"` in `package.json`. Set it to `"2.2.0"` for this release.
+- **One source of truth:** `"version"` in `package.json`. Set it to `"2.3.0"` for this release.
 - `next.config.ts` exposes it at build time, with no hard-coding in components:
 
 ```ts
@@ -971,16 +978,24 @@ export default {
 
 | Change | Bump | Example |
 |---|---|---|
-| Bug fix, no behavior change | Patch | 2.2.0 → 2.2.1 |
-| New feature, old projects still open the same | Minor | 2.2.1 → 2.3.0 |
-| Changes saved-file format, pricing, or cut output | Major | 2.3.0 → 3.0.0 |
+| Bug fix, no behavior change | Patch | 2.3.0 → 2.3.1 |
+| New feature, old projects still open the same | Minor | 2.3.1 → 2.4.0 |
+| Changes saved-file format, pricing, or cut output | Major | 2.4.0 → 3.0.0 |
 
-- Every release adds an entry to `CHANGELOG.md` and tags git as `v2.2.0`.
+- Every release adds an entry to `CHANGELOG.md` and tags git as `v2.3.0`.
 - If a release changes `.ssp.json`, also bump `schemaVersion` and add a migration (Section B4).
 
 ## C5. `CHANGELOG.md` entry
 
 ```md
+## [2.3.0] — 2026-10-09
+
+### Added
+- Shop Builder: **Reopen Project** button in the top-right corner, opening any project (shop, customer site or DTF Stickers).
+- Every project gets a `project.ssp.json` in Google Drive the moment it's created, updated on every change.
+- Customer site: when a customer's files are created, a project JSON is written to Google Drive automatically so staff can open it in the Shop Builder.
+- Project JSON records `source`, `customer` and `revision`; edit conflicts are caught.
+
 ## [2.2.0] — 2026-10-09
 
 ### Added
@@ -1023,10 +1038,10 @@ CHANGELOG.md
 
 ## C7. Acceptance Criteria
 
-- [ ] Every builder page shows the footer with **v2.2.0** at the bottom of the screen.
+- [ ] Every builder page shows the footer with **v2.3.0** at the bottom of the screen.
 - [ ] Customers see name + version + What's new; staff also see commit, build time (CT) and module versions.
 - [ ] The version comes only from `package.json`; changing it there and rebuilding updates the footer.
-- [ ] Clicking the version copies it; What's new shows the 2.2.0 changelog entry.
+- [ ] Clicking the version copies it; What's new shows the 2.3.0 changelog entry.
 - [ ] `snapshot.codeVersion.builder`, the PSD `README.txt` and PDF metadata all show the same version as the footer.
 - [ ] `GET /api/version` returns the version, commit and build time.
 - [ ] The footer never covers the canvas or Add-to-cart, on desktop or phone.
@@ -1048,7 +1063,7 @@ CHANGELOG.md
 
 | Button (left → right) | Opens | Where it lives |
 |---|---|---|
-| **Shop Builder** | The DTF gang sheet builder | This app (`/builder`) |
+| **Shop Builder** | The shop's DTF gang sheet builder, with **Reopen Project** top right (Part E) | This app (`/builder`) |
 | **DTF Stickers** | The UV DTF sticker maker (Part A) | This app (`/stickers`) |
 | **Vinyl Stickers** | The Vinyl Sticker Maker | **Separate project** (`VINYL_STICKER_MAKER_SPEC.md`) — external link |
 | **Halftone Generator** | The halftone / color separation tool | **Separate project** — external link |
@@ -1100,6 +1115,189 @@ app/layout.tsx              // renders <TopMenu /> above every page
 
 ---
 
+# Part E — Shop Builder Projects & Customer Project Files
+
+**Goal:** Every project — whether staff build it in the Shop Builder or a customer builds it on the website — has a **JSON file in Google Drive**, and staff can open any of them from a **Reopen Project** button in the Shop Builder.
+
+```
+  CUSTOMER SITE                         GOOGLE DRIVE                         SHOP BUILDER (staff)
+  ─────────────                         ────────────                         ────────────────────
+  customer uploads art      ──────▶     prj_8f3k2a/                ◀──────   [ 📂 Reopen Project ]
+  files are created                       project.ssp.json  (auto)             → search → open
+  (no buttons shown)                      originals/  processed/               → edit / fix / print
+```
+
+- E1. Shop Builder — Reopen Project Button
+- E2. A JSON File for Every Project
+- E3. Customer Site — Automatic Project JSON
+- E4. Staff Opening a Customer Project
+- E5. Finding Projects (Drive search)
+- E6. Files & API
+- E7. Acceptance Criteria
+- E8. Test Cases
+
+---
+
+## E1. Shop Builder — Reopen Project Button
+
+```
+┌────────────────────────────────────────────────────────────────────────────────┐
+│ [▌Shop Builder ] [ DTF Stickers ] [ Vinyl Stickers ] [ Halftone Generator ]    │  ← top menu
+├────────────────────────────────────────────────────────────────────────────────┤
+│  SOUTH SIDE SHOP BUILDER                             [ 📂 Reopen Project ]     │  ← top-right corner
+├────────────────────────────────────────────────────────────────────────────────┤
+│  … existing gang sheet builder …                                               │
+```
+
+- **Reopen Project** sits in the **top-right corner** of the Shop Builder, on the same row as the page title, just under the top menu.
+- **Staff only.** The Shop Builder is a shop tool; customers never see it.
+- Clicking it opens the **Reopen Project** dialog:
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  REOPEN PROJECT                                                 ✕    │
+│                                                                      │
+│  Search  [ customer name, order #, email or project ID ________ ]   │
+│  Source  ( • ) All   ( ) Shop Builder   ( ) Customer site   ( ) DTF Stickers │
+│                                                                      │
+│  Recent                                                              │
+│   Crash Out Club drop 3   Customer site   Order #48213   Oct 8 2:41 PM │
+│   Fire Dept stickers      DTF Stickers    —              Oct 8 1:10 PM │
+│   Walk-in: Tony's Tees    Shop Builder    —              Oct 7 4:55 PM │
+│                                                                      │
+│  [ Upload .ssp.json file ]    [ Paste project link / ID ________ ]   │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+- **Search** by customer name, order number, email or project ID. **Source** filter: All / Shop Builder / Customer site / DTF Stickers.
+- **Recent** shows the last 25 projects across all sources, newest first, with source, order number (if ordered) and last-updated time.
+- **Upload .ssp.json** and **Paste project link / ID** also work.
+- Opening a project loads it into the Shop Builder (Section E4). DTF Stickers projects open in the DTF sticker maker instead, so the cut settings stay intact.
+
+---
+
+## E2. A JSON File for Every Project
+
+**Every project gets a `project.ssp.json` in Google Drive — no exceptions, no Save click needed.**
+
+| Where the project starts | When the JSON is created | When it's updated |
+|---|---|---|
+| **Shop Builder** (staff) | The moment the project is created: **New Project** clicked or first file uploaded | Every upload, edit, autosave (60 s) and save |
+| **Customer site** | The moment the customer's files are created (Section E3) | Every upload, edit, add-to-cart and order |
+| **DTF Stickers** | First upload (Section B2) | Every upload, edit and Save Job |
+
+- Same folder layout (Section B3) and same file format (Section B4) for all three.
+- `source` records where the project started: `"shop-builder"`, `"customer-site"` or `"dtf-stickers"`. It never changes, even when staff edit a customer project.
+- `customer` holds name, email and phone when known (from Box 1, the WooCommerce account or the checkout).
+- `revision` goes up by 1 on every write (used for conflict checks, Section E4).
+- The JSON is signed (`sig`) as in Section B4.
+
+---
+
+## E3. Customer Site — Automatic Project JSON
+
+On the customer-facing gang sheet builder (southsidedtf.com), **customers don't see any save or reopen buttons.** The JSON is written behind the scenes:
+
+1. Customer uploads artwork.
+2. The server processes it (background removal, alpha fix, upscale) and **creates the files** in the project's Drive folder (`originals/`, `processed/`).
+3. **As soon as the files are created**, the server writes `project.ssp.json` in the same folder with `source: "customer-site"`.
+4. Every change after that (more uploads, resizing, quantities, removing an image) updates the JSON, batched to at most one write every 10 seconds.
+5. **Add to cart** saves and locks that revision to the cart item (Section B2). **Order placed** freezes `order-<orderId>.ssp.json` with a snapshot (Section B4).
+
+- **Guests too.** Customers who aren't logged in still get a project JSON; `customer` fills in at checkout. Abandoned guest projects with no order are deleted after `CUSTOMER_PROJECT_RETENTION_DAYS` (default 90).
+- **Never a file without its JSON.** If the JSON write fails, retry up to 3 times, then keep retrying on the next change. Log failures for staff.
+- **No slowdown for the customer.** The JSON write runs after the upload response returns; the customer never waits on it.
+
+---
+
+## E4. Staff Opening a Customer Project
+
+When staff open a customer-site project from **Reopen Project**:
+
+| Project state | What staff get |
+|---|---|
+| **Not ordered yet** | Opens the live project. Staff can edit it; changes save to the same JSON (`revision` + 1). The customer sees the changes next time they load the page. |
+| **In a cart** | Opens read-only with a banner: *"This project is in the customer's cart. Edit a copy?"* → **Edit a copy** makes a new Shop Builder project (`source: "shop-builder"`, linked back to the original). |
+| **Ordered** | Opens in **Fix mode** (Section B5) — staff fix the ordered version directly and production files are written as `-r2`, `-r3`… The customer's price doesn't change. **Load as-is** (Section B5.2) is also available. |
+
+- **Edit conflicts:** each save sends the `revision` it started from. If the Drive copy has a newer revision (the customer changed it meanwhile), the save is refused with *"This project was changed by the customer since you opened it. Reload to see their changes."* Nothing is overwritten.
+- Every staff change records who and when in the project's `history` notes.
+- **Photoshop export** and all staff tools (Part B) work on customer projects the same way.
+
+---
+
+## E5. Finding Projects (Drive search)
+
+So Reopen Project can search quickly without opening every file, each `project.ssp.json` is tagged with Drive **appProperties** when it's written:
+
+```
+appProperties: {
+  ssp_project_id: "prj_8f3k2a",
+  ssp_source:     "customer-site",
+  ssp_customer:   "crash out club",      // lower-case for search
+  ssp_email:      "orders@example.com",
+  ssp_order_id:   "48213",               // empty until ordered
+  ssp_updated:    "2026-10-08T19:55:12Z"
+}
+```
+
+- Search uses Drive's `files.list` with `appProperties has { key='ssp_order_id' and value='48213' }` for exact matches (order #, project ID, email), and a name-contains query for customer names.
+- Recent = newest `ssp_updated` across all sources.
+- The browser never talks to Drive; all searches go through `/api/project/search` (staff only).
+
+---
+
+## E6. Files & API
+
+```
+components/
+  ShopTopBar.tsx            // Shop Builder title row + Reopen Project (top right)
+  ReopenProjectDialog.tsx   // search, source filter, recent list, upload JSON, paste link/ID
+lib/project/
+  autoSave.ts               // shared "write project.ssp.json after files are created" (customer site, Shop Builder, DTF Stickers)
+  conflict.ts               // revision check on save
+  driveTags.ts              // set appProperties on every JSON write
+app/api/project/
+  search/route.ts           // GET — staff: search by name / order / email / ID, filter by source
+  open/route.ts             // (existing) now opens any source; picks Shop Builder or DTF Stickers page
+```
+
+```
+CUSTOMER_PROJECT_RETENTION_DAYS=90
+CUSTOMER_JSON_WRITE_DEBOUNCE_SECONDS=10
+```
+
+---
+
+## E7. Acceptance Criteria
+
+- [ ] The Shop Builder shows **Reopen Project** in the top-right corner; staff only.
+- [ ] Reopen Project searches by customer name, order #, email or project ID, filters by source, and lists the 25 most recent projects across all sources.
+- [ ] **Every** project — Shop Builder, customer site and DTF Stickers — has a `project.ssp.json` in its Drive folder from the moment it's created.
+- [ ] On the customer site, the JSON is written automatically as soon as the customer's files are created, with no buttons shown and no wait for the customer.
+- [ ] Guest projects get a JSON too; abandoned ones with no order are deleted after 90 days.
+- [ ] Staff can open a customer-site project in the Shop Builder: live if not ordered, copy if in a cart, Fix mode if ordered.
+- [ ] A staff save is refused (nothing overwritten) if the customer changed the project since staff opened it.
+- [ ] `source` is set once and never changes; `revision` increases on every write.
+- [ ] Every JSON write sets the Drive appProperties used for search.
+
+## E8. Test Cases
+
+| Scenario | Expected |
+|---|---|
+| Staff click New Project in Shop Builder, don't save | Drive has the folder + `project.ssp.json` (`source: shop-builder`) |
+| Customer uploads 2 images on the website (guest) | Drive has the files + `project.ssp.json` (`source: customer-site`) within seconds |
+| Staff search "crash out" in Reopen Project | Customer's project appears with source "Customer site" |
+| Staff search order #48213 | Exact match opens in Fix mode |
+| Staff open an un-ordered customer project and resize an image | JSON updated, `revision` + 1; customer sees the new size on reload |
+| Customer edits while staff have it open, then staff save | Staff save refused with the reload message |
+| Project in customer's cart | Opens read-only; "Edit a copy" creates a linked Shop Builder project |
+| Open a DTF Stickers project from Reopen Project | Opens in the DTF sticker maker with its cut setting |
+| Drive JSON write fails twice, succeeds third time | Customer never sees an error; JSON present |
+| Guest project, no order, 91 days old | Deleted by cleanup |
+
+---
+
 # Add to main README (`## Features` section)
 
 ```md
@@ -1111,11 +1309,14 @@ app/layout.tsx              // renders <TopMenu /> above every page
 - **Staff tools** — Fix mode, load a project JSON exactly as it was ordered, export layered
   Photoshop files (art only) with all original uploads, and re-import Photoshop edits.
 - **Top menu** — Shop Builder · DTF Stickers · Vinyl Stickers · Halftone Generator on every page.
+- **Reopen Project (Shop Builder)** — staff search and open any project: shop, customer site or DTF Stickers.
+- **A JSON for every project** — including customer-site projects, written to Google Drive automatically
+  as soon as the customer's files are created, so staff can open them in the Shop Builder.
 - **Automatic project JSON** — uploading files to Google Drive creates/updates the job's JSON automatically.
-- **Version footer** — current version (v2.2.0) shown at the bottom of every builder page.
+- **Version footer** — current version (v2.3.0) shown at the bottom of every builder page.
 - Spec: `docs/GANGSHEET_ADDON_SPEC.md`
 ```
 
 ---
 
-*Gang Sheet Builder Add-on Spec · **v2.2.0** · 2026-10-09 · DTF only*
+*Gang Sheet Builder Add-on Spec · **v2.3.0** · 2026-10-09 · DTF only*

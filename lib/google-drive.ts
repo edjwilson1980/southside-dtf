@@ -242,6 +242,198 @@ export async function uploadCutterFileToFolder(
   return uploadBufferToFolder(folderId, name, Buffer.from(content, 'utf8'), mimeType)
 }
 
+async function driveAccessToken() {
+  const auth = await driveAuth()
+  const token = await auth.getAccessToken()
+  const accessToken = typeof token === 'string' ? token : token?.token
+  if (!accessToken) throw new Error('Could not authorize Google Drive uploads.')
+  return accessToken
+}
+
+async function patchDriveAppProperties(fileId: string, appProperties: Record<string, string>) {
+  const auth = await driveAuth()
+  const drive = google.drive({ version: 'v3', auth })
+  await drive.files.update({
+    fileId,
+    requestBody: { appProperties },
+    fields: 'id',
+    supportsAllDrives: true,
+  })
+}
+
+/**
+ * Create or update a text/JSON file in a Drive folder.
+ * Uses raw media upload (same reliability path as PLT) — no googleapis streams.
+ */
+export async function upsertTextFileInFolder(
+  folderId: string,
+  name: string,
+  content: string,
+  mimeType = 'application/json',
+  appProperties?: Record<string, string>,
+) {
+  if (!name.trim()) throw new Error('File name is required.')
+  if (!content) throw new Error(`File ${name} is empty.`)
+
+  const auth = await driveAuth()
+  const drive = google.drive({ version: 'v3', auth })
+  const existing = await drive.files.list({
+    q: `'${folderId}' in parents and name = '${name.replace(/'/g, "\\'")}' and trashed = false`,
+    fields: 'files(id, name)',
+    pageSize: 1,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+  })
+  const existingId = existing.data.files?.[0]?.id
+  const bytes = Buffer.from(content, 'utf8')
+
+  if (existingId) {
+    const accessToken = await driveAccessToken()
+    const putRes = await fetch(
+      `https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media&supportsAllDrives=true`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': mimeType,
+          'Content-Length': String(bytes.length),
+        },
+        body: bytes,
+      },
+    )
+    const detail = await putRes.text()
+    if (!putRes.ok) {
+      throw new Error(`Could not update ${name}: ${detail || putRes.statusText}`)
+    }
+    if (appProperties) await patchDriveAppProperties(existingId, appProperties)
+    let parsed: { id?: string; name?: string; webViewLink?: string } = {}
+    try {
+      parsed = detail ? JSON.parse(detail) : {}
+    } catch {
+      parsed = {}
+    }
+    const id = parsed.id || existingId
+    return {
+      id,
+      name: parsed.name || name,
+      webViewLink: parsed.webViewLink || `https://drive.google.com/file/d/${id}/view`,
+    }
+  }
+
+  const created = await uploadBufferToFolder(folderId, name, bytes, mimeType)
+  if (appProperties) await patchDriveAppProperties(created.id, appProperties)
+  return created
+}
+
+export type DriveProjectSearchOptions = {
+  query?: string
+  source?: string
+  limit?: number
+}
+
+/**
+ * List recent project.ssp.json files (SPEC E5).
+ * Exact matches use appProperties; name search filters ssp_customer client-side.
+ */
+export async function searchDriveProjects(options: DriveProjectSearchOptions = {}) {
+  const auth = await driveAuth()
+  const drive = google.drive({ version: 'v3', auth })
+  const limit = Math.min(Math.max(options.limit ?? 25, 1), 50)
+  const qParts = [`name = 'project.ssp.json'`, 'trashed = false']
+  const query = options.query?.trim() || ''
+  const source = options.source?.trim() || ''
+
+  if (source && source !== 'all') {
+    qParts.push(`appProperties has { key='ssp_source' and value='${source.replace(/'/g, "\\'")}' }`)
+  }
+
+  // Exact keys: project id, order #, email
+  if (query) {
+    const safe = query.replace(/'/g, "\\'").toLowerCase()
+    if (/^prj_[a-z0-9]+$/i.test(query) || /^\d+$/.test(query) || query.includes('@')) {
+      const key = /^prj_/i.test(query)
+        ? 'ssp_project_id'
+        : query.includes('@')
+          ? 'ssp_email'
+          : 'ssp_order_id'
+      qParts.push(`appProperties has { key='${key}' and value='${safe}' }`)
+    }
+  }
+
+  const listed = await drive.files.list({
+    q: qParts.join(' and '),
+    orderBy: 'modifiedTime desc',
+    pageSize: query && !/^prj_/i.test(query) && !/^\d+$/.test(query) && !query.includes('@') ? 50 : limit,
+    fields: 'files(id, name, modifiedTime, appProperties, parents, webViewLink)',
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+  })
+
+  let files = listed.data.files || []
+  if (query && !/^prj_/i.test(query) && !/^\d+$/.test(query) && !query.includes('@')) {
+    const needle = query.toLowerCase()
+    files = files.filter((file) => {
+      const props = file.appProperties || {}
+      const hay = [
+        props.ssp_customer,
+        props.ssp_email,
+        props.ssp_order_id,
+        props.ssp_project_id,
+        file.name,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      return hay.includes(needle)
+    })
+  }
+
+  return files.slice(0, limit).map((file) => {
+    const props = file.appProperties || {}
+    return {
+      projectId: props.ssp_project_id || file.id || '',
+      name: props.ssp_customer || file.name || 'project.ssp.json',
+      source: props.ssp_source || 'shop-builder',
+      orderId: props.ssp_order_id || undefined,
+      customerName: props.ssp_customer || undefined,
+      email: props.ssp_email || undefined,
+      updatedAt: props.ssp_updated || file.modifiedTime || new Date().toISOString(),
+      folderId: file.parents?.[0],
+      fileId: file.id || undefined,
+      webViewLink: file.webViewLink || (file.id ? `https://drive.google.com/file/d/${file.id}/view` : undefined),
+    }
+  })
+}
+
+/** Download a Drive file's text content (project JSON). */
+export async function downloadDriveFileText(fileId: string) {
+  const auth = await driveAuth()
+  const drive = google.drive({ version: 'v3', auth })
+  const res = await drive.files.get(
+    { fileId, alt: 'media', supportsAllDrives: true },
+    { responseType: 'arraybuffer' },
+  )
+  const data = res.data as ArrayBuffer | Buffer | string
+  if (typeof data === 'string') return data
+  if (Buffer.isBuffer(data)) return data.toString('utf8')
+  return Buffer.from(data).toString('utf8')
+}
+
+/** Find project.ssp.json by project id appProperty. */
+export async function findProjectFileByProjectId(projectId: string) {
+  const auth = await driveAuth()
+  const drive = google.drive({ version: 'v3', auth })
+  const safe = projectId.replace(/'/g, "\\'")
+  const listed = await drive.files.list({
+    q: `name = 'project.ssp.json' and trashed = false and appProperties has { key='ssp_project_id' and value='${safe}' }`,
+    pageSize: 1,
+    fields: 'files(id, name, appProperties, parents, webViewLink)',
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+  })
+  return listed.data.files?.[0] || null
+}
+
 /** Smoke-test: create a tiny folder then delete it. */
 export async function verifyDriveWriteAccess() {
   const auth = await driveAuth()

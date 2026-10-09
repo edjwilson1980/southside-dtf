@@ -35,9 +35,11 @@ import {
 import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
-import { uploadJobToGoogleDrive, writeDriveJobRecord } from '@/lib/upload-to-drive'
+import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/accepted-uploads'
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
+import { autoSaveProjectJson, imagesFromDriveFiles } from '@/lib/project/auto-save'
+import { PROJECT_FORMAT, type SspProject } from '@/lib/project/types'
 
 /** Spec A7: minimum gap between cut lines when nesting cut footprints. */
 const CUT_MIN_GAP_IN = 0.125
@@ -191,8 +193,12 @@ export default function StickerMakerPage() {
   const [pagePreviewUrls, setPagePreviewUrls] = useState<string[]>([])
   const [cutShapes, setCutShapes] = useState<CutShape[]>([])
   const [shapesBusy, setShapesBusy] = useState(false)
+  const [projectId, setProjectId] = useState<string | undefined>(undefined)
+  const [projectRevision, setProjectRevision] = useState<number | undefined>(undefined)
+  const [projectCreatedAt, setProjectCreatedAt] = useState<string | undefined>(undefined)
   const previewGen = useRef(0)
   const shapesRefreshGen = useRef(0)
+  const reopenFromUrlDone = useRef(false)
 
   const mediaWidthIn = UV_DTF_MEDIA_WIDTH_IN
   const mediaHeightIn = uvLengthIn
@@ -608,12 +614,16 @@ export default function StickerMakerPage() {
     }
     const now = new Date().toISOString()
     return {
-      format: 'ssp-gangsheet-project' as const,
+      format: PROJECT_FORMAT,
       schemaVersion: 2,
+      projectId: projectId || undefined,
       name: customerName.trim() || `Untitled job ${now.slice(0, 10)}`,
-      createdAt: now,
+      createdAt: projectCreatedAt || now,
       updatedAt: now,
       lastUploadAt: options?.driveFiles ? now : undefined,
+      source: 'dtf-stickers' as const,
+      revision: projectRevision || 1,
+      customer: { name: customerName.trim() || null, email: null, phone: null },
       product: {
         printType: 'uv-dtf' as const,
         widthIn: mediaWidthIn,
@@ -627,23 +637,60 @@ export default function StickerMakerPage() {
     }
   }
 
-  /** SPEC B2: write project.ssp.json into the Drive job folder (retry up to 3 times). */
-  async function writeProjectJsonToDrive(folderId: string, content: string) {
-    let lastError: Error | null = null
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        await writeDriveJobRecord({
-          folderId,
-          name: 'project.ssp.json',
-          content,
-        })
-        return
-      } catch (err) {
-        lastError = err instanceof Error ? err : new Error('Could not write project.ssp.json')
-        await wait(400 * 2 ** attempt)
-      }
+  function applyProjectData(data: SspProject | Record<string, unknown>, label?: string) {
+    const project = data as SspProject
+    if (project.format !== PROJECT_FORMAT && project.format !== 'ssp-gangsheet-project') {
+      throw new Error('This file is not a Sticker Maker job (.ssp.json).')
     }
-    throw lastError || new Error('Could not write project.ssp.json to Google Drive.')
+    const product = project.product as { printType?: string; widthIn?: number; heightIn?: number } | undefined
+    const printType = product?.printType
+    if (printType === 'vinyl' || printType === 'vinyl-sticker') {
+      throw new Error(
+        'Vinyl stickers are handled in the Vinyl Sticker Maker. This DTF Sticker Maker opens UV DTF jobs only.',
+      )
+    }
+    if (project.name) setCustomerName(project.customer?.name || project.name)
+    if (product?.heightIn) {
+      setUvLengthIn(clampUvLength(Number(product.heightIn)))
+    }
+    setCutEnabled(Boolean(project.cut?.enabled))
+    if (project.projectId) setProjectId(project.projectId)
+    if (typeof project.revision === 'number') setProjectRevision(project.revision)
+    if (project.createdAt) setProjectCreatedAt(project.createdAt)
+    /** Ignore legacy per-image shape / offsetMm — always Square Cut 2.5 mm when Cut is on. */
+    const nextDesigns: Design[] = (project.images || []).map((image, index) => {
+      const url = image.dataUrl || ''
+      return {
+        id: typeof image.id === 'number' ? image.id : Date.now() + index,
+        designNumber: index + 1,
+        name: image.name || image.fileName || `Sticker ${index + 1}`,
+        placement: 'Custom' as const,
+        size:
+          image.size ||
+          stickerSizeLabel(image.customWidth || DEFAULT_STICKER_W, image.customHeight || DEFAULT_STICKER_H),
+        customWidth: image.customWidth || DEFAULT_STICKER_W,
+        customHeight: image.customHeight || DEFAULT_STICKER_H,
+        quantity: Math.max(1, image.quantity || 1),
+        notes: '',
+        color: index % 2 ? 'red' : 'blue',
+        originalUrl: url,
+        previewUrl: url,
+        enhanced: false,
+        pixelWidth: image.pixelWidth || 0,
+        pixelHeight: image.pixelHeight || 0,
+        keepUpright: Boolean(image.keepUpright),
+      }
+    })
+    setDesigns((current) => {
+      for (const design of current) {
+        revokeUnusedUrls([design.originalUrl, design.previewUrl], nextDesigns)
+      }
+      return nextDesigns
+    })
+    setJobStatus(`Reopened “${project.name || label || project.projectId}” ✓`)
+    setSaveError(null)
+    setBuilt(false)
+    setPreviewing(false)
   }
 
   async function saveJobFile() {
@@ -660,7 +707,22 @@ export default function StickerMakerPage() {
       downloadBlob(blob, `${safe}.ssp.json`)
       if (driveFolderId) {
         try {
-          await writeProjectJsonToDrive(driveFolderId, json)
+          const saved = await autoSaveProjectJson({
+            folderId: driveFolderId,
+            source: 'dtf-stickers',
+            projectId,
+            revision: projectRevision,
+            createdAt: projectCreatedAt,
+            name: customerName.trim(),
+            customer: { name: customerName.trim() },
+            product: payload.product,
+            cut: payload.cut,
+            images: payload.images,
+            fromUpload: false,
+          })
+          setProjectId(saved.projectId)
+          setProjectRevision(saved.revision)
+          setProjectCreatedAt(saved.payload.createdAt)
         } catch {
           setJobStatus('Not saved — retrying')
           throw new Error('Downloaded the job file, but could not update project.ssp.json in Drive.')
@@ -677,75 +739,48 @@ export default function StickerMakerPage() {
   async function reopenJobFile(file: File) {
     try {
       const text = await file.text()
-      const data = JSON.parse(text) as {
-        format?: string
-        name?: string
-        product?: { printType?: string; widthIn?: number; heightIn?: number }
-        cut?: { enabled?: boolean; shape?: string; offsetMm?: number }
-        images?: Array<{
-          id?: number
-          name: string
-          size?: string
-          customWidth?: string
-          customHeight?: string
-          quantity?: number
-          keepUpright?: boolean
-          pixelWidth?: number
-          pixelHeight?: number
-          dataUrl?: string
-          cut?: { shape?: string; offsetMm?: number }
-        }>
-      }
-      if (data.format !== 'ssp-gangsheet-project') {
-        throw new Error('This file is not a Sticker Maker job (.ssp.json).')
-      }
-      const printType = data.product?.printType
-      if (printType === 'vinyl' || printType === 'vinyl-sticker') {
-        throw new Error(
-          'Vinyl stickers are handled in the Vinyl Sticker Maker. This DTF Sticker Maker opens UV DTF jobs only.',
-        )
-      }
-      if (data.name) setCustomerName(data.name)
-      if (data.product?.heightIn) {
-        setUvLengthIn(clampUvLength(data.product.heightIn))
-      }
-      setCutEnabled(Boolean(data.cut?.enabled))
-      /** Ignore legacy per-image shape / offsetMm — always Square Cut 2.5 mm when Cut is on. */
-      const nextDesigns: Design[] = (data.images || []).map((image, index) => {
-        const url = image.dataUrl || ''
-        return {
-          id: image.id ?? Date.now() + index,
-          designNumber: index + 1,
-          name: image.name || `Sticker ${index + 1}`,
-          placement: 'Custom' as const,
-          size: image.size || stickerSizeLabel(image.customWidth || DEFAULT_STICKER_W, image.customHeight || DEFAULT_STICKER_H),
-          customWidth: image.customWidth || DEFAULT_STICKER_W,
-          customHeight: image.customHeight || DEFAULT_STICKER_H,
-          quantity: Math.max(1, image.quantity || 1),
-          notes: '',
-          color: index % 2 ? 'red' : 'blue',
-          originalUrl: url,
-          previewUrl: url,
-          enhanced: false,
-          pixelWidth: image.pixelWidth || 0,
-          pixelHeight: image.pixelHeight || 0,
-          keepUpright: Boolean(image.keepUpright),
-        }
-      })
-      setDesigns((current) => {
-        for (const design of current) {
-          revokeUnusedUrls([design.originalUrl, design.previewUrl], nextDesigns)
-        }
-        return nextDesigns
-      })
-      setJobStatus(`Reopened “${data.name || file.name}” ✓`)
-      setSaveError(null)
-      setBuilt(false)
-      setPreviewing(false)
+      applyProjectData(JSON.parse(text) as SspProject, file.name)
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not reopen that job file.')
     }
   }
+
+  useEffect(() => {
+    if (reopenFromUrlDone.current) return
+    reopenFromUrlDone.current = true
+    try {
+      const pending = sessionStorage.getItem('ssp.pending-project')
+      if (pending) {
+        sessionStorage.removeItem('ssp.pending-project')
+        applyProjectData(JSON.parse(pending) as SspProject, 'uploaded file')
+        return
+      }
+    } catch {
+      // ignore
+    }
+    const params = new URLSearchParams(window.location.search)
+    const projectIdParam = params.get('projectId')
+    const fileIdParam = params.get('fileId')
+    if (!projectIdParam && !fileIdParam) return
+    void (async () => {
+      try {
+        const qs = new URLSearchParams()
+        if (projectIdParam) qs.set('projectId', projectIdParam)
+        if (fileIdParam) qs.set('fileId', fileIdParam)
+        const res = await fetch(`/api/project/open?${qs.toString()}`)
+        const json = (await res.json()) as { error?: string; project?: SspProject; folderId?: string }
+        if (!res.ok || !json.project) throw new Error(json.error || 'Could not open project.')
+        applyProjectData(json.project)
+        if (json.folderId) {
+          setDriveFolderId(json.folderId)
+          setDriveFolderUrl(`https://drive.google.com/drive/folders/${json.folderId}`)
+        }
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : 'Could not open project from Drive.')
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot deep link / pending upload
+  }, [])
 
   async function composePageSheet(
     pieces: PlacedSheetPiece[],
@@ -867,13 +902,42 @@ export default function StickerMakerPage() {
       })
       setDriveFolderUrl(drive.folderUrl)
       setDriveFolderId(drive.folderId)
-      /** SPEC B2: create/update project.ssp.json in the same folder as soon as files land. */
+      /** SPEC B2 / E2: create/update project.ssp.json as soon as files land. */
       try {
         const payload = await buildProjectPayload({
           driveFiles: drive.files.map((file) => ({ name: file.name, id: file.id })),
           includeDataUrls: false,
         })
-        await writeProjectJsonToDrive(drive.folderId, JSON.stringify(payload, null, 2))
+        const saved = await autoSaveProjectJson({
+          folderId: drive.folderId,
+          source: 'dtf-stickers',
+          projectId,
+          revision: projectRevision,
+          createdAt: projectCreatedAt,
+          name: customerName.trim(),
+          customer: { name: customerName.trim() },
+          product: payload.product,
+          cut: payload.cut,
+          images: imagesFromDriveFiles(
+            drive.files.map((file) => ({ name: file.name, id: file.id })),
+            designs.map((design) => ({
+              id: design.id,
+              name: design.name,
+              size: design.size,
+              customWidth: design.customWidth,
+              customHeight: design.customHeight,
+              quantity: design.quantity,
+              keepUpright: design.keepUpright,
+              pixelWidth: design.pixelWidth,
+              pixelHeight: design.pixelHeight,
+              cut: { shape: 'box', offsetMm: UV_BORDER_MM, squareCutMm: UV_BORDER_MM },
+            })),
+          ),
+          fromUpload: true,
+        })
+        setProjectId(saved.projectId)
+        setProjectRevision(saved.revision)
+        setProjectCreatedAt(saved.payload.createdAt)
         setJobStatus(
           `Saved ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} ✓`,
         )
