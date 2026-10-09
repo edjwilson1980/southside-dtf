@@ -33,9 +33,10 @@ Shared code lives under `lib/` (compose, cut layout, sheet size, image tools).
 ## Features
 
 - **Sticker maker cut lines** — Box 2 "Cut / No Cut" under Customer Name. Vinyl: each image gets
-  Circle / Square / Contour Cut with its own border (default Square, 2 mm). UV DTF: fixed 2.5 mm
-  Square Cut. The preview shows every cut outline, registration marks fitted to the sheet and a
-  Start Cut box. Cut paths export as a `CutContour` spot-color layer.
+  Square / Circle / Contour Cut in one horizontal row, plus its own border (default Square, 2 mm).
+  UV DTF: fixed 2.5 mm Square Cut. The preview draws a solid red `#E10600` cut trace on every
+  image, plus registration marks and a Start Cut box. Cut paths export as a `CutContour` spot-color
+  layer.
 - **Save Job / Reopen Job** (sticker maker only) — Reopen Job, Save to Photoshop, and Connect to
   Google Drive sit in the upper-right bar above the page. Save Job sits below Box 2. Jobs save as
   JSON to Google Drive.

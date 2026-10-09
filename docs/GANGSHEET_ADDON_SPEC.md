@@ -13,11 +13,11 @@
 ### Summary of decisions
 - **Top-right corner:** **Reopen Job** and **Export to Photoshop**.
 - **Box 1:** Customer Name. **Box 2:** **Cut / No Cut** for the whole job (No Cut by default). **Save Job** right below Box 2, then **Upload Sticker Art**.
-- **Vinyl + Cut:** every uploaded image gets its own **Circle Cut / Square Cut / Contour Cut** choice and **border −/+** (default Square Cut, 2 mm).
+- **Vinyl + Cut:** every uploaded image gets its own **Square Cut · Circle Cut · Contour Cut** choice, **shown side by side in one horizontal row**, and its own **border −/+** (default Square Cut, 2 mm).
 - **UV DTF:** only **Cut or No Cut**. Cut = a standard **2.5 mm Square Cut** around each image, not adjustable.
 - **Square Cut** hugs the image (rectangle or square), never padded out.
 - **No global expand / contract control.** Border is set per image (vinyl only).
-- **Preview box** shows each image's cut box / circle / contour, plus **registration marks fitted to the printed sheet** and a **Start Cut box** at the cutter's origin.
+- **Preview box** shows a **solid red trace line** around every image (box, circle or contour), plus **registration marks fitted to the printed sheet** and a **Start Cut box** at the cutter's origin.
 - Jobs save as **JSON in Google Drive** and can be **reopened** to edit or fix.
 - **Staff** get Fix mode, an **as-is JSON load** (exact layout, cuts and charged price), and a **Photoshop export with all originals** (art only, **no cut lines**) plus re-import.
 
@@ -57,34 +57,30 @@
 On the **shop sticker maker** (UV DTF and vinyl sticker products) the page is laid out like this:
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│  SOUTH SIDE STICKER MAKER     [ 📂 Reopen Job ]  [ ⬇ Export to Photoshop ] │  ← top-right corner
-├───────────────────────────────┬──────────────────────────────────────────┤
-│  ①  CUSTOMER NAME             │  PREVIEW                                 │
-│     [ __________________ ]    │  ┌────────────────────────────────────┐  │
-├───────────────────────────────┤  │ ■ ▶ START CUT #48213             ■ │  │
-│  ②  CUT                       │  │   ┌ ─ ─ ─ ┐  ╭ ─ ─ ╮  ┌ ─ ─ ─ ┐   │  │
-│     ( • ) Cut   (   ) No Cut  │  │   ¦ LOGO  ¦  ¦  ★  ¦  ¦ TEXT  ¦   │  │
-├───────────────────────────────┤  │   └ ─ ─ ─ ┘  ╰ ─ ─ ╯  └ ─ ─ ─ ┘   │  │
-│  [ 💾 Save Job ]   Saved ✓    │  │                                    │  │
-├───────────────────────────────┤  │ ■                                ■ │  │
-│  UPLOAD STICKER ART           │  └────────────────────────────────────┘  │
-│  ┌──────┐ logo-front.png      │   ■ = registration marks                 │
-│  │      │ ( ) Circle Cut      │   dashed = cut line around each image    │
-│  └──────┘ (•) Square Cut      │                                          │
-│           ( ) Contour Cut     │                                          │
-│           Border [−] 2 mm [+] │                                          │
-├───────────────────────────────┤                                          │
-│  ③ …  (remaining boxes)       │                                          │
-└───────────────────────────────┴──────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────┐
+│  SOUTH SIDE STICKER MAKER           [ 📂 Reopen Job ]  [ ⬇ Export to Photoshop ] │  ← top-right
+├──────────────────────────────────────────┬─────────────────────────────────────┤
+│  ①  CUSTOMER NAME  [ ________________ ]  │  PREVIEW                            │
+├──────────────────────────────────────────┤  ┌───────────────────────────────┐  │
+│  ②  CUT    ( • ) Cut    (   ) No Cut     │  │ ■ ▶ START CUT #48213        ■ │  │
+├──────────────────────────────────────────┤  │  ┏━━━━━━━┓  ╭━━━━╮  ┏━━━━━━┓  │  │
+│  [ 💾 Save Job ]   Saved ✓               │  │  ┃ LOGO  ┃  ┃ ★  ┃  ┃ TEXT ┃  │  │
+├──────────────────────────────────────────┤  │  ┗━━━━━━━┛  ╰━━━━╯  ┗━━━━━━┛  │  │
+│  UPLOAD STICKER ART                      │  │ ■                           ■ │  │
+│  ┌──────┐ logo-front.png   4.00"×3.20" ✕ │  └───────────────────────────────┘  │
+│  │ img  │ [■Square] [Circle] [Contour]   │  ━━ = RED trace line (the cut)      │
+│  └──────┘ Border [−] 2 mm [+]            │  ■  = registration marks            │
+├──────────────────────────────────────────┤                                     │
+│  ③ …  (remaining boxes)                  │                                     │
+└──────────────────────────────────────────┴─────────────────────────────────────┘
 ```
 
 - **Top-right corner:** **Reopen Job** and **Export to Photoshop**, side by side (Sections B1 and B6).
 - **Box 1 — Customer Name** (existing).
 - **Box 2 — Cut:** just **Cut** or **No Cut** for the whole job. No border control here.
 - **Save Job** right below Box 2.
-- **Upload Sticker Art:** every uploaded image gets **its own cut options right next to it** (vinyl) or a fixed cut label (UV DTF). See Section A2.
-- **Preview box:** shows each image with its **cut box, cut circle or contour line drawn around it**, plus the **registration marks** and the **Start Cut box** (Sections A5 and A6).
+- **Upload Sticker Art:** every uploaded image gets **its own cut options in one horizontal row** next to it — **Square Cut · Circle Cut · Contour Cut** side by side (vinyl) — or a fixed cut label (UV DTF). See Section A2.
+- **Preview box:** shows each image with a **solid red trace line** around it — the box, circle or contour that will be cut — plus the **registration marks** and the **Start Cut box** (Sections A5 and A6).
 - The rest of the existing boxes follow, renumbered from ③.
 - **Removed:** the old expand / contract control. Border size is now set **per image** only (vinyl); UV DTF uses a fixed border.
 
@@ -125,22 +121,22 @@ Every time an image is uploaded with **Cut** selected, its row in the Upload Sti
 
 ### Vinyl sticker
 
+The three cut choices sit **side by side in one horizontal row**, not stacked. The border control sits on the row below.
+
 ```
-┌──────────────────────────────────────────────────────┐
-│  ┌──────┐  logo-front.png       4.00" × 3.20"    ✕   │
-│  │ img  │                                            │
-│  └──────┘  CUT:  ( ) Circle Cut                      │
-│                  (•) Square Cut                      │
-│                  ( ) Contour Cut                     │
-│            BORDER:  [ − ]  2 mm (0.079")  [ + ]      │
-│            Finished size: 4.16" × 3.36"              │
-└──────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│  ┌──────┐  logo-front.png                     4.00" × 3.20"     ✕   │
+│  │ img  │  CUT:  [■ Square Cut]  [ Circle Cut ]  [ Contour Cut ]     │  ← one row
+│  └──────┘  BORDER:  [ − ]  2 mm (0.079")  [ + ]     Finished 4.16" × 3.36" │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Circle Cut · Square Cut · Contour Cut**, one choice per image.
-- **Border −/+** sits right under the choice, per image (Section A4).
+- **Layout:** a **horizontal segmented button group** (three buttons in a row, like tabs). The selected one is filled; the others are outlined. Use `display: flex; flex-direction: row; gap: 8px;`, never a vertical radio list.
+  - Order: **Square Cut · Circle Cut · Contour Cut**. Each button has a small icon (▢ ◯ ☁) plus its label.
+  - On narrow phones (< 400 px) the three buttons shrink to icon + short label and **still stay on one row**.
+- **Border −/+** sits on the next row, per image (Section A4), with the finished size beside it.
 - **Default for a new image: Square Cut, 2 mm.**
-- Changing an image's cut or border redraws **only that image's** outline in the preview and updates size, nesting and price.
+- Changing an image's cut or border redraws **only that image's** red trace line in the preview and updates size, nesting and price.
 - Optional **"Apply to all"** link copies this image's cut and border to every image.
 
 ### UV DTF
@@ -149,7 +145,7 @@ Every time an image is uploaded with **Cut** selected, its row in the Upload Sti
 ┌──────────────────────────────────────────────────────┐
 │  ┌──────┐  logo-front.png       4.00" × 3.20"    ✕   │
 │  │ img  │                                            │
-│  └──────┘  Square Cut · 2.5 mm                       │
+│  └──────┘  CUT:  [■ Square Cut · 2.5 mm]  (fixed)    │
 │            Finished size: 4.20" × 3.40"              │
 └──────────────────────────────────────────────────────┘
 ```
@@ -163,8 +159,8 @@ Every time an image is uploaded with **Cut** selected, its row in the Upload Sti
 
 | Customer label | Internal id | What the customer gets | How it's built |
 |---|---|---|---|
-| **Circle Cut** | `circle` | Round sticker | Minimum enclosing circle of the art's outline (Welzl's algorithm on the convex hull), radius + border |
 | **Square Cut** | `box` | Rectangle or square around the image, matching the art's proportions | Tight bounding box of the art + border on all sides. **Never padded out to a perfect square**, so wide art gets a wide rectangle and no material is wasted. Square corners. |
+| **Circle Cut** | `circle` | Round sticker | Minimum enclosing circle of the art's outline (Welzl's algorithm on the convex hull), radius + border |
 | **Contour Cut** | `contour` | Follows the shape of the art | Trace the art outline from the alpha mask → offset outward with round joins → smooth → simplify |
 
 Vinyl can use all three. UV DTF uses **Square Cut only, at 2.5 mm**.
@@ -201,20 +197,77 @@ Vinyl can use all three. UV DTF uses **Square Cut only, at 2.5 mm**.
 
 ---
 
-## A5. Preview Box — Cut Outlines, Marks and Start Box
+## A5. Preview Box — Red Trace Line, Marks and Start Box
 
-The preview box shows the sheet as it will be printed and cut:
+**Every image in the preview shows a solid red trace line around it** — the exact line the cutter will follow:
+- a **red rectangle** for Square Cut,
+- a **red circle** for Circle Cut,
+- a **red outline following the art's shape** for Contour Cut.
 
-- **Every image shows its cut outline around it:**
-  - the **cut box** for Square Cut,
-  - the **cut circle** for Circle Cut,
-  - the **contour line** for Contour Cut.
-  - Drawn as a **magenta dashed line (2 px, dash 6/4)** with a light grey fill between the art and the line, so the customer sees the border they're getting.
-- **Registration marks** and the **Start Cut box** are drawn exactly where they'll print (Section A6).
-- With **No Cut**, the preview shows the art only — no outlines, marks or start box.
-- Redraw only the image that changed. Target **< 50 ms** per change; trace once on upload and cache the outline.
-- Run tracing in a **Web Worker** so large uploads don't freeze the page.
+### How it looks
+| Property | Value |
+|---|---|
+| Line color | **Red `#E10600`** |
+| Line style | **Solid**, **2 px** on screen at any zoom (`vector-effect: non-scaling-stroke`) |
+| Fill between art and line | Light red tint `rgba(225, 6, 0, 0.06)` so the border area is visible |
+| Layer order | Drawn **on top of** the image, never hidden behind it |
+| Hover / selected image | Line goes to **3 px** and the matching image row in the list highlights |
+
+```
+   Square Cut            Circle Cut           Contour Cut
+┏━━━━━━━━━━━━━┓          ╭━━━━━━━╮           ╭━━╮  ╭━━━╮
+┃  ┌───────┐  ┃        ┃ ┌─────┐ ┃         ┃ ★★ ╰━━╯ ★ ┃
+┃  │ LOGO  │  ┃        ┃ │  ★  │ ┃         ╰━╮  STAR  ╭━╯
+┃  └───────┘  ┃        ┃ └─────┘ ┃            ╰━━━━━━╯
+┗━━━━━━━━━━━━━┛          ╰━━━━━━━╯
+   ━━ = solid red trace line, 2 mm (or chosen border) outside the art
+```
+
+- **Registration marks** (black) and the **Start Cut box** are drawn exactly where they'll print (Section A6).
+- With **No Cut**, no red lines, marks or start box are shown — art only.
+- The red line appears **as soon as an image finishes uploading**, and redraws within **50 ms** when that image's cut or border changes. Trace the contour once on upload (Web Worker) and cache it; only the offset/shape step reruns.
 - **No expand / contract control on the preview.** The preview fits the sheet to the box automatically and scrolls for long sheets.
+- **Preview only:** red is the on-screen color. The production PDF keeps the `CutContour` spot color (Section A6), because the cutter's software detects the line by that spot-color name.
+
+### Implementation (so the line actually shows)
+Render the cut lines as an **SVG layer absolutely positioned on top of the preview canvas**, using the same coordinate system (inches → preview pixels) as the image placements. Don't draw them into the image itself.
+
+```tsx
+// components/CutlineOverlay.tsx
+type Pt = [number, number];
+interface Placed { id: string; xIn: number; yIn: number; cut?: { pathsIn: Pt[][] } }
+
+export function CutlineOverlay({ items, sheetWIn, sheetHIn, pxPerIn, selectedId }:
+  { items: Placed[]; sheetWIn: number; sheetHIn: number; pxPerIn: number; selectedId?: string }) {
+  return (
+    <svg
+      className="pointer-events-none absolute inset-0"
+      width={sheetWIn * pxPerIn} height={sheetHIn * pxPerIn}
+      viewBox={`0 0 ${sheetWIn} ${sheetHIn}`}            // draw in inches
+      style={{ zIndex: 20 }}                              // above the art
+    >
+      {items.filter(i => i.cut).map(i => (
+        <g key={i.id} transform={`translate(${i.xIn} ${i.yIn})`}>
+          {i.cut!.pathsIn.map((pts, k) => (
+            <path
+              key={k}
+              d={'M' + pts.map(p => p.join(' ')).join(' L') + ' Z'}
+              fill="rgba(225,6,0,0.06)"
+              stroke="#E10600"
+              strokeWidth={i.id === selectedId ? 3 : 2}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+        </g>
+      ))}
+    </svg>
+  );
+}
+```
+
+- Mount it **inside the same relatively positioned wrapper** as the preview canvas (`<div className="relative">…canvas…<CutlineOverlay/></div>`) so it scrolls and scales with the sheet.
+- `pathsIn` comes from `buildCutPath()` (Section A8) and is in inches relative to the image's top-left, already including the border. Square and Circle cuts are also returned as polygons (a 4-point rectangle; a 128-point circle), so one renderer handles all three.
+- If an image's cut isn't ready yet, show a small spinner on that image instead of no line.
 
 ---
 
@@ -349,7 +402,7 @@ components/
   ImageCutOptions.tsx   // per-image row: Circle / Square / Contour + border −/+ (vinyl) or fixed label (UV DTF)
   JobBar.tsx            // Save Job, right below Box 2 — sticker maker only
   TopRightActions.tsx   // Reopen Job + Export to Photoshop, top-right corner
-  CutlineOverlay.tsx    // cut box / circle / contour outlines in the preview box
+  CutlineOverlay.tsx    // SVG layer over the preview: solid red trace line around every image
   SheetMarksOverlay.tsx // registration marks + Start Cut box in the preview box
 app/api/cutline/route.ts // server recompute for cart + production
 scripts/
@@ -407,10 +460,11 @@ npm i clipper2-js pdf-lib
 - [ ] Box 2 (Cut / No Cut) sits right under Box 1 (Customer Name); **No Cut** is the default.
 - [ ] **Save Job** sits right below Box 2.
 - [ ] There is **no** global expand / contract or border control anywhere outside the image rows.
-- [ ] Vinyl + Cut: every uploaded image shows **Circle Cut / Square Cut / Contour Cut** and its own border −/+, defaulting to Square Cut 2 mm.
+- [ ] Vinyl + Cut: every uploaded image shows **Square Cut · Circle Cut · Contour Cut side by side in one horizontal row**, plus its own border −/+, defaulting to Square Cut 2 mm.
 - [ ] UV DTF + Cut: every image gets a **Square Cut at a fixed 2.5 mm**, with no options; the server forces 2.5 mm.
 - [ ] Square Cut hugs the image (rectangle or square), never padded to a perfect square.
-- [ ] The preview box shows each image's cut box, cut circle or contour line, plus registration marks and the Start Cut box.
+- [ ] The preview shows a **solid red trace line (#E10600, 2 px)** around every image as soon as it uploads — rectangle, circle or contour — drawn on top of the art, plus registration marks and the Start Cut box.
+- [ ] The red line updates within 50 ms when that image's cut or border changes, and disappears entirely with No Cut.
 - [ ] No Cut: no cut options, no outlines, no marks, no Start Cut box, no `CutContour` layer; price/nesting use bare art.
 - [ ] Changing one image's cut redraws only that image in under 50 ms after first trace.
 - [ ] Border −/+ step 0.5 mm, stop at the minimum and 12 mm; hold-to-repeat works.
@@ -427,7 +481,12 @@ npm i clipper2-js pdf-lib
 | Input | Expected |
 |---|---|
 | Vinyl, Cut, upload 3 images | Each row shows Circle / Square / Contour + border; all default to Square Cut 2 mm |
-| Vinyl, change image 2 to Circle Cut 4 mm | Only image 2's outline changes to a circle in the preview |
+| Vinyl, upload 1 image | Cut choices appear as one horizontal row; a red rectangle appears around the image in the preview |
+| Vinyl, change image 2 to Circle Cut 4 mm | Only image 2's red line changes to a circle in the preview |
+| Vinyl, change image 3 to Contour Cut | Red line follows the art's shape |
+| UV DTF, Cut, upload 1 image | Red rectangle 2.5 mm outside the art |
+| Zoom / scroll the preview | Red lines stay 2 px and stay aligned with the art |
+| Phone width (375 px) | Cut choices still on one row |
 | UV DTF, Cut, upload 3 images | All get Square Cut 2.5 mm; no options shown |
 | UV DTF job file with a `contour` / 4 mm image opened via Reopen Job | Set to Square Cut 2.5 mm + notice |
 | Switch product vinyl → UV DTF | All images become Square Cut 2.5 mm |
@@ -1010,7 +1069,8 @@ export default {
 - Sticker maker layout: Reopen Job + Export to Photoshop top right; Box 2 "Cut / No Cut" under Customer Name (No Cut by default); Save Job below Box 2.
 - Vinyl: per-image Circle Cut / Square Cut / Contour Cut with its own border −/+ (default Square Cut, 2 mm).
 - UV DTF: Cut or No Cut only; Cut = standard 2.5 mm Square Cut.
-- Preview box shows every cut outline, the registration marks and the Start Cut box.
+- Preview box shows a solid red trace line around every image, the registration marks and the Start Cut box.
+- Per-image cut choices display horizontally (Square · Circle · Contour).
 - Registration marks fitted to the printed sheet (4 corners + side pairs on long sheets, keep-out zones).
 - Start Cut box at the cutter's origin with order #, customer, date, sheet x of y, cut count and feed arrow.
 - CutContour spot-color layer in production PDFs; nesting and pricing use cut footprints.
