@@ -35,7 +35,7 @@ import {
 import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
-import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
+import { uploadJobToGoogleDrive, writeDriveJobRecord } from '@/lib/upload-to-drive'
 import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/accepted-uploads'
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
 
@@ -179,6 +179,7 @@ export default function StickerMakerPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null)
+  const [driveFolderId, setDriveFolderId] = useState<string | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const [previewBusy, setPreviewBusy] = useState(false)
   const [sheetPreviewOpen, setSheetPreviewOpen] = useState(false)
@@ -577,6 +578,74 @@ export default function StickerMakerPage() {
     })
   }
 
+  async function buildProjectPayload(options?: {
+    /** When writing to Drive after upload, attach Drive file ids instead of embedding data URLs. */
+    driveFiles?: Array<{ name: string; id: string }>
+    includeDataUrls?: boolean
+  }) {
+    const includeDataUrls = options?.includeDataUrls !== false && !options?.driveFiles
+    const images = []
+    for (const design of designs) {
+      const dataUrl =
+        includeDataUrls && design.previewUrl ? await urlToDataUrl(design.previewUrl) : ''
+      const driveMatch = options?.driveFiles?.find((file) =>
+        file.name.toLowerCase().includes(design.name.replace(/\.[^.]+$/, '').toLowerCase().slice(0, 20)),
+      )
+      images.push({
+        id: design.id,
+        name: design.name,
+        size: design.size,
+        customWidth: design.customWidth,
+        customHeight: design.customHeight,
+        quantity: design.quantity,
+        keepUpright: design.keepUpright,
+        pixelWidth: design.pixelWidth,
+        pixelHeight: design.pixelHeight,
+        ...(dataUrl ? { dataUrl } : {}),
+        ...(driveMatch ? { driveFileId: driveMatch.id } : {}),
+        cut: { shape: 'box' as const, offsetMm: UV_BORDER_MM },
+      })
+    }
+    const now = new Date().toISOString()
+    return {
+      format: 'ssp-gangsheet-project' as const,
+      schemaVersion: 2,
+      name: customerName.trim() || `Untitled job ${now.slice(0, 10)}`,
+      createdAt: now,
+      updatedAt: now,
+      lastUploadAt: options?.driveFiles ? now : undefined,
+      product: {
+        printType: 'uv-dtf' as const,
+        widthIn: mediaWidthIn,
+        heightIn: mediaHeightIn,
+      },
+      cut: {
+        enabled: cutEnabled,
+      },
+      images,
+      codeVersion: { builder: BUILDER_VERSION },
+    }
+  }
+
+  /** SPEC B2: write project.ssp.json into the Drive job folder (retry up to 3 times). */
+  async function writeProjectJsonToDrive(folderId: string, content: string) {
+    let lastError: Error | null = null
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        await writeDriveJobRecord({
+          folderId,
+          name: 'project.ssp.json',
+          content,
+        })
+        return
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error('Could not write project.ssp.json')
+        await wait(400 * 2 ** attempt)
+      }
+    }
+    throw lastError || new Error('Could not write project.ssp.json to Google Drive.')
+  }
+
   async function saveJobFile() {
     if (!customerName.trim()) {
       setSaveError('Enter a customer name before saving the job.')
@@ -584,40 +653,19 @@ export default function StickerMakerPage() {
     }
     setJobStatus('Saving…')
     try {
-      const images = []
-      for (const design of designs) {
-        const dataUrl = design.previewUrl ? await urlToDataUrl(design.previewUrl) : ''
-        images.push({
-          id: design.id,
-          name: design.name,
-          size: design.size,
-          customWidth: design.customWidth,
-          customHeight: design.customHeight,
-          quantity: design.quantity,
-          keepUpright: design.keepUpright,
-          pixelWidth: design.pixelWidth,
-          pixelHeight: design.pixelHeight,
-          dataUrl,
-        })
-      }
-      const payload = {
-        format: 'ssp-gangsheet-project',
-        schemaVersion: 2,
-        name: customerName.trim(),
-        updatedAt: new Date().toISOString(),
-        product: {
-          printType: 'uv-dtf',
-          widthIn: mediaWidthIn,
-          heightIn: mediaHeightIn,
-        },
-        cut: {
-          enabled: cutEnabled,
-        },
-        images,
-      }
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+      const payload = await buildProjectPayload({ includeDataUrls: true })
+      const json = JSON.stringify(payload, null, 2)
+      const blob = new Blob([json], { type: 'application/json' })
       const safe = customerName.trim().replace(/[\\/:*?"<>|]+/g, '-').slice(0, 40) || 'job'
       downloadBlob(blob, `${safe}.ssp.json`)
+      if (driveFolderId) {
+        try {
+          await writeProjectJsonToDrive(driveFolderId, json)
+        } catch {
+          setJobStatus('Not saved — retrying')
+          throw new Error('Downloaded the job file, but could not update project.ssp.json in Drive.')
+        }
+      }
       setJobStatus(`Saved ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} ✓`)
       setSaveError(null)
     } catch (err) {
@@ -769,6 +817,7 @@ export default function StickerMakerPage() {
     setSaving(true)
     setSaveError(null)
     setDriveFolderUrl(null)
+    setDriveFolderId(null)
     try {
       const stamp = jobStamp || sheetStamp()
       const label = sheetJobName(customerName.trim(), billedLength, stamp)
@@ -817,6 +866,21 @@ export default function StickerMakerPage() {
           : undefined,
       })
       setDriveFolderUrl(drive.folderUrl)
+      setDriveFolderId(drive.folderId)
+      /** SPEC B2: create/update project.ssp.json in the same folder as soon as files land. */
+      try {
+        const payload = await buildProjectPayload({
+          driveFiles: drive.files.map((file) => ({ name: file.name, id: file.id })),
+          includeDataUrls: false,
+        })
+        await writeProjectJsonToDrive(drive.folderId, JSON.stringify(payload, null, 2))
+        setJobStatus(
+          `Saved ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} ✓`,
+        )
+      } catch {
+        setJobStatus('Not saved — retrying')
+        setSaveError('Files are in Drive, but project.ssp.json could not be written. Use Save Job to retry.')
+      }
       setBuilt(true)
       setSheetPreviewOpen(false)
     } catch (err) {
@@ -1437,6 +1501,7 @@ export default function StickerMakerPage() {
                 onClick={() => {
                   setBuilt(false)
                   setDriveFolderUrl(null)
+                  setDriveFolderId(null)
                 }}
               >
                 Done <span>›</span>

@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0] — 2026-10-09
+
+### Added
+- Top menu on every page: Shop Builder · DTF Stickers · Vinyl Stickers · Halftone Generator.
+- Automatic project JSON: when files upload to Google Drive, `project.ssp.json` is created or
+  updated in the same job folder (no extra Save click required for Drive jobs).
+
 ## [2.1.0] — 2026-10-09
 
 ### Changed

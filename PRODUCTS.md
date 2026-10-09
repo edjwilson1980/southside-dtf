@@ -41,7 +41,10 @@ Shared code lives under `lib/` (compose, cut layout, sheet size, image tools).
   JSON to Google Drive. Vinyl job files are rejected with a Vinyl Sticker Maker message.
 - **Staff tools** — Fix mode, load a project JSON exactly as it was ordered, export layered
   Photoshop files (art only) with all original uploads, and re-import Photoshop edits.
-- **Version footer** — current version (v2.1.0) shown at the bottom of every builder page.
+- **Top menu** — Shop Builder · DTF Stickers · Vinyl Stickers · Halftone Generator on every page
+  (Vinyl shows Coming soon until its app URL is set).
+- **Automatic project JSON** — Drive uploads create/update `project.ssp.json` in the job folder.
+- **Version footer** — current version (v2.2.0) shown at the bottom of every builder page.
 - Spec: [`docs/GANGSHEET_ADDON_SPEC.md`](docs/GANGSHEET_ADDON_SPEC.md)
 
 ### Shop sticker routes (staff)

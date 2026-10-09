@@ -2,7 +2,7 @@
 
 **Project:** Southside Gang Sheet Builder (Next.js 15, WooCommerce checkout)
 **Where this goes:** `docs/GANGSHEET_ADDON_SPEC.md` — one spec for Cursor covering everything below.
-**Release:** **v2.1.0** — shown in the builder's page footer (Part C).
+**Release:** **v2.2.0** — shown in the builder's page footer (Part C).
 **DTF only:** vinyl stickers have been removed from this project and moved to their own spec, `VINYL_STICKER_MAKER_SPEC.md`.
 
 | Part | What it covers | Applies to |
@@ -10,8 +10,11 @@
 | **A. UV DTF Cutout Stickers** | DTF sticker maker layout, Box 2 Cut / No Cut, fixed 2.5 mm Square Cut, red preview line, registration marks, Start Cut box, removing vinyl | UV DTF only |
 | **B. Save & Reopen Projects + Staff Tools** | Save Job / Reopen Job, Google Drive project JSON, staff Fix mode, staff as-is JSON load, Photoshop export/import | Save/Reopen Job: DTF sticker maker only · staff tools: all orders |
 | **C. Version Footer & Release Notes** | Version number in the page footer, versioning rules, changelog | Whole builder |
+| **D. Top Menu** | Shop Builder · DTF Stickers · Vinyl Stickers · Halftone Generator | Every page |
 
 ### Summary of decisions
+- **Top menu** on every page: **Shop Builder · DTF Stickers · Vinyl Stickers · Halftone Generator** (Part D).
+- **Automatic project JSON:** as soon as files upload to Google Drive, the job's `project.ssp.json` is created or updated in the same folder automatically (Section B2).
 - **This project is DTF only.** Vinyl stickers are a separate project (`VINYL_STICKER_MAKER_SPEC.md`); all vinyl code comes out of this one (Section A14).
 - **Top-right corner:** **Reopen Job** and **Export to Photoshop**.
 - **Box 1:** Customer Name. **Box 2:** **Cut / No Cut** (No Cut by default). **Save Job** right below Box 2, then **Upload Sticker Art**.
@@ -55,6 +58,8 @@
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────┐
+│ [ Shop Builder ] [▌DTF Stickers ] [ Vinyl Stickers ] [ Halftone Generator ]    │  ← top menu (Part D)
+├────────────────────────────────────────────────────────────────────────────────┤
 │  SOUTH SIDE DTF STICKER MAKER       [ 📂 Reopen Job ]  [ ⬇ Export to Photoshop ] │  ← top-right
 ├──────────────────────────────────────────┬─────────────────────────────────────┤
 │  ①  CUSTOMER NAME  [ ________________ ]  │  PREVIEW                            │
@@ -72,6 +77,7 @@
 └──────────────────────────────────────────┴─────────────────────────────────────┘
 ```
 
+- **Top menu:** Shop Builder · DTF Stickers · Vinyl Stickers · Halftone Generator, with **DTF Stickers** highlighted on this page (Part D).
 - **Top-right corner:** **Reopen Job** and **Export to Photoshop**, side by side (Sections B1 and B6).
 - **Box 1 — Customer Name** (existing).
 - **Box 2 — Cut / No Cut** for the whole job.
@@ -481,10 +487,27 @@ These appear **only on the DTF sticker maker**; standard DTF gang sheet pages do
 
 | Trigger | What happens |
 |---|---|
+| **Files uploaded to Google Drive** (automatic) | **First upload:** create the job folder and `project.ssp.json` right away. **Every upload after:** update `project.ssp.json` with the new image(s). No Save click needed. |
 | **Save Job** button (DTF sticker maker) | Save now, new Drive revision |
 | **Autosave** (DTF sticker maker) | Every 60 s while there are unsaved changes, plus on page hide/close (`visibilitychange`) |
 | **Add to cart** | Save, and lock that version to the cart item |
 | **Order placed** (WooCommerce webhook / n8n) | Copy the locked version into the order folder as `order-<orderId>.ssp.json` |
+
+### Automatic project JSON on upload
+Every uploaded file gets a project JSON next to it in Drive automatically, so the files and the job record are never separated.
+
+1. Customer uploads an image (or several).
+2. The server stores the original in `originals/` and the processed version in `processed/` in the job's Drive folder (Section B3).
+3. **In the same request, after the image upload succeeds**, the server writes `project.ssp.json` in that folder:
+   - **First upload of a new job:** create the folder and the JSON (job name from Box 1 + date; "Untitled job" + date if Box 1 is empty).
+   - **Later uploads:** add the new image entries (Drive file IDs, SHA-256, size, cut choice) to the existing JSON.
+   - **Image removed (✕):** remove its entry from the JSON; the image files are kept in Drive for 30 days, then deleted.
+4. The JSON is signed (`sig`, Section B4) and the status next to Save Job shows "Saved ✓".
+
+- **Never an image without its JSON.** If the image uploads but the JSON write fails, retry up to 3 times. If it still fails, mark the job "Not saved — retrying" and retry on the next change or autosave.
+- **Batch uploads** (e.g. 10 images at once) write the JSON once after the batch, not 10 times.
+- **Every JSON write records `lastUploadAt`** and the list of files, so staff can see exactly which files belong to the job.
+- This applies to every upload on the DTF sticker maker, and to staff re-imports (PSD import updates the JSON the same way).
 
 - Autosave is quiet: the status reads "Saving…" then "Saved ✓".
 - If a save fails (offline, Drive down), keep the project in `localStorage` as a backup and retry with backoff. Show "Not saved — retrying" in red.
@@ -497,7 +520,7 @@ These appear **only on the DTF sticker maker**; standard DTF gang sheet pages do
 Gang Sheet Projects/                      ← GDRIVE_ROOT_FOLDER_ID
   2026-10/
     prj_8f3k2a/                          ← one folder per project
-      project.ssp.json                   ← latest version (Drive keeps revision history)
+      project.ssp.json                   ← created on first upload, updated on every upload/save
       originals/
         img_01_logo-front.png            ← exactly what the customer uploaded
       processed/
@@ -526,6 +549,7 @@ Gang Sheet Projects/                      ← GDRIVE_ROOT_FOLDER_ID
   "name": "Crash Out Club drop 3",
   "createdAt": "2026-10-08T19:41:00Z",
   "updatedAt": "2026-10-08T19:55:12Z",
+  "lastUploadAt": "2026-10-08T19:54:40Z",
   "owner": { "wcCustomerId": 1182 },
   "product": {
     "wcProductId": 512,
@@ -565,7 +589,7 @@ Written when an order is frozen, when staff save in Fix mode, and when staff dow
 "snapshot": {
   "frozenAt": "2026-10-08T20:02:44Z",
   "orderId": 48213,
-  "codeVersion": { "builder": "2.1.0", "cutline": "1.1.0", "alpha": "1.0.3" },
+  "codeVersion": { "builder": "2.2.0", "cutline": "1.1.0", "alpha": "1.0.3" },
   "sheet": { "widthIn": 22, "lengthIn": 64.5 },
   "placements": [
     { "imageId": "img_01", "copy": 1, "xIn": 0.25, "yIn": 0.25, "rotationDeg": 0 },
@@ -820,6 +844,9 @@ scripts/
 
 ## B11. Acceptance Criteria
 
+- [ ] **The first file upload** automatically creates the Drive job folder and `project.ssp.json`; every later upload updates it, with no Save click.
+- [ ] An image is never left in Drive without a matching entry in `project.ssp.json` (retry on failure, "Not saved — retrying" shown).
+- [ ] A batch upload writes the JSON once after the batch.
 - [ ] **Save Job** creates a Drive project folder with `project.ssp.json`, `originals/` and `processed/`.
 - [ ] Autosave runs every 60 s when there are changes and on page close; the status shows Saving… / Saved ✓ / Not saved.
 - [ ] **Download job file** gives the same JSON, with a valid `sig`.
@@ -848,6 +875,10 @@ scripts/
 
 | Scenario | Expected |
 |---|---|
+| Upload 1 image to a new job, don't click Save | Drive has the job folder, the image and `project.ssp.json` listing it |
+| Upload 2 more images | `project.ssp.json` now lists all 3; `lastUploadAt` updated |
+| Remove image 2 (✕) | Its entry leaves the JSON; files kept 30 days |
+| Drive JSON write fails once | Retried; status recovers to "Saved ✓" |
 | Build 3 images with mixed cuts → save → reopen | Identical builder state; price re-signed |
 | Change a price field by hand in the JSON | Price ignored (recomputed); `sig` fails → customer rejected |
 | `schemaVersion: 0` fixture | Migrates and opens |
@@ -884,7 +915,7 @@ scripts/
 
 ## C1. This Release
 
-**Version: `2.1.0`** — everything in Parts A and B ships together as this release. 2.1.0 replaces the unreleased 2.0.0 draft: vinyl stickers were removed and the project is now UV DTF only. Bump the footer and `package.json` to 2.1.0 so a build with the old vinyl code is easy to tell apart.
+**Version: `2.2.0`** — everything in Parts A, B and D ships together as this release. 2.2.0 adds the top menu (Part D) and the automatic project JSON on upload (Section B2) on top of 2.1.0, which removed vinyl and made the project UV DTF only. Set the footer and `package.json` to 2.2.0.
 
 ## C2. The Footer
 
@@ -893,11 +924,11 @@ scripts/
 │  ... builder ...                                                     │
 │                                                                      │
 ├──────────────────────────────────────────────────────────────────────┤
-│  South Side DTF Gang Sheet Builder  ·  v2.1.0  ·  What's new         │  ← customer
+│  South Side DTF Gang Sheet Builder  ·  v2.2.0  ·  What's new         │  ← customer
 └──────────────────────────────────────────────────────────────────────┘
 
 ├──────────────────────────────────────────────────────────────────────┤
-│  South Side DTF Gang Sheet Builder  ·  v2.1.0  ·  build 3f9c2a1  ·    │  ← staff
+│  South Side DTF Gang Sheet Builder  ·  v2.2.0  ·  build 3f9c2a1  ·    │  ← staff
 │  2026-10-08 14:02 CT  ·  cutline 1.1.0  ·  alpha 1.0.3  ·  What's new │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -905,13 +936,13 @@ scripts/
 - **Placement:** a slim footer bar pinned to the bottom of every builder page (full width, small grey text, ~32 px tall). It sits below the builder content and never covers the canvas or the Add-to-cart button. On phones it wraps to two lines.
 - **Customers see:** app name, version, and a **What's new** link.
 - **Staff see** (WP `manage_woocommerce`): also the git commit (short hash), build date/time in Chicago time, and the `cutline` and `alpha` module versions — the same values written into a project's `snapshot.codeVersion`.
-- **Click the version** to copy `v2.1.0 (3f9c2a1)` to the clipboard, with a "Copied" toast, so it can be pasted into a bug report.
+- **Click the version** to copy `v2.2.0 (3f9c2a1)` to the clipboard, with a "Copied" toast, so it can be pasted into a bug report.
 - **What's new** opens a small modal showing the `CHANGELOG.md` entry for the current version.
-- Also shown in the footer of the **staff PSD export `README.txt`** and in the production PDF metadata (`Producer: SSP Gang Sheet Builder v2.1.0`).
+- Also shown in the footer of the **staff PSD export `README.txt`** and in the production PDF metadata (`Producer: SSP Gang Sheet Builder v2.2.0`).
 
 ## C3. Where the Number Comes From
 
-- **One source of truth:** `"version"` in `package.json`. Set it to `"2.1.0"` for this release.
+- **One source of truth:** `"version"` in `package.json`. Set it to `"2.2.0"` for this release.
 - `next.config.ts` exposes it at build time, with no hard-coding in components:
 
 ```ts
@@ -940,16 +971,22 @@ export default {
 
 | Change | Bump | Example |
 |---|---|---|
-| Bug fix, no behavior change | Patch | 2.1.0 → 2.1.1 |
-| New feature, old projects still open the same | Minor | 2.1.1 → 2.2.0 |
-| Changes saved-file format, pricing, or cut output | Major | 2.2.0 → 3.0.0 |
+| Bug fix, no behavior change | Patch | 2.2.0 → 2.2.1 |
+| New feature, old projects still open the same | Minor | 2.2.1 → 2.3.0 |
+| Changes saved-file format, pricing, or cut output | Major | 2.3.0 → 3.0.0 |
 
-- Every release adds an entry to `CHANGELOG.md` and tags git as `v2.1.0`.
+- Every release adds an entry to `CHANGELOG.md` and tags git as `v2.2.0`.
 - If a release changes `.ssp.json`, also bump `schemaVersion` and add a migration (Section B4).
 
 ## C5. `CHANGELOG.md` entry
 
 ```md
+## [2.2.0] — 2026-10-09
+
+### Added
+- Top menu on every page: Shop Builder · DTF Stickers · Vinyl Stickers · Halftone Generator.
+- Automatic project JSON: the moment files upload to Google Drive, `project.ssp.json` is created (first upload) or updated (every upload after) in the same job folder, with no Save click needed.
+
 ## [2.1.0] — 2026-10-09
 
 ### Added
@@ -986,13 +1023,80 @@ CHANGELOG.md
 
 ## C7. Acceptance Criteria
 
-- [ ] Every builder page shows the footer with **v2.1.0** at the bottom of the screen.
+- [ ] Every builder page shows the footer with **v2.2.0** at the bottom of the screen.
 - [ ] Customers see name + version + What's new; staff also see commit, build time (CT) and module versions.
 - [ ] The version comes only from `package.json`; changing it there and rebuilding updates the footer.
-- [ ] Clicking the version copies it; What's new shows the 2.1.0 changelog entry.
+- [ ] Clicking the version copies it; What's new shows the 2.2.0 changelog entry.
 - [ ] `snapshot.codeVersion.builder`, the PSD `README.txt` and PDF metadata all show the same version as the footer.
 - [ ] `GET /api/version` returns the version, commit and build time.
 - [ ] The footer never covers the canvas or Add-to-cart, on desktop or phone.
+
+---
+
+# Part D — Top Menu
+
+**Goal:** One menu bar at the very top of every page so staff and customers can switch between the shop's tools.
+
+## D1. The Menu
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ [ Shop Builder ]  [▌DTF Stickers ]  [ Vinyl Stickers ]  [ Halftone Generator ] │
+└──────────────────────────────────────────────────────────────────────────────┘
+          ▲ active page is filled red with white text; the others are outlined
+```
+
+| Button (left → right) | Opens | Where it lives |
+|---|---|---|
+| **Shop Builder** | The DTF gang sheet builder | This app (`/builder`) |
+| **DTF Stickers** | The UV DTF sticker maker (Part A) | This app (`/stickers`) |
+| **Vinyl Stickers** | The Vinyl Sticker Maker | **Separate project** (`VINYL_STICKER_MAKER_SPEC.md`) — external link |
+| **Halftone Generator** | The halftone / color separation tool | **Separate project** — external link |
+
+- **Position:** a full-width bar pinned to the very top of the page, above the page title row (and above Reopen Job / Export to Photoshop).
+- **Style:** South Side brand colors. The active page's button is **filled red with white text**; the others are outlined in blue. Same height and font on every page.
+- **Order is fixed** as listed above.
+- **Phones:** the bar scrolls sideways if the buttons don't fit; the buttons never stack or shrink into a hamburger menu.
+- **Separate projects stay separate.** Vinyl Stickers and Halftone Generator are plain links to their own apps. No code is shared or imported; each app copies the same `TopMenu` component and points it at the same URLs.
+- **Not live yet:** if a menu item's URL isn't set, the button shows greyed out with a "Coming soon" tooltip instead of a broken link.
+- **Unsaved work:** before leaving the page, run the autosave (Section B2). If it can't save, ask *"You have unsaved changes — leave anyway?"*.
+- The labels come from one config list, so they can be renamed without touching components.
+
+## D2. Config
+
+```ts
+// lib/nav.ts
+export const TOP_MENU = [
+  { key: 'shop-builder', label: 'Shop Builder',       href: process.env.NEXT_PUBLIC_NAV_SHOP_BUILDER_URL ?? '/builder' },
+  { key: 'dtf-stickers', label: 'DTF Stickers',       href: process.env.NEXT_PUBLIC_NAV_DTF_STICKERS_URL ?? '/stickers' },
+  { key: 'vinyl',        label: 'Vinyl Stickers',     href: process.env.NEXT_PUBLIC_NAV_VINYL_URL },       // external
+  { key: 'halftone',     label: 'Halftone Generator', href: process.env.NEXT_PUBLIC_NAV_HALFTONE_URL },    // external
+] as const;
+```
+
+```
+NEXT_PUBLIC_NAV_SHOP_BUILDER_URL=/builder
+NEXT_PUBLIC_NAV_DTF_STICKERS_URL=/stickers
+NEXT_PUBLIC_NAV_VINYL_URL=           # set when the Vinyl Sticker Maker is live
+NEXT_PUBLIC_NAV_HALFTONE_URL=        # set when the Halftone Generator is live
+```
+
+## D3. Files
+
+```
+lib/nav.ts
+components/TopMenu.tsx      // the bar; highlights the active item by key or current path
+app/layout.tsx              // renders <TopMenu /> above every page
+```
+
+## D4. Acceptance Criteria
+
+- [ ] Every page shows the top menu: **Shop Builder · DTF Stickers · Vinyl Stickers · Halftone Generator**, in that order.
+- [ ] The current page's button is highlighted (red fill, white text).
+- [ ] Shop Builder and DTF Stickers open pages in this app; Vinyl Stickers and Halftone Generator open their own apps.
+- [ ] A menu item with no URL set is greyed out with "Coming soon", never a broken link.
+- [ ] Leaving a page with unsaved work autosaves first, or asks before leaving.
+- [ ] On a phone, the bar scrolls sideways and stays on one row.
 
 ---
 
@@ -1006,10 +1110,12 @@ CHANGELOG.md
   right, Save Job below Box 2. Jobs save as JSON to Google Drive.
 - **Staff tools** — Fix mode, load a project JSON exactly as it was ordered, export layered
   Photoshop files (art only) with all original uploads, and re-import Photoshop edits.
-- **Version footer** — current version (v2.1.0) shown at the bottom of every builder page.
+- **Top menu** — Shop Builder · DTF Stickers · Vinyl Stickers · Halftone Generator on every page.
+- **Automatic project JSON** — uploading files to Google Drive creates/updates the job's JSON automatically.
+- **Version footer** — current version (v2.2.0) shown at the bottom of every builder page.
 - Spec: `docs/GANGSHEET_ADDON_SPEC.md`
 ```
 
 ---
 
-*Gang Sheet Builder Add-on Spec · **v2.1.0** · 2026-10-09 · DTF only*
+*Gang Sheet Builder Add-on Spec · **v2.2.0** · 2026-10-09 · DTF only*
