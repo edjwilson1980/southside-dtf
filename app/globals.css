@@ -7,6 +7,65 @@
 :root { color-scheme: light; --background: #f4f6f8; --foreground: #172033; --card: #fff; --card-foreground: #172033; --border: #dce1e8; --input: #d1d8e1; --ring: #00a6d6; --chicago-blue: #00a6d6; --chicago-red: #cf202d; --ink: #172033; --muted: #5d6878; --pale-blue: #e8f6fb; }
 @layer base { * { @apply border-border outline-ring/50; } html { background: var(--background); scroll-behavior: smooth; } body { @apply bg-background text-foreground font-sans; margin: 0; } button, select, input { font: inherit; } }
 
+/* SPEC Part D — top menu on every page */
+.top-menu {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  width: 100%;
+  border-bottom: 1px solid #d7e3ea;
+  background: #fff;
+  box-shadow: 0 1px 0 rgb(15 23 42 / 4%);
+}
+.top-menu-inner {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 10px 36px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.top-menu-item {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 14px;
+  border: 1.5px solid var(--chicago-blue, #00a6d6);
+  border-radius: 8px;
+  background: #fff;
+  color: #006e99;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.top-menu-item:hover {
+  background: #eaf7fc;
+}
+.top-menu-item.active {
+  border-color: var(--chicago-red, #cf202d);
+  background: var(--chicago-red, #cf202d);
+  color: #fff;
+}
+.top-menu-item.coming-soon {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+@media (max-width: 700px) {
+  .top-menu-inner { padding: 8px 12px; gap: 6px; }
+  .top-menu-item { height: 34px; padding: 0 10px; font-size: 12px; }
+}
+
 .builder-shell { max-width: 1440px; margin: 0 auto; padding: 28px 36px 42px; color: var(--ink); }
 .builder-shell.embed-mode { padding: 12px 12px 28px; max-width: none; }
 .embed-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 10px 12px; border: 1px solid #d7e3ea; border-radius: 10px; background: #fff; }
