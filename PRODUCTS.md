@@ -32,19 +32,18 @@ Shared code lives under `lib/` (compose, cut layout, sheet size, image tools).
 
 ## Features
 
-- **Sticker maker cut lines** — Box 2 "Cut / No Cut" under Customer Name. Vinyl: each image gets
-  Square / Circle / Contour Cut in one horizontal row, plus its own border (default Square, 2 mm).
-  UV DTF: fixed 2.5 mm Square Cut. The preview draws a solid red `#E10600` cut trace on every
-  image, plus registration marks and a Start Cut box. Cut paths export as a `CutContour` spot-color
-  layer.
+- **DTF Sticker Maker (UV DTF only)** — Box 2 "Cut / No Cut" under Customer Name. Cut = fixed
+  2.5 mm Square Cut on every image. The preview draws a solid red `#E10600` cut trace, plus
+  registration marks and a Start Cut box. Cut paths export as a `CutContour` spot-color layer.
+  Vinyl stickers are a separate project — see [`docs/VINYL_STICKER_MAKER_SPEC.md`](docs/VINYL_STICKER_MAKER_SPEC.md).
 - **Save Job / Reopen Job** (sticker maker only) — Reopen Job, Save to Photoshop, and Connect to
   Google Drive sit in the upper-right bar above the page. Save Job sits below Box 2. Jobs save as
-  JSON to Google Drive.
+  JSON to Google Drive. Vinyl job files are rejected with a Vinyl Sticker Maker message.
 - **Staff tools** — Fix mode, load a project JSON exactly as it was ordered, export layered
   Photoshop files (art only) with all original uploads, and re-import Photoshop edits.
-- **Version footer** — current version (v2.0.0) shown at the bottom of every builder page.
+- **Version footer** — current version (v2.1.0) shown at the bottom of every builder page.
 - Spec: [`docs/GANGSHEET_ADDON_SPEC.md`](docs/GANGSHEET_ADDON_SPEC.md)
 
 ### Shop sticker routes (staff)
 
-- `/shop/sticker-maker` — UV DTF (22 × 12 in min) and vinyl (8 × 11 in min) sticker builder
+- `/shop/sticker-maker` — UV DTF sticker builder (22 × 12 in min); vinyl is not in this app

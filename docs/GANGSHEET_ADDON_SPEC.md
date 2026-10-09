@@ -1,75 +1,72 @@
-# Gang Sheet Builder Add-on — UV DTF Cut Lines, Save/Reopen & Staff Tools
+# Gang Sheet Builder Add-on — UV DTF Cutout Stickers, Save/Reopen & Staff Tools
 
 **Project:** Southside Gang Sheet Builder (Next.js 15, WooCommerce checkout)
 **Where this goes:** `docs/GANGSHEET_ADDON_SPEC.md` — one spec for Cursor covering everything below.
-**Release:** **v2.0.0** — shown in the builder's page footer (Part C).
+**Release:** **v2.1.0** — shown in the builder's page footer (Part C).
+**DTF only:** vinyl stickers have been removed from this project and moved to their own spec, `VINYL_STICKER_MAKER_SPEC.md`.
 
 | Part | What it covers | Applies to |
 |---|---|---|
-| **A. UV DTF / Vinyl Sticker Cut Lines** | Sticker maker layout, Box 2 Cut / No Cut, per-image Circle / Square / Contour cuts (vinyl), fixed 2.5 mm Square Cut (UV DTF), preview outlines, registration marks, Start Cut box | UV DTF + vinyl sticker products |
-| **B. Save & Reopen Projects + Staff Tools** | Save Job / Reopen Job, Google Drive project JSON, staff Fix mode, staff as-is JSON load, Photoshop export/import | Save/Reopen Job: sticker maker only · staff tools: all orders |
+| **A. UV DTF Cutout Stickers** | DTF sticker maker layout, Box 2 Cut / No Cut, fixed 2.5 mm Square Cut, red preview line, registration marks, Start Cut box, removing vinyl | UV DTF only |
+| **B. Save & Reopen Projects + Staff Tools** | Save Job / Reopen Job, Google Drive project JSON, staff Fix mode, staff as-is JSON load, Photoshop export/import | Save/Reopen Job: DTF sticker maker only · staff tools: all orders |
 | **C. Version Footer & Release Notes** | Version number in the page footer, versioning rules, changelog | Whole builder |
 
 ### Summary of decisions
+- **This project is DTF only.** Vinyl stickers are a separate project (`VINYL_STICKER_MAKER_SPEC.md`); all vinyl code comes out of this one (Section A14).
 - **Top-right corner:** **Reopen Job** and **Export to Photoshop**.
-- **Box 1:** Customer Name. **Box 2:** **Cut / No Cut** for the whole job (No Cut by default). **Save Job** right below Box 2, then **Upload Sticker Art**.
-- **Vinyl + Cut:** every uploaded image gets its own **Square Cut · Circle Cut · Contour Cut** choice, **shown side by side in one horizontal row**, and its own **border −/+** (default Square Cut, 2 mm).
-- **UV DTF:** only **Cut or No Cut**. Cut = a standard **2.5 mm Square Cut** around each image, not adjustable.
-- **Square Cut** hugs the image (rectangle or square), never padded out.
-- **No global expand / contract control.** Border is set per image (vinyl only).
-- **Preview box** shows a **solid red trace line** around every image (box, circle or contour), plus **registration marks fitted to the printed sheet** and a **Start Cut box** at the cutter's origin.
+- **Box 1:** Customer Name. **Box 2:** **Cut / No Cut** (No Cut by default). **Save Job** right below Box 2, then **Upload Sticker Art**.
+- **Cut = a standard 2.5 mm Square Cut** around every image, hugging the art. Not adjustable, no other shapes.
+- **Preview** shows a **solid red rectangle** around every image, plus **registration marks fitted to the printed sheet** and a **Start Cut box**.
 - Jobs save as **JSON in Google Drive** and can be **reopened** to edit or fix.
 - **Staff** get Fix mode, an **as-is JSON load** (exact layout, cuts and charged price), and a **Photoshop export with all originals** (art only, **no cut lines**) plus re-import.
 
 ---
 
-# Part A — UV DTF / Vinyl Sticker Cut Lines
+# Part A — UV DTF Cutout Stickers
 
-**Goal:** On the shop sticker maker, let the customer choose **Cut or No Cut** for the job. With Cut on, vinyl customers pick **Circle, Square or Contour Cut** and a border for **each image**; UV DTF always gets a **2.5 mm Square Cut**. Show every cut outline in the preview, and output a production file with **registration marks fitted to the sheet** and a **Start Cut box** the cutter operator can follow.
+**Goal:** On the DTF sticker maker, the customer chooses **Cut** or **No Cut** for the job. With Cut on, every image gets a **standard 2.5 mm Square Cut**, shown as a **red trace line** in the preview. The production file carries the cut line, **registration marks fitted to the sheet** and a **Start Cut box** the cutter operator can follow.
 
-**Scope:** UV DTF and vinyl sticker products only. Standard DTF transfers do **not** show any cut options.
+**Scope:** **UV DTF only.** There are no circle, contour or adjustable-border options in this project. Vinyl stickers are a separate project with their own spec (`VINYL_STICKER_MAKER_SPEC.md`), and nothing from it belongs here (Section A14).
 
-| Product | Cut options offered |
+| Option | What it does |
 |---|---|
-| **UV DTF** | **Cut** (fixed 2.5 mm Square Cut) or **No Cut** |
-| **Vinyl sticker** | **Cut** (per image: Circle / Square / Contour + border) or **No Cut** |
+| **No Cut** (default) | Art only. No cut lines, marks or Start Cut box. |
+| **Cut** | Every image gets a **Square Cut 2.5 mm** around it. Not adjustable. |
 
-- A0. Sticker Maker Layout
+- A0. DTF Sticker Maker Layout
 - A1. Box 2 — Cut / No Cut
-- A2. Per-Image Cut Options (shown with each uploaded image)
-- A3. The Cut Shapes
-- A4. Border Size (vinyl only, per image)
-- A5. Preview Box — Cut Outlines, Marks and Start Box
-- A6. Production Output — Cut File, Registration Marks & Start Cut Box
-- A7. Gang Sheet Nesting & Pricing
-- A8. Data Model
-- A9. File Structure
-- A10. Feature Flag / Product Gating
-- A11. Acceptance Criteria
-- A12. Test Cases (`scripts/test-cutline.ts`)
-- A13. Saving & Reopening
-- A14. Out of Scope (later)
+- A2. Uploaded Image Rows
+- A3. The Square Cut (2.5 mm)
+- A4. Preview Box — Red Trace Line, Marks and Start Box
+- A5. Production Output — Cut File, Registration Marks & Start Cut Box
+- A6. Gang Sheet Nesting & Pricing
+- A7. Data Model
+- A8. File Structure & Config
+- A9. Product Gating
+- A10. Acceptance Criteria
+- A11. Test Cases
+- A12. Saving & Reopening
+- A13. Out of Scope
+- A14. Removing Vinyl From This Project
 
 ---
 
-## A0. Sticker Maker Layout
-
-On the **shop sticker maker** (UV DTF and vinyl sticker products) the page is laid out like this:
+## A0. DTF Sticker Maker Layout
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────┐
-│  SOUTH SIDE STICKER MAKER           [ 📂 Reopen Job ]  [ ⬇ Export to Photoshop ] │  ← top-right
+│  SOUTH SIDE DTF STICKER MAKER       [ 📂 Reopen Job ]  [ ⬇ Export to Photoshop ] │  ← top-right
 ├──────────────────────────────────────────┬─────────────────────────────────────┤
 │  ①  CUSTOMER NAME  [ ________________ ]  │  PREVIEW                            │
 ├──────────────────────────────────────────┤  ┌───────────────────────────────┐  │
 │  ②  CUT    ( • ) Cut    (   ) No Cut     │  │ ■ ▶ START CUT #48213        ■ │  │
-├──────────────────────────────────────────┤  │  ┏━━━━━━━┓  ╭━━━━╮  ┏━━━━━━┓  │  │
+├──────────────────────────────────────────┤  │  ┏━━━━━━━┓  ┏━━━━┓  ┏━━━━━━┓  │  │
 │  [ 💾 Save Job ]   Saved ✓               │  │  ┃ LOGO  ┃  ┃ ★  ┃  ┃ TEXT ┃  │  │
-├──────────────────────────────────────────┤  │  ┗━━━━━━━┛  ╰━━━━╯  ┗━━━━━━┛  │  │
+├──────────────────────────────────────────┤  │  ┗━━━━━━━┛  ┗━━━━┛  ┗━━━━━━┛  │  │
 │  UPLOAD STICKER ART                      │  │ ■                           ■ │  │
 │  ┌──────┐ logo-front.png   4.00"×3.20" ✕ │  └───────────────────────────────┘  │
-│  │ img  │ [■Square] [Circle] [Contour]   │  ━━ = RED trace line (the cut)      │
-│  └──────┘ Border [−] 2 mm [+]            │  ■  = registration marks            │
+│  │ img  │ Square Cut · 2.5 mm            │  ━━ = RED trace line (the cut)      │
+│  └──────┘ Finished 4.20" × 3.40"         │  ■  = registration marks            │
 ├──────────────────────────────────────────┤                                     │
 │  ③ …  (remaining boxes)                  │                                     │
 └──────────────────────────────────────────┴─────────────────────────────────────┘
@@ -77,165 +74,81 @@ On the **shop sticker maker** (UV DTF and vinyl sticker products) the page is la
 
 - **Top-right corner:** **Reopen Job** and **Export to Photoshop**, side by side (Sections B1 and B6).
 - **Box 1 — Customer Name** (existing).
-- **Box 2 — Cut:** just **Cut** or **No Cut** for the whole job. No border control here.
+- **Box 2 — Cut / No Cut** for the whole job.
 - **Save Job** right below Box 2.
-- **Upload Sticker Art:** every uploaded image gets **its own cut options in one horizontal row** next to it — **Square Cut · Circle Cut · Contour Cut** side by side (vinyl) — or a fixed cut label (UV DTF). See Section A2.
-- **Preview box:** shows each image with a **solid red trace line** around it — the box, circle or contour that will be cut — plus the **registration marks** and the **Start Cut box** (Sections A5 and A6).
+- **Upload Sticker Art:** each uploaded image shows a fixed **"Square Cut · 2.5 mm"** label when Cut is on. No options per image.
+- **Preview box:** a **solid red trace line** around every image, plus registration marks and the Start Cut box.
 - The rest of the existing boxes follow, renumbered from ③.
-- **Removed:** the old expand / contract control. Border size is now set **per image** only (vinyl); UV DTF uses a fixed border.
-
-### What changes by product
-
-| | **Vinyl sticker** | **UV DTF** |
-|---|---|---|
-| Box 2 | Cut / No Cut | Cut / No Cut |
-| Per-image options when Cut is on | **Circle Cut · Square Cut · Contour Cut**, plus border − / + | **None.** Every image gets a **Square Cut at a fixed 2.5 mm** |
-| Default per image | Square Cut, 2 mm | Square Cut, 2.5 mm (fixed) |
-| Border adjustable? | Yes, per image (Section A4) | No, always 2.5 mm |
+- **No expand / contract control** and **no border control** anywhere.
 
 ---
 
 ## A1. Box 2 — Cut / No Cut
 
-Box 2 sits right under the customer name. It is the on/off switch for the entire cut-line feature on that job.
-
-- **Default: No Cut** (configurable as `CUT_DEFAULT_ENABLED`, default `false`).
-- **Cut:** every image in the job gets a cut line, including images uploaded later.
-  - **Vinyl:** each image shows its own Circle / Square / Contour options and border control (Section A2).
-  - **UV DTF:** each image gets a Square Cut at **2.5 mm**, no options. The image row just reads *"Square Cut · 2.5 mm"*.
-- **No Cut:** the cut function is fully turned off.
-  - Per-image cut options are hidden.
-  - Cut outlines disappear from the preview.
-  - No cut paths are computed.
-  - Nesting and price go back to the bare art footprint.
+- **Default: No Cut** (`CUT_DEFAULT_ENABLED=false`).
+- **Cut:** every image in the job gets a Square Cut at 2.5 mm, including images uploaded later.
+- **No Cut:** the cut function is fully off.
+  - No cut labels on image rows.
+  - No red lines, marks or Start Cut box in the preview.
+  - No cut paths computed.
+  - Nesting and price use the bare art footprint.
   - The production PDF has **no `CutContour` layer, no registration marks and no Start Cut box**.
-  - No cut meta is saved to the order.
-- **Switching No Cut → Cut** restores each image's last vinyl cut choice and border for the session.
-- **Switching either way re-nests the sheet and re-signs the price** immediately. While cut lines are being computed, each image shows a small "Adding cut line…" spinner.
+  - No cut meta saved to the order.
+- **Switching either way re-nests the sheet and re-signs the price** immediately.
 
 ---
 
-## A2. Per-Image Cut Options (shown with each uploaded image)
-
-Every time an image is uploaded with **Cut** selected, its row in the Upload Sticker Art list shows the cut options **for that particular image**.
-
-### Vinyl sticker
-
-The three cut choices sit **side by side in one horizontal row**, not stacked. The border control sits on the row below.
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  ┌──────┐  logo-front.png                     4.00" × 3.20"     ✕   │
-│  │ img  │  CUT:  [■ Square Cut]  [ Circle Cut ]  [ Contour Cut ]     │  ← one row
-│  └──────┘  BORDER:  [ − ]  2 mm (0.079")  [ + ]     Finished 4.16" × 3.36" │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-- **Layout:** a **horizontal segmented button group** (three buttons in a row, like tabs). The selected one is filled; the others are outlined. Use `display: flex; flex-direction: row; gap: 8px;`, never a vertical radio list.
-  - Order: **Square Cut · Circle Cut · Contour Cut**. Each button has a small icon (▢ ◯ ☁) plus its label.
-  - On narrow phones (< 400 px) the three buttons shrink to icon + short label and **still stay on one row**.
-- **Border −/+** sits on the next row, per image (Section A4), with the finished size beside it.
-- **Default for a new image: Square Cut, 2 mm.**
-- Changing an image's cut or border redraws **only that image's** red trace line in the preview and updates size, nesting and price.
-- Optional **"Apply to all"** link copies this image's cut and border to every image.
-
-### UV DTF
+## A2. Uploaded Image Rows
 
 ```
 ┌──────────────────────────────────────────────────────┐
 │  ┌──────┐  logo-front.png       4.00" × 3.20"    ✕   │
-│  │ img  │                                            │
-│  └──────┘  CUT:  [■ Square Cut · 2.5 mm]  (fixed)    │
-│            Finished size: 4.20" × 3.40"              │
+│  │ img  │  Square Cut · 2.5 mm                       │
+│  └──────┘  Finished size: 4.20" × 3.40"              │
 └──────────────────────────────────────────────────────┘
 ```
 
-- **No options.** UV DTF is only Cut or No Cut (Box 2), and Cut always means a **Square Cut 2.5 mm** around the image.
-- **The server enforces it.** A UV DTF image arriving with a different shape or border (old job file, modified browser) is set to Square Cut 2.5 mm with the notice *"UV DTF uses a standard 2.5 mm square cut."*
+- With **Cut** on: a plain label **"Square Cut · 2.5 mm"** and the finished size (art + 2.5 mm each side).
+- With **No Cut**: no cut label; finished size = art size.
+- There are **no buttons, choices or −/+ controls** on the row.
 
 ---
 
-## A3. The Cut Shapes
+## A3. The Square Cut (2.5 mm)
 
-| Customer label | Internal id | What the customer gets | How it's built |
-|---|---|---|---|
-| **Square Cut** | `box` | Rectangle or square around the image, matching the art's proportions | Tight bounding box of the art + border on all sides. **Never padded out to a perfect square**, so wide art gets a wide rectangle and no material is wasted. Square corners. |
-| **Circle Cut** | `circle` | Round sticker | Minimum enclosing circle of the art's outline (Welzl's algorithm on the convex hull), radius + border |
-| **Contour Cut** | `contour` | Follows the shape of the art | Trace the art outline from the alpha mask → offset outward with round joins → smooth → simplify |
-
-Vinyl can use all three. UV DTF uses **Square Cut only, at 2.5 mm**.
-
-### Contour cut rules (the hard one)
-- **Trace from the hardened alpha**, using the same `ALPHA_THRESHOLD` as the underbase. The cut must match what actually prints.
-- **Offset in vector space** with Clipper2 (`clipper2-js`), `JoinType.Round`, `EndType.Polygon`. Do not dilate pixels — vector offset is exact and resolution-independent.
-- **Fill interior holes.** A "C" or donut shape gets one outer cut, no inner cut (inner cuts = weeding, out of scope).
-- **Merge loose pieces.** If the art has separated parts (e.g., text with gaps), the offset usually merges them. If it's still more than one piece after offset:
-  - Apply a "close" pass: offset out by +X then back in by −X (X = 1/16") to bridge small gaps.
-  - If still separate → show warning: *"Parts of your design will cut as separate stickers. Increase the border or choose Square Cut or Circle Cut."*
-- **Smooth** with 2 passes of Chaikin smoothing, then **simplify** (Ramer–Douglas–Peucker, tolerance ~0.005") so the cutter doesn't chatter on thousands of tiny segments.
-- **Minimum inside-corner radius 1/32"** — sharp inside notches tear vinyl.
+- **Shape:** a rectangle (or square) that hugs the image — the tight bounding box of the art plus **2.5 mm on every side**.
+- **Never padded out to a perfect square.** A 6" × 2" banner gets a 6.20" × 2.20" rectangle, so no material is wasted.
+- **Corners:** square.
+- **Bounding box comes from the hardened alpha** (`lib/alpha.ts`, same `ALPHA_THRESHOLD` as the white underbase), so the box hugs what actually prints, not the transparent canvas around it.
+- **Fixed size:** `UV_DTF_CUT_OFFSET_MM=2.5`. The customer can't change it. The server **always** applies 2.5 mm and ignores any other value sent from the browser or an old job file.
+- **No circle, contour or custom shapes.** No contour tracing code, Clipper, Welzl or smoothing is needed in this project.
 
 ---
 
-## A4. Border Size (vinyl only, per image)
+## A4. Preview Box — Red Trace Line, Marks and Start Box
 
-| Setting | Value |
-|---|---|
-| Where | In each image's row, right under its cut choice. **There is no global border or expand / contract control.** |
-| Unit shown | **Millimeters**, with inches in grey (e.g. `2 mm (0.079")`) |
-| Step per click | **0.5 mm** |
-| Default | **2 mm** for Circle, Square and Contour. Switching cut type keeps the border. |
-| Minimum | **0.5 mm** for Circle and Contour, **0 mm** for Square |
-| Maximum | **12 mm (≈ 1/2")** |
-| Hold-to-repeat | Yes — holding + or − steps every 120 ms |
+**Every image in the preview shows a solid red rectangle around it** — the exact line the cutter will follow.
 
-- **−** disables at the minimum, **+** at the maximum.
-- Below **1.5 mm** on Circle or Contour, show a soft warning: *"Very tight border — small cutting shifts may clip your art."*
-- The border is a **physical distance**, so it stays the same when the image is resized.
-- **UV DTF has no border control.** It is always **2.5 mm**.
-- The server **clamps every border** to the allowed range, and forces 2.5 mm for UV DTF.
-
----
-
-## A5. Preview Box — Red Trace Line, Marks and Start Box
-
-**Every image in the preview shows a solid red trace line around it** — the exact line the cutter will follow:
-- a **red rectangle** for Square Cut,
-- a **red circle** for Circle Cut,
-- a **red outline following the art's shape** for Contour Cut.
-
-### How it looks
 | Property | Value |
 |---|---|
 | Line color | **Red `#E10600`** |
 | Line style | **Solid**, **2 px** on screen at any zoom (`vector-effect: non-scaling-stroke`) |
-| Fill between art and line | Light red tint `rgba(225, 6, 0, 0.06)` so the border area is visible |
-| Layer order | Drawn **on top of** the image, never hidden behind it |
-| Hover / selected image | Line goes to **3 px** and the matching image row in the list highlights |
+| Fill between art and line | Light red tint `rgba(225, 6, 0, 0.06)` |
+| Layer order | Drawn **on top of** the image |
+| Hover / selected image | Line goes to **3 px** and the matching image row highlights |
 
-```
-   Square Cut            Circle Cut           Contour Cut
-┏━━━━━━━━━━━━━┓          ╭━━━━━━━╮           ╭━━╮  ╭━━━╮
-┃  ┌───────┐  ┃        ┃ ┌─────┐ ┃         ┃ ★★ ╰━━╯ ★ ┃
-┃  │ LOGO  │  ┃        ┃ │  ★  │ ┃         ╰━╮  STAR  ╭━╯
-┃  └───────┘  ┃        ┃ └─────┘ ┃            ╰━━━━━━╯
-┗━━━━━━━━━━━━━┛          ╰━━━━━━━╯
-   ━━ = solid red trace line, 2 mm (or chosen border) outside the art
-```
-
-- **Registration marks** (black) and the **Start Cut box** are drawn exactly where they'll print (Section A6).
-- With **No Cut**, no red lines, marks or start box are shown — art only.
-- The red line appears **as soon as an image finishes uploading**, and redraws within **50 ms** when that image's cut or border changes. Trace the contour once on upload (Web Worker) and cache it; only the offset/shape step reruns.
-- **No expand / contract control on the preview.** The preview fits the sheet to the box automatically and scrolls for long sheets.
-- **Preview only:** red is the on-screen color. The production PDF keeps the `CutContour` spot color (Section A6), because the cutter's software detects the line by that spot-color name.
+- The red line appears **as soon as an image finishes uploading** (with Cut on).
+- **Registration marks** (black) and the **Start Cut box** are drawn where they'll print (Section A5).
+- **No Cut:** art only.
+- The preview fits the sheet to the box automatically and scrolls for long sheets. No expand / contract control.
+- **Preview only:** red is the on-screen color. The production PDF uses the `CutContour` spot color, because the cutter software detects the line by that name.
 
 ### Implementation (so the line actually shows)
-Render the cut lines as an **SVG layer absolutely positioned on top of the preview canvas**, using the same coordinate system (inches → preview pixels) as the image placements. Don't draw them into the image itself.
+Render the cut lines as an **SVG layer absolutely positioned on top of the preview canvas**, in the same inch-based coordinates as the image placements.
 
 ```tsx
 // components/CutlineOverlay.tsx
-type Pt = [number, number];
-interface Placed { id: string; xIn: number; yIn: number; cut?: { pathsIn: Pt[][] } }
+interface Placed { id: string; xIn: number; yIn: number; cut?: { wIn: number; hIn: number; dxIn: number; dyIn: number } }
 
 export function CutlineOverlay({ items, sheetWIn, sheetHIn, pxPerIn, selectedId }:
   { items: Placed[]; sheetWIn: number; sheetHIn: number; pxPerIn: number; selectedId?: string }) {
@@ -243,41 +156,37 @@ export function CutlineOverlay({ items, sheetWIn, sheetHIn, pxPerIn, selectedId 
     <svg
       className="pointer-events-none absolute inset-0"
       width={sheetWIn * pxPerIn} height={sheetHIn * pxPerIn}
-      viewBox={`0 0 ${sheetWIn} ${sheetHIn}`}            // draw in inches
-      style={{ zIndex: 20 }}                              // above the art
+      viewBox={`0 0 ${sheetWIn} ${sheetHIn}`}   // draw in inches
+      style={{ zIndex: 20 }}                     // above the art
     >
       {items.filter(i => i.cut).map(i => (
-        <g key={i.id} transform={`translate(${i.xIn} ${i.yIn})`}>
-          {i.cut!.pathsIn.map((pts, k) => (
-            <path
-              key={k}
-              d={'M' + pts.map(p => p.join(' ')).join(' L') + ' Z'}
-              fill="rgba(225,6,0,0.06)"
-              stroke="#E10600"
-              strokeWidth={i.id === selectedId ? 3 : 2}
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
-        </g>
+        <rect
+          key={i.id}
+          x={i.xIn + i.cut!.dxIn} y={i.yIn + i.cut!.dyIn}
+          width={i.cut!.wIn} height={i.cut!.hIn}
+          fill="rgba(225,6,0,0.06)"
+          stroke="#E10600"
+          strokeWidth={i.id === selectedId ? 3 : 2}
+          vectorEffect="non-scaling-stroke"
+        />
       ))}
     </svg>
   );
 }
 ```
 
-- Mount it **inside the same relatively positioned wrapper** as the preview canvas (`<div className="relative">…canvas…<CutlineOverlay/></div>`) so it scrolls and scales with the sheet.
-- `pathsIn` comes from `buildCutPath()` (Section A8) and is in inches relative to the image's top-left, already including the border. Square and Circle cuts are also returned as polygons (a 4-point rectangle; a 128-point circle), so one renderer handles all three.
-- If an image's cut isn't ready yet, show a small spinner on that image instead of no line.
+- Mount it **inside the same relatively positioned wrapper** as the preview canvas: `<div className="relative">…canvas…<CutlineOverlay/></div>`.
+- `cut` comes from `buildSquareCut()` (Section A7): the rectangle's size and its offset from the image's top-left, already including the 2.5 mm.
 
 ---
 
-## A6. Production Output — Cut File, Registration Marks & Start Cut Box
+## A5. Production Output — Cut File, Registration Marks & Start Cut Box
 
 ### Cut file
 - **Spot color name:** `CutContour` (Roland VersaWorks / Mimaki / Summa / Graphtec convention), configurable as `CUT_SPOT_NAME`.
 - **Stroke:** 0.25 pt, 100% magenta (`C0 M100 Y0 K0`), no fill.
-- **Production PDF:** art on one layer, `CutContour` paths on their own layer as a **Separation** color space. Also export an SVG of the cut paths for debugging.
-- **The server is the source of truth.** Client preview and server use the **same `lib/cutline` code**; the server recomputes all cut paths at add-to-cart.
+- **Production PDF:** art on one layer, `CutContour` rectangles on their own layer as a **Separation** color space. Also export an SVG of the cut paths for debugging.
+- **The server is the source of truth.** Client preview and server use the **same `lib/cutline` code**; the server recomputes all cut rectangles at add-to-cart.
 
 ### Registration marks — fit to the page
 Registration marks are placed to fit **the actual printed sheet**, not the full roll.
@@ -324,86 +233,64 @@ A small printed box tells the operator **where to start the cut** and which way 
 - Shown in the preview box in the same place it will print.
 - Multi-sheet jobs get a Start Cut box on **every** sheet with its own sheet number.
 
+
 ---
 
-## A7. Gang Sheet Nesting & Pricing
+## A6. Gang Sheet Nesting & Pricing
 
-- **MaxRects nesting must use the cut-shape bounding box**, not the art's bounding box. A 1/2" border makes every piece 1" bigger.
+- **MaxRects nesting uses the cut rectangle** (art + 2.5 mm each side), not the bare art, when Cut is on.
 - **Gap between pieces:** minimum **1/8"** between cut lines (`CUT_MIN_GAP_IN`), so the blade doesn't cut neighbors.
-- **Circle shapes** nest as their bounding square (keep MaxRects deterministic — no polygon nesting).
-- **Registration marks and the Start Cut box** have reserved keep-out zones (Section A6); nesting never places art inside them, and the sheet length includes the top and bottom mark zones.
-- **Price** = sheet length after nesting with cut footprints → still **HMAC-signed server-side**. Shape and offset are part of the signed payload, so changing either requires a fresh signature.
+- **Registration marks and the Start Cut box** have reserved keep-out zones (Section A5); nesting never places art inside them, and the sheet length includes the top and bottom mark zones.
+- **Price** = sheet length after nesting → still **HMAC-signed server-side**. The Cut / No Cut choice is part of the signed payload.
 
 ---
 
-## A8. Data Model
+## A7. Data Model
 
 ```ts
 // types/cutline.ts
-export type CutShape = 'circle' | 'box' | 'contour'; // labels: Circle Cut, Square Cut, Contour Cut
+export const UV_DTF_CUT_OFFSET_MM = 2.5; // fixed
 
 // Box 2: Cut / No Cut for the whole job
 export interface SheetCutState {
-  enabled: boolean;                       // false = No Cut (cut function fully off)
-  perImage: Record<string, CutSettings>;  // keyed by image id; kept while off so it restores
+  enabled: boolean; // false = No Cut (cut function fully off)
 }
 
-export interface CutSettings {
-  shape: CutShape;
-  offsetMm: number;  // vinyl: step 0.5, default 2, min 0.5 (0 for box), max 12 · UV DTF: always 2.5
+// Result of buildSquareCut(alphaMask, dpi) for one image, in inches
+export interface SquareCut {
+  dxIn: number; dyIn: number; // rectangle's top-left relative to the image's top-left (can be negative)
+  wIn: number;  hIn: number;  // art bounding box + 2 × 2.5 mm
 }
-
-export interface CutResult {
-  paths: Array<Array<[number, number]>>; // inches, relative to art origin
-  bboxIn: { x: number; y: number; w: number; h: number };
-  pieceCount: number;         // >1 triggers the "separate stickers" warning
-  warnings: CutWarning[];
-}
-
-export type CutWarning = 'TIGHT_BORDER' | 'MULTIPLE_PIECES' | 'ART_TOO_SMALL';
-
-// Defaults per product
-export const DEFAULT_CUT: Record<'vinyl-sticker' | 'uv-dtf', CutSettings> = {
-  'vinyl-sticker': { shape: 'box', offsetMm: 2 },
-  'uv-dtf':        { shape: 'box', offsetMm: 2.5 }, // fixed, not editable
-};
 ```
+
+- `buildSquareCut()` finds the bounding box of the hardened alpha and grows it by 2.5 mm on each side. That's the whole cut algorithm.
 
 ### WooCommerce line-item meta
 | Meta key | Example |
 |---|---|
 | `_ssp_cut_enabled` | `yes` / `no` |
-| `_ssp_cut_images` | JSON array, one entry per image: `[{"image":"logo-front.png","shape":"box","offsetMm":2,"pieceCount":1}]` |
-| Visible to customer | `Cut: Yes`, then one line per image: `logo-front.png — Square Cut, 2 mm border` |
+| Visible to customer | `Cut: Square Cut 2.5 mm` or `Cut: No` |
 
-When `_ssp_cut_enabled` = `no`, `_ssp_cut_images` is not written and the customer sees `Cut: No`.
-
-`enabled` and every image's settings are part of the **HMAC-signed payload**, so flipping the toggle needs a fresh price signature.
+`enabled` is part of the **HMAC-signed payload**, so switching Cut / No Cut needs a fresh price signature.
 
 ---
 
-## A9. File Structure
+## A8. File Structure & Config
 
 ```
 lib/cutline/
-  trace.ts        // alpha mask → outer polygon(s) (marching squares), fill holes
-  offset.ts       // Clipper2 offset, close pass, merge pieces
-  shapes.ts       // circle (Welzl), box (Square Cut), contour
-  smooth.ts       // Chaikin smoothing + RDP simplify
-  export.ts       // SVG path + PDF CutContour separation layer
-  constants.ts    // step, min, max, defaults per product, spot name, gap, UV DTF fixed border
+  squareCut.ts    // buildSquareCut(): alpha bounding box + 2.5 mm
   marks.ts        // registration mark layout (fit to sheet, spacing, keep-out zones)
   startBox.ts     // Start Cut box content + placement
-  index.ts        // buildCutPath(mask, settings, dpi): CutResult
-workers/
-  cutline.worker.ts
+  export.ts       // PDF CutContour separation layer + debug SVG
+  constants.ts    // UV_DTF_CUT_OFFSET_MM, spot name, gap, mark settings
 components/
   CutOptionsBox.tsx     // Box 2: Cut / No Cut, under Customer Name
-  ImageCutOptions.tsx   // per-image row: Circle / Square / Contour + border −/+ (vinyl) or fixed label (UV DTF)
-  JobBar.tsx            // Save Job, right below Box 2 — sticker maker only
+  ImageCutLabel.tsx     // "Square Cut · 2.5 mm" + finished size on each image row
+  JobBar.tsx            // Save Job, right below Box 2
   TopRightActions.tsx   // Reopen Job + Export to Photoshop, top-right corner
-  CutlineOverlay.tsx    // SVG layer over the preview: solid red trace line around every image
-  SheetMarksOverlay.tsx // registration marks + Start Cut box in the preview box
+  CutlineOverlay.tsx    // SVG layer over the preview: solid red rectangle around every image
+  SheetMarksOverlay.tsx // registration marks + Start Cut box in the preview
 app/api/cutline/route.ts // server recompute for cart + production
 scripts/
   test-cutline.ts
@@ -413,13 +300,7 @@ scripts/
 ```
 CUT_DEFAULT_ENABLED=false
 CUT_SPOT_NAME=CutContour
-CUT_DEFAULT_SHAPE=box
-CUT_DEFAULT_OFFSET_MM=2
 UV_DTF_CUT_OFFSET_MM=2.5
-CUT_STEP_MM=0.5
-CUT_MIN_OFFSET_MM=0.5
-CUT_MIN_OFFSET_MM_BOX=0
-CUT_MAX_OFFSET_MM=12
 CUT_MIN_GAP_IN=0.125
 REG_MARK_STYLE=square
 REG_MARK_SIZE_MM=5
@@ -433,102 +314,108 @@ CUT_START_CORNER=top-left
 
 ### Dependencies
 ```
-npm i clipper2-js pdf-lib
+npm i pdf-lib
 ```
-(Marching squares, Welzl, Chaikin and RDP are small enough to write in-house — no extra packages.)
+(No Clipper or geometry libraries needed — the cut is a rectangle.)
 
 ---
 
-## A10. Feature Flag / Product Gating
+## A9. Product Gating
 
-- Show **Box 2 (Cut / No Cut)**, **Save Job**, and the top-right **Reopen Job / Export to Photoshop** only on the **sticker maker** (WooCommerce attribute `pa_print_type` = `uv-dtf` or `vinyl-sticker`).
-- **Allowed cuts by product** (`lib/cutline/constants.ts`), read by both the UI and the server:
-  ```ts
-  export const CUT_RULES = {
-    'vinyl-sticker': { shapes: ['circle', 'box', 'contour'], borderEditable: true },
-    'uv-dtf':        { shapes: ['box'], borderEditable: false, fixedOffsetMm: 2.5 },
-  } as const;
-  ```
-- Per-image cut options appear only when the product qualifies **and** Box 2 is set to **Cut**.
-- Standard DTF products never show any of this; they nest exactly as they do today.
+- Show Box 2 (Cut / No Cut), Save Job, Reopen Job and Export to Photoshop only when the WooCommerce attribute `pa_print_type` = **`uv-dtf`**.
+- Standard DTF transfer pages don't show any of this; they nest exactly as they do today.
+- `vinyl-sticker` is **not** a product type in this project. If an order or job file arrives with it, reject it with *"Vinyl stickers are handled in the Vinyl Sticker Maker."*
 
 ---
 
-## A11. Acceptance Criteria
+## A10. Acceptance Criteria
 
-- [ ] **Reopen Job** and **Export to Photoshop** sit in the top-right corner of the sticker maker.
+- [ ] **Reopen Job** and **Export to Photoshop** sit in the top-right corner of the DTF sticker maker.
 - [ ] Box 2 (Cut / No Cut) sits right under Box 1 (Customer Name); **No Cut** is the default.
 - [ ] **Save Job** sits right below Box 2.
-- [ ] There is **no** global expand / contract or border control anywhere outside the image rows.
-- [ ] Vinyl + Cut: every uploaded image shows **Square Cut · Circle Cut · Contour Cut side by side in one horizontal row**, plus its own border −/+, defaulting to Square Cut 2 mm.
-- [ ] UV DTF + Cut: every image gets a **Square Cut at a fixed 2.5 mm**, with no options; the server forces 2.5 mm.
-- [ ] Square Cut hugs the image (rectangle or square), never padded to a perfect square.
-- [ ] The preview shows a **solid red trace line (#E10600, 2 px)** around every image as soon as it uploads — rectangle, circle or contour — drawn on top of the art, plus registration marks and the Start Cut box.
-- [ ] The red line updates within 50 ms when that image's cut or border changes, and disappears entirely with No Cut.
-- [ ] No Cut: no cut options, no outlines, no marks, no Start Cut box, no `CutContour` layer; price/nesting use bare art.
-- [ ] Changing one image's cut redraws only that image in under 50 ms after first trace.
-- [ ] Border −/+ step 0.5 mm, stop at the minimum and 12 mm; hold-to-repeat works.
-- [ ] Contour cut has no inner cuts and no inside corners tighter than 1/32"; separated art warns when it can't merge.
+- [ ] With Cut on, every image row shows **"Square Cut · 2.5 mm"** and its finished size; there are no cut choices, border controls or expand / contract controls anywhere.
+- [ ] The Square Cut hugs the art's printed area (from the hardened alpha) plus exactly 2.5 mm on each side, never padded to a perfect square.
+- [ ] The preview shows a **solid red rectangle (#E10600, 2 px)** around every image as soon as it uploads, drawn on top of the art, plus registration marks and the Start Cut box.
+- [ ] No Cut: no labels, red lines, marks, Start Cut box or `CutContour` layer; price and nesting use bare art.
+- [ ] The server always uses 2.5 mm, whatever the browser or job file says.
 - [ ] Registration marks sit in all 4 corners of the **printed sheet** (10 mm inset), with side pairs at most every 500 mm on long sheets, and never overlap art or cut lines.
 - [ ] The Start Cut box prints at the configured origin corner next to the first mark, on the art layer only, with order #, customer name, date, sheet x of y, cut count and a feed arrow.
-- [ ] Gang sheet nesting uses cut footprints with a 1/8" minimum gap and respects mark keep-out zones.
-- [ ] Price changes when cut settings change, and stays HMAC-signed.
-- [ ] Production PDF opens in the shop's cutter RIP with `CutContour` auto-detected and the marks read correctly.
-- [ ] Order line item shows each image's cut and border in admin and on the customer's receipt.
+- [ ] Nesting uses cut rectangles with a 1/8" minimum gap and respects mark keep-out zones.
+- [ ] Price changes when Cut / No Cut changes, and stays HMAC-signed.
+- [ ] The production PDF opens in the shop's cutter RIP with `CutContour` auto-detected and the marks read correctly.
+- [ ] No vinyl code, product type, components or settings remain in the project (Section A14).
 
-## A12. Test Cases (`scripts/test-cutline.ts`)
+---
+
+## A11. Test Cases (`scripts/test-cutline.ts`)
 
 | Input | Expected |
 |---|---|
-| Vinyl, Cut, upload 3 images | Each row shows Circle / Square / Contour + border; all default to Square Cut 2 mm |
-| Vinyl, upload 1 image | Cut choices appear as one horizontal row; a red rectangle appears around the image in the preview |
-| Vinyl, change image 2 to Circle Cut 4 mm | Only image 2's red line changes to a circle in the preview |
-| Vinyl, change image 3 to Contour Cut | Red line follows the art's shape |
-| UV DTF, Cut, upload 1 image | Red rectangle 2.5 mm outside the art |
-| Zoom / scroll the preview | Red lines stay 2 px and stay aligned with the art |
-| Phone width (375 px) | Cut choices still on one row |
-| UV DTF, Cut, upload 3 images | All get Square Cut 2.5 mm; no options shown |
-| UV DTF job file with a `contour` / 4 mm image opened via Reopen Job | Set to Square Cut 2.5 mm + notice |
-| Switch product vinyl → UV DTF | All images become Square Cut 2.5 mm |
-| Wide 6" × 2" banner, vinyl Square Cut 2 mm | Cut is a 6.16" × 2.16" rectangle, not a square |
-| Solid circle logo | Contour ≈ Circle result |
-| Donut / ring | One outer cut, no inner cut |
-| "SOUTH SIDE" text with letter gaps | Contour merges into one piece at 3 mm |
-| Two logos far apart, Contour | `MULTIPLE_PIECES` warning |
-| Cut → No Cut → Cut | No outlines/marks while No Cut; previous per-image choices return |
+| Cut on, upload 1 image | Row shows "Square Cut · 2.5 mm"; red rectangle around it in the preview |
+| Cut on, upload 3 images | All three get red rectangles 2.5 mm outside the art |
+| 4" × 3.2" logo | Finished size 4.20" × 3.40" (2.5 mm ≈ 0.098" per side, rounded for display) |
+| Wide 6" × 2" banner | Cut is a ~6.20" × 2.20" rectangle, not a square |
+| Logo PNG with lots of transparent padding | Rectangle hugs the visible art, not the canvas |
+| Cut → No Cut → Cut | No red lines/marks while No Cut; they return when Cut is back on |
+| Job file with `offsetMm: 4` | Server uses 2.5 mm |
+| Job file with `printType: vinyl-sticker` | Rejected with the Vinyl Sticker Maker message |
+| Zoom / scroll the preview | Red lines stay 2 px and aligned with the art |
 | 30" sheet | 4 corner marks inset 10 mm, no side pairs, Start Cut box top-left |
 | 1,500 mm sheet | 4 corner marks + side pairs at most every 500 mm |
 | Tiny job (one 1" sticker) | Sheet padded to minimum length; 4 marks still present |
 | Art placed near a corner | Nesting keeps it 5 mm clear of the mark and the Start Cut box |
 | 2-sheet job | Each sheet has its own marks and Start Cut box ("1 of 2", "2 of 2") |
-| `CUT_START_CORNER=bottom-right` | Start Cut box moves to bottom-right next to that mark |
+| `CUT_START_CORNER=bottom-right` | Start Cut box moves next to the bottom-right mark |
 
 ---
 
-## A13. Saving & Reopening
+## A12. Saving & Reopening
 
-The toggle state and every image's cut settings are stored in the project JSON file. Reopening a project restores them exactly. On a normal reopen, cut paths and price are recomputed. The one exception is the staff **as-is** load (Section B5.2), which uses the exact cut lines and price from the order snapshot. See Part B.
+The Cut / No Cut choice is stored in the job JSON file. Reopening a job restores it; cut rectangles and price are recomputed. The one exception is the staff **as-is** load (Section B5.2), which uses the exact cut lines and price from the order snapshot. See Part B.
 
 ---
 
-## A14. Out of Scope (later)
+## A13. Out of Scope
 
-- Interior / weeding cuts
+- Circle cuts, contour cuts and adjustable borders (these belong to the separate Vinyl Sticker Maker)
 - Kiss-cut vs. through-cut selection per piece
 - Custom drawn cut paths
 - True-shape polygon nesting
 
 ---
 
+## A14. Removing Vinyl From This Project
+
+Vinyl stickers now live in their own project (`VINYL_STICKER_MAKER_SPEC.md`). Remove every trace of them from this codebase so the two logics can't mix.
+
+**Delete**
+- `vinyl-sticker` from every product-type list, enum, switch and WooCommerce attribute check.
+- Circle and contour cut code: contour tracing (marching squares), Clipper offsetting, Welzl circle, Chaikin/RDP smoothing, and their tests.
+- The per-image cut choice buttons (Square / Circle / Contour) and the per-image border −/+ control.
+- Any global border or expand / contract control.
+- `CUT_RULES`, `ALLOWED_SHAPES`, `DEFAULT_CUT` per-product maps, `CutShape`, `CutSettings.shape`, `CutSettings.offsetMm`, `perImage` cut settings, `TIGHT_BORDER` / `MULTIPLE_PIECES` warnings.
+- `.env` keys: `CUT_DEFAULT_SHAPE`, `CUT_DEFAULT_OFFSET_MM`, `CUT_STEP_MM`, `CUT_MIN_OFFSET_MM`, `CUT_MIN_OFFSET_MM_BOX`, `CUT_MAX_OFFSET_MM`.
+- The `clipper2-js` package (`npm uninstall clipper2-js`).
+- "Add Contour Cut" wording anywhere in the UI.
+
+**Keep**
+- Square Cut at 2.5 mm, Cut / No Cut, the red preview rectangle, registration marks, Start Cut box, `CutContour` production layer, Save / Reopen Job, staff tools and the version footer.
+
+**Old job files:** project JSON with per-image `shape` / `offsetMm` values still opens; those fields are ignored and every image gets the 2.5 mm Square Cut. A schema migration (`schemaVersion` 1 → 2) strips them on the next save.
+
+**Check when done:** search the codebase for `vinyl`, `contour` (excluding `CutContour`), `circle`, `clipper`, `offsetMm` and `ALLOWED_SHAPES` — there should be no matches outside this spec and the migration.
+
+---
+
 # Part B — Save & Reopen Projects + Staff Tools
 
-**Goal:** Save the full gang-sheet project as a **JSON file in Google Drive**, with **Save Job** and **Reopen Job** buttons on the shop sticker maker, so the customer or shop staff can open it later to edit or fix it.
+**Goal:** Save the full gang-sheet project as a **JSON file in Google Drive**, with **Save Job** and **Reopen Job** buttons on the DTF sticker maker, so the customer or shop staff can open it later to edit or fix it.
 
 **Scope:**
-- **Save Job / Reopen Job buttons and autosave:** the shop sticker maker only (UV DTF and vinyl stickers).
+- **Save Job / Reopen Job buttons and autosave:** the DTF sticker maker only (UV DTF).
 - **Order snapshots and staff tools** (Fix mode, as-is load, Photoshop export/import): every order, so staff can fix any job.
 
-- B1. What the Customer Sees — Save Job / Reopen Job (sticker maker only)
+- B1. What the Customer Sees — Save Job / Reopen Job (DTF sticker maker only)
 - B2. When a Project Is Saved
 - B3. Google Drive Layout
 - B4. Project File Format (`.ssp.json`)
@@ -544,16 +431,16 @@ The toggle state and every image's cut settings are stored in the project JSON f
 
 ---
 
-## B1. What the Customer Sees — Save Job / Reopen Job (sticker maker only)
+## B1. What the Customer Sees — Save Job / Reopen Job (DTF sticker maker only)
 
-These appear **only on the shop sticker maker**; standard DTF gang sheet pages don't show them.
+These appear **only on the DTF sticker maker**; standard DTF gang sheet pages don't show them.
 
 - **Reopen Job** sits in the **top-right corner** of the page, next to **Export to Photoshop** (Section B6).
 - **Save Job** sits **right below Box 2 (Cut / No Cut)**, above "Upload Sticker Art" (Section A0).
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  SOUTH SIDE STICKER MAKER     [ 📂 Reopen Job ]  [ ⬇ Export to Photoshop ] │
+│  SOUTH SIDE DTF STICKER MAKER [ 📂 Reopen Job ]  [ ⬇ Export to Photoshop ] │
 ├──────────────────────────────────────────────────────────────────────────┤
 │  ①  CUSTOMER NAME   [ Ed's Fire Dept order ____________ ]                 │
 ├──────────────────────────────────────────────────────────────────────────┤
@@ -571,7 +458,7 @@ These appear **only on the shop sticker maker**; standard DTF gang sheet pages d
   1. **My recent jobs** — jobs tied to the logged-in WooCommerce account.
   2. **Upload job file** — a `.ssp.json` file downloaded earlier.
   3. **Paste reopen link** — `southsidedtf.com/builder?project=<id>&t=<token>`
-- Autosave to Drive runs in the background on the sticker maker (Section B2); the status text next to Save Job shows it.
+- Autosave to Drive runs in the background on the DTF sticker maker (Section B2); the status text next to Save Job shows it.
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -594,8 +481,8 @@ These appear **only on the shop sticker maker**; standard DTF gang sheet pages d
 
 | Trigger | What happens |
 |---|---|
-| **Save Job** button (sticker maker) | Save now, new Drive revision |
-| **Autosave** (sticker maker) | Every 60 s while there are unsaved changes, plus on page hide/close (`visibilitychange`) |
+| **Save Job** button (DTF sticker maker) | Save now, new Drive revision |
+| **Autosave** (DTF sticker maker) | Every 60 s while there are unsaved changes, plus on page hide/close (`visibilitychange`) |
 | **Add to cart** | Save, and lock that version to the cart item |
 | **Order placed** (WooCommerce webhook / n8n) | Copy the locked version into the order folder as `order-<orderId>.ssp.json` |
 
@@ -634,7 +521,7 @@ Gang Sheet Projects/                      ← GDRIVE_ROOT_FOLDER_ID
 ```json
 {
   "format": "ssp-gangsheet-project",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "projectId": "prj_8f3k2a",
   "name": "Crash Out Club drop 3",
   "createdAt": "2026-10-08T19:41:00Z",
@@ -662,7 +549,7 @@ Gang Sheet Projects/                      ← GDRIVE_ROOT_FOLDER_ID
       "sizeIn": { "w": 4.0, "h": 3.2 },
       "quantity": 10,
       "rotationDeg": 0,
-      "cut": { "shape": "box", "offsetMm": 2 }
+      "cut": { "squareCutMm": 2.5 }
     }
   ],
   "orderRefs": [],
@@ -678,7 +565,7 @@ Written when an order is frozen, when staff save in Fix mode, and when staff dow
 "snapshot": {
   "frozenAt": "2026-10-08T20:02:44Z",
   "orderId": 48213,
-  "codeVersion": { "builder": "2.0.0", "cutline": "1.1.0", "alpha": "1.0.3" },
+  "codeVersion": { "builder": "2.1.0", "cutline": "1.1.0", "alpha": "1.0.3" },
   "sheet": { "widthIn": 22, "lengthIn": 64.5 },
   "placements": [
     { "imageId": "img_01", "copy": 1, "xIn": 0.25, "yIn": 0.25, "rotationDeg": 0 },
@@ -696,7 +583,7 @@ Written when an order is frozen, when staff save in Fix mode, and when staff dow
 - **`sig`** is an HMAC of the file contents (same secret as pricing). On reopen, a missing or invalid signature means the file was edited by hand:
   - **Customer reopen:** reject it with *"This project file was changed outside the builder and can't be opened."*
   - **Staff reopen:** allow it, with a warning banner.
-- **`schemaVersion`:** `lib/project/migrate.ts` upgrades old files step by step (v1 → v2 → …) so old projects always open.
+- **`schemaVersion`:** `lib/project/migrate.ts` upgrades old files step by step (v1 → v2 → …) so old projects always open. **v1 → v2** drops the old per-image `shape` / `offsetMm` cut fields (from the removed vinyl options); every image gets the fixed 2.5 mm Square Cut.
 
 ---
 
@@ -756,9 +643,9 @@ Staff can load any `.ssp.json`, from Drive or from their computer, **exactly as 
 
 ## B6. Staff Photoshop Export (PSD)
 
-**Where:** the **Export to Photoshop** button in the **top-right corner** of the sticker maker, next to Reopen Job (Section A0). It's also in the staff bar in Fix mode and on any staff-opened project.
+**Where:** the **Export to Photoshop** button in the **top-right corner** of the DTF sticker maker, next to Reopen Job (Section A0). It's also in the staff bar in Fix mode and on any staff-opened project.
 
-**Who sees it:** staff (WP `manage_woocommerce`) by default. Set `PSD_EXPORT_VISIBLE_TO=everyone` to show it to all sticker maker users. It gives a fully layered Photoshop file plus every original upload, so advanced edits happen in Photoshop instead of the builder.
+**Who sees it:** staff (WP `manage_woocommerce`) by default. Set `PSD_EXPORT_VISIBLE_TO=everyone` to show it to all DTF sticker maker users. It gives a fully layered Photoshop file plus every original upload, so advanced edits happen in Photoshop instead of the builder.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -997,7 +884,7 @@ scripts/
 
 ## C1. This Release
 
-**Version: `2.0.0`** — everything in Parts A and B ships together as this release. It's a major version because it adds new saved-file formats (project JSON) and changes how sheets are priced when cuts are on.
+**Version: `2.1.0`** — everything in Parts A and B ships together as this release. 2.1.0 replaces the unreleased 2.0.0 draft: vinyl stickers were removed and the project is now UV DTF only. Bump the footer and `package.json` to 2.1.0 so a build with the old vinyl code is easy to tell apart.
 
 ## C2. The Footer
 
@@ -1006,11 +893,11 @@ scripts/
 │  ... builder ...                                                     │
 │                                                                      │
 ├──────────────────────────────────────────────────────────────────────┤
-│  South Side DTF Gang Sheet Builder  ·  v2.0.0  ·  What's new         │  ← customer
+│  South Side DTF Gang Sheet Builder  ·  v2.1.0  ·  What's new         │  ← customer
 └──────────────────────────────────────────────────────────────────────┘
 
 ├──────────────────────────────────────────────────────────────────────┤
-│  South Side DTF Gang Sheet Builder  ·  v2.0.0  ·  build 3f9c2a1  ·    │  ← staff
+│  South Side DTF Gang Sheet Builder  ·  v2.1.0  ·  build 3f9c2a1  ·    │  ← staff
 │  2026-10-08 14:02 CT  ·  cutline 1.1.0  ·  alpha 1.0.3  ·  What's new │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -1018,13 +905,13 @@ scripts/
 - **Placement:** a slim footer bar pinned to the bottom of every builder page (full width, small grey text, ~32 px tall). It sits below the builder content and never covers the canvas or the Add-to-cart button. On phones it wraps to two lines.
 - **Customers see:** app name, version, and a **What's new** link.
 - **Staff see** (WP `manage_woocommerce`): also the git commit (short hash), build date/time in Chicago time, and the `cutline` and `alpha` module versions — the same values written into a project's `snapshot.codeVersion`.
-- **Click the version** to copy `v2.0.0 (3f9c2a1)` to the clipboard, with a "Copied" toast, so it can be pasted into a bug report.
+- **Click the version** to copy `v2.1.0 (3f9c2a1)` to the clipboard, with a "Copied" toast, so it can be pasted into a bug report.
 - **What's new** opens a small modal showing the `CHANGELOG.md` entry for the current version.
-- Also shown in the footer of the **staff PSD export `README.txt`** and in the production PDF metadata (`Producer: SSP Gang Sheet Builder v2.0.0`).
+- Also shown in the footer of the **staff PSD export `README.txt`** and in the production PDF metadata (`Producer: SSP Gang Sheet Builder v2.1.0`).
 
 ## C3. Where the Number Comes From
 
-- **One source of truth:** `"version"` in `package.json`. Set it to `"2.0.0"` for this release.
+- **One source of truth:** `"version"` in `package.json`. Set it to `"2.1.0"` for this release.
 - `next.config.ts` exposes it at build time, with no hard-coding in components:
 
 ```ts
@@ -1053,37 +940,38 @@ export default {
 
 | Change | Bump | Example |
 |---|---|---|
-| Bug fix, no behavior change | Patch | 2.0.0 → 2.0.1 |
-| New feature, old projects still open the same | Minor | 2.0.1 → 2.1.0 |
-| Changes saved-file format, pricing, or cut output | Major | 2.1.0 → 3.0.0 |
+| Bug fix, no behavior change | Patch | 2.1.0 → 2.1.1 |
+| New feature, old projects still open the same | Minor | 2.1.1 → 2.2.0 |
+| Changes saved-file format, pricing, or cut output | Major | 2.2.0 → 3.0.0 |
 
-- Every release adds an entry to `CHANGELOG.md` and tags git as `v2.0.0`.
+- Every release adds an entry to `CHANGELOG.md` and tags git as `v2.1.0`.
 - If a release changes `.ssp.json`, also bump `schemaVersion` and add a migration (Section B4).
 
 ## C5. `CHANGELOG.md` entry
 
 ```md
-## [2.0.0] — 2026-10-08
+## [2.1.0] — 2026-10-09
 
 ### Added
-- Sticker maker layout: Reopen Job + Export to Photoshop top right; Box 2 "Cut / No Cut" under Customer Name (No Cut by default); Save Job below Box 2.
-- Vinyl: per-image Circle Cut / Square Cut / Contour Cut with its own border −/+ (default Square Cut, 2 mm).
-- UV DTF: Cut or No Cut only; Cut = standard 2.5 mm Square Cut.
-- Preview box shows a solid red trace line around every image, the registration marks and the Start Cut box.
-- Per-image cut choices display horizontally (Square · Circle · Contour).
+- DTF sticker maker layout: Reopen Job + Export to Photoshop top right; Box 2 "Cut / No Cut" under Customer Name (No Cut by default); Save Job below Box 2.
+- UV DTF Cut = standard 2.5 mm Square Cut around every image, hugging the art.
+- Preview shows a solid red rectangle around every image, the registration marks and the Start Cut box.
 - Registration marks fitted to the printed sheet (4 corners + side pairs on long sheets, keep-out zones).
 - Start Cut box at the cutter's origin with order #, customer, date, sheet x of y, cut count and feed arrow.
-- CutContour spot-color layer in production PDFs; nesting and pricing use cut footprints.
+- CutContour spot-color layer in production PDFs; nesting and pricing use cut rectangles.
 - Jobs save as JSON to Google Drive with autosave; Reopen Job reopens them.
 - Staff Fix mode, staff "Load project JSON (as-is)" with exact layout/cuts/charged price.
 - Photoshop export (per-image or full sheet, art only, with all original uploads) and PSD re-import.
 - Version number in the page footer.
 
 ### Removed
+- Vinyl stickers (moved to the separate Vinyl Sticker Maker project).
+- Circle and contour cuts, per-image cut choices and border controls.
 - The expand / contract (global border) control.
 
 ### Changed
-- Gang-sheet price now reflects cut footprints and mark zones when Cut is on.
+- Gang-sheet price now reflects cut rectangles and mark zones when Cut is on.
+- Project JSON `schemaVersion` 2 (old per-image cut fields dropped).
 ```
 
 ## C6. Files
@@ -1098,10 +986,10 @@ CHANGELOG.md
 
 ## C7. Acceptance Criteria
 
-- [ ] Every builder page shows the footer with **v2.0.0** at the bottom of the screen.
+- [ ] Every builder page shows the footer with **v2.1.0** at the bottom of the screen.
 - [ ] Customers see name + version + What's new; staff also see commit, build time (CT) and module versions.
 - [ ] The version comes only from `package.json`; changing it there and rebuilding updates the footer.
-- [ ] Clicking the version copies it; What's new shows the 2.0.0 changelog entry.
+- [ ] Clicking the version copies it; What's new shows the 2.1.0 changelog entry.
 - [ ] `snapshot.codeVersion.builder`, the PSD `README.txt` and PDF metadata all show the same version as the footer.
 - [ ] `GET /api/version` returns the version, commit and build time.
 - [ ] The footer never covers the canvas or Add-to-cart, on desktop or phone.
@@ -1111,18 +999,17 @@ CHANGELOG.md
 # Add to main README (`## Features` section)
 
 ```md
-- **Sticker maker cut lines** — Box 2 "Cut / No Cut" under Customer Name. Vinyl: each image gets
-  Circle / Square / Contour Cut with its own border (default Square, 2 mm). UV DTF: fixed 2.5 mm
-  Square Cut. The preview shows every cut outline, registration marks fitted to the sheet and a
-  Start Cut box. Cut paths export as a `CutContour` spot-color layer.
-- **Save Job / Reopen Job** (sticker maker only) — Reopen Job and Export to Photoshop sit top right,
-  Save Job below Box 2. Jobs save as JSON to Google Drive.
+- **UV DTF cutout stickers** — Box 2 "Cut / No Cut" under Customer Name. Cut adds a standard
+  2.5 mm Square Cut around every image, shown as a red rectangle in the preview with registration
+  marks fitted to the sheet and a Start Cut box. Cut paths export as a `CutContour` spot-color layer.
+- **Save Job / Reopen Job** (DTF sticker maker only) — Reopen Job and Export to Photoshop sit top
+  right, Save Job below Box 2. Jobs save as JSON to Google Drive.
 - **Staff tools** — Fix mode, load a project JSON exactly as it was ordered, export layered
   Photoshop files (art only) with all original uploads, and re-import Photoshop edits.
-- **Version footer** — current version (v2.0.0) shown at the bottom of every builder page.
+- **Version footer** — current version (v2.1.0) shown at the bottom of every builder page.
 - Spec: `docs/GANGSHEET_ADDON_SPEC.md`
 ```
 
 ---
 
-*Gang Sheet Builder Add-on Spec · **v2.0.0** · 2026-10-08*
+*Gang Sheet Builder Add-on Spec · **v2.1.0** · 2026-10-09 · DTF only*
