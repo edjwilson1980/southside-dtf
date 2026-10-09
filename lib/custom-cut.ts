@@ -17,20 +17,33 @@ import { loadImage } from '@/lib/image-utils'
 
 export type CutMode = 'box' | 'circle' | 'contour'
 
-export const CUT_MODES: { value: CutMode; label: string; hint: string }[] = [
+/** Order: Square · Circle · Contour (SPEC_2 segmented row). */
+export const CUT_MODES: {
+  value: CutMode
+  label: string
+  shortLabel: string
+  icon: string
+  hint: string
+}[] = [
   {
     value: 'box',
     label: 'Square Cut',
+    shortLabel: 'Square',
+    icon: '▢',
     hint: 'Rectangle or square that hugs the art — never padded out to a perfect square.',
   },
   {
     value: 'circle',
     label: 'Circle Cut',
+    shortLabel: 'Circle',
+    icon: '◯',
     hint: 'Round cut sized to the design’s longer side plus border.',
   },
   {
     value: 'contour',
     label: 'Contour Cut',
+    shortLabel: 'Contour',
+    icon: '☁',
     hint: 'Follows the artwork silhouette (alpha edge) with a border offset.',
   },
 ]

@@ -737,6 +737,17 @@ export default function StickerMakerPage() {
     }
   }
 
+  /** SPEC_2: red cut traces appear as soon as cut is on / art is laid out. */
+  useEffect(() => {
+    if (!cutEnabled || sheetLayout.pieces.length === 0) {
+      setCutShapes([])
+      return
+    }
+    void refreshCutShapes(sheetLayout.pieces)
+    // layoutKey covers cut settings, media, and designs; safePageIndex picks the page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshCutShapes closes over current layout
+  }, [layoutKey, cutEnabled, safePageIndex])
+
   async function exportArtForPhotoshop() {
     if (designs.length === 0) {
       setJobStatus(null)
@@ -1377,7 +1388,10 @@ export default function StickerMakerPage() {
                       <div className="sticker-image-cut">
                         {product === 'uv-dtf' ? (
                           <>
-                            <span className="sticker-image-cut-label">Square Cut · 2.5 mm</span>
+                            <span className="sticker-image-cut-label">Cut</span>
+                            <span className="sticker-image-cut-fixed">
+                              <span aria-hidden="true">▢</span> Square Cut · 2.5 mm
+                            </span>
                             <small>
                               Finished size: {finishedW.toFixed(2)}" × {finishedH.toFixed(2)}"
                             </small>
@@ -1385,48 +1399,59 @@ export default function StickerMakerPage() {
                         ) : (
                           <>
                             <span className="sticker-image-cut-label">Cut</span>
-                            <div className="sticker-shape-picks" role="radiogroup" aria-label={`Cut shape for ${design.name}`}>
+                            <div
+                              className="sticker-shape-picks"
+                              role="radiogroup"
+                              aria-label={`Cut shape for ${design.name}`}
+                            >
                               {CUT_MODES.map((mode) => (
                                 <button
                                   key={mode.value}
                                   type="button"
                                   className={shape === mode.value ? 'selected' : undefined}
+                                  aria-pressed={shape === mode.value}
                                   onClick={() => updateDesignCut(design.id, mode.value, design.borderMm)}
                                 >
-                                  {mode.label}
+                                  <span className="cut-pick-icon" aria-hidden="true">
+                                    {mode.icon}
+                                  </span>
+                                  <span className="cut-pick-label-full">{mode.label}</span>
+                                  <span className="cut-pick-label-short">{mode.shortLabel}</span>
                                 </button>
                               ))}
                             </div>
-                            <div className="sticker-border-stepper">
-                              <button
-                                type="button"
-                                aria-label={`Decrease border for ${design.name}`}
-                                disabled={border <= (shape === 'box' ? MIN_BORDER_MM_BOX : MIN_BORDER_MM_SHAPE)}
-                                onClick={() => updateDesignCut(design.id, shape, border - BORDER_STEP_MM)}
-                              >
-                                <Minus size={14} />
-                              </button>
-                              <strong>
-                                {border.toFixed(1)} mm{' '}
-                                <em>({mmToInches(border).toFixed(3)}")</em>
-                              </strong>
-                              <button
-                                type="button"
-                                aria-label={`Increase border for ${design.name}`}
-                                disabled={border >= MAX_BORDER_MM}
-                                onClick={() => updateDesignCut(design.id, shape, border + BORDER_STEP_MM)}
-                              >
-                                <Plus size={14} />
-                              </button>
+                            <div className="sticker-image-cut-border-row">
+                              <div className="sticker-border-stepper">
+                                <button
+                                  type="button"
+                                  aria-label={`Decrease border for ${design.name}`}
+                                  disabled={border <= (shape === 'box' ? MIN_BORDER_MM_BOX : MIN_BORDER_MM_SHAPE)}
+                                  onClick={() => updateDesignCut(design.id, shape, border - BORDER_STEP_MM)}
+                                >
+                                  <Minus size={14} />
+                                </button>
+                                <strong>
+                                  {border.toFixed(1)} mm{' '}
+                                  <em>({mmToInches(border).toFixed(3)}")</em>
+                                </strong>
+                                <button
+                                  type="button"
+                                  aria-label={`Increase border for ${design.name}`}
+                                  disabled={border >= MAX_BORDER_MM}
+                                  onClick={() => updateDesignCut(design.id, shape, border + BORDER_STEP_MM)}
+                                >
+                                  <Plus size={14} />
+                                </button>
+                              </div>
+                              <span className="finished-size">
+                                Finished {finishedW.toFixed(2)}" × {finishedH.toFixed(2)}"
+                              </span>
                             </div>
                             {border < 1.5 && shape !== 'box' && (
                               <small className="sticker-cut-warn">
                                 Very tight border — small cutting shifts may clip your art.
                               </small>
                             )}
-                            <small>
-                              Finished size: {finishedW.toFixed(2)}" × {finishedH.toFixed(2)}"
-                            </small>
                             {designs.length > 1 && (
                               <button
                                 type="button"
@@ -1787,9 +1812,29 @@ export default function StickerMakerPage() {
                   />
                 </span>
               </button>
+            ) : cutEnabled && cutShapes.length > 0 ? (
+              <div
+                className="cut-preview-only"
+                style={{ aspectRatio: `${mediaWidthIn} / ${Math.max(printHeight, 1)}` }}
+              >
+                <CutShapeOverlay
+                  shapes={cutShapes}
+                  marks={cutMarks}
+                  sheetWidthIn={mediaWidthIn}
+                  sheetHeightIn={printHeight}
+                />
+              </div>
             ) : (
               <div className="mini-sheet preview-placeholder">
-                {previewPieces.length ? '' : <div className="preview-empty">Add stickers</div>}
+                {previewPieces.length ? (
+                  shapesBusy && cutEnabled ? (
+                    <div className="preview-empty">Adding cut line…</div>
+                  ) : (
+                    ''
+                  )
+                ) : (
+                  <div className="preview-empty">Add stickers</div>
+                )}
               </div>
             )}
             <span className="dimension vertical">{billedLength} in</span>
