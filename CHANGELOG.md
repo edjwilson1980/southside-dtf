@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.3.0] — 2026-10-09
+
+### Added
+- Shop Builder **Reopen Project** (top-right): search by customer / order / email / project ID,
+  filter by source, recent list, upload `.ssp.json`, or paste a project link/ID.
+- A `project.ssp.json` for **every** project — Shop Builder, customer site, and DTF Stickers —
+  written to Google Drive automatically when files are created (`source`, `revision`, Drive
+  appProperties for search).
+- Shared `lib/project` auto-save + `/api/project/search` and `/api/project/open` for staff.
+
 ## [2.2.0] — 2026-10-09
 
 ### Added

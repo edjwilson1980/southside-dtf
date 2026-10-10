@@ -18,7 +18,9 @@ import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/accepted-uploads'
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
-import { ShopNav } from '@/components/shop-nav'
+import { ShopTopBar } from '@/components/shop-top-bar'
+import { autoSaveProjectJson, imagesFromDriveFiles } from '@/lib/project/auto-save'
+import type { ProjectSource, SspProject } from '@/lib/project/types'
 
 type Design = {
   id: number
@@ -38,7 +40,6 @@ type Design = {
   pixelHeight: number
   keepUpright: boolean
 }
-const logoUrl = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/SSP%20Logo%20%28Black%20Outline%29-A5PrDBPZRDhydxNxRumbsTUFufpLv9.png'
 const sizeGuideUrl = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/DTF%20size%20chart%20%20front2-SIpj1XrVDRyRDtQhaACxzNHj5geNxv.png'
 const placements = ['Left Chest', 'Toddler Shirt', 'Youth Shirt', 'Adult Shirt', 'Hoodie Front', 'Hoodie Back', 'Hat', 'Sleeve', 'Custom']
 const sizeOptions = {
@@ -190,7 +191,61 @@ export default function Home() {
   const [sheetPreviewOpen, setSheetPreviewOpen] = useState(false)
   const [jobStamp, setJobStamp] = useState('')
   const [cutOut, setCutOut] = useState(false)
+  const [projectId, setProjectId] = useState<string | undefined>(undefined)
+  const [projectRevision, setProjectRevision] = useState<number | undefined>(undefined)
+  const [projectCreatedAt, setProjectCreatedAt] = useState<string | undefined>(undefined)
+  const [projectSource, setProjectSource] = useState<ProjectSource>('shop-builder')
+  const [projectStatus, setProjectStatus] = useState<string | null>(null)
   const previewGen = useRef(0)
+
+  function loadProject(project: SspProject, meta?: { folderId?: string; fileId?: string }) {
+    if (project.name) setCustomerName(project.customer?.name || project.name)
+    if (typeof project.cut?.enabled === 'boolean') setCutOut(Boolean(project.cut.enabled))
+    setProjectId(project.projectId)
+    setProjectRevision(project.revision)
+    setProjectCreatedAt(project.createdAt)
+    setProjectSource(project.source || 'shop-builder')
+    if (meta?.folderId) {
+      setDriveFolderUrl(`https://drive.google.com/drive/folders/${meta.folderId}`)
+    }
+    const nextDesigns: Design[] = (project.images || []).map((image, index) => {
+      const url = image.dataUrl || ''
+      const placementValue =
+        image.placement && placements.includes(image.placement) ? image.placement : 'Custom'
+      return {
+        id: typeof image.id === 'number' ? image.id : Date.now() + index,
+        designNumber: index + 1,
+        name: image.name || image.fileName || `Design ${index + 1}`,
+        placement: placementValue,
+        size:
+          image.size ||
+          (image.sizeIn
+            ? `${image.sizeIn.w ?? 0} × ${image.sizeIn.h ?? 0} in`
+            : recommendedSize(placementValue)),
+        customWidth: image.customWidth || (image.sizeIn?.w != null ? String(image.sizeIn.w) : ''),
+        customHeight: image.customHeight || (image.sizeIn?.h != null ? String(image.sizeIn.h) : ''),
+        quantity: Math.max(1, image.quantity || 1),
+        notes: '',
+        color: index % 2 ? 'red' : 'blue',
+        originalUrl: url,
+        previewUrl: url,
+        enhanced: false,
+        pixelWidth: image.pixelWidth || image.original?.pxW || image.processed?.pxW || 0,
+        pixelHeight: image.pixelHeight || image.original?.pxH || image.processed?.pxH || 0,
+        keepUpright: Boolean(image.keepUpright),
+      }
+    })
+    setDesigns((current) => {
+      for (const design of current) {
+        revokeUnusedUrls([design.originalUrl, design.previewUrl], nextDesigns)
+      }
+      return nextDesigns
+    })
+    setBuilt(false)
+    setPreviewing(false)
+    setProjectStatus(`Reopened “${project.name || project.projectId}” ✓`)
+    setSaveError(null)
+  }
 
   async function addFiles(list: FileList | File[]) {
     if (!customerName.trim()) return
@@ -503,12 +558,15 @@ export default function Home() {
     setSaving(true)
     setSaveError(null)
     setDriveFolderUrl(null)
+    setProjectStatus(null)
     try {
       const stamp = jobStamp || sheetStamp()
       const label = sheetJobName(customerName.trim(), billedLength, stamp)
       const fileName = sheetFileName(customerName.trim(), billedLength, stamp)
       const png = await composeCurrentSheet(sheetPxPerIn(14000, 150), label, true)
       downloadBlob(png, fileName)
+
+      let cutterFile: { name: string; content: string; mimeType: string } | undefined
       if (cutOut) {
         const plt = cutPlt(sheetLayout.pieces, printHeight)
         if (!plt) throw new Error('Could not build the cutter PLT for this sheet.')
@@ -516,13 +574,60 @@ export default function Home() {
         // Shop still downloads PLT locally for the cutter PC.
         await wait(200)
         downloadBlob(new Blob([plt], { type: 'text/plain' }), cutName)
-        const drive = await uploadJobToGoogleDrive({
-          customerName: customerName.trim(),
-          stamp,
-          files: [{ name: fileName, mimeType: 'image/png', blob: png }],
-          cutterFile: { name: cutName, content: plt, mimeType: 'text/plain' },
+        cutterFile = { name: cutName, content: plt, mimeType: 'text/plain' }
+      }
+
+      /** SPEC E2: every shop project gets a Drive folder + project.ssp.json. */
+      const drive = await uploadJobToGoogleDrive({
+        customerName: customerName.trim(),
+        stamp,
+        files: [{ name: fileName, mimeType: 'image/png', blob: png }],
+        cutterFile,
+      })
+      setDriveFolderUrl(drive.folderUrl)
+
+      try {
+        const saved = await autoSaveProjectJson({
+          folderId: drive.folderId,
+          source: projectSource === 'customer-site' ? 'customer-site' : 'shop-builder',
+          projectId,
+          revision: projectRevision,
+          createdAt: projectCreatedAt,
+          name: customerName.trim(),
+          customer: { name: customerName.trim() },
+          product: {
+            printType: 'uv-dtf',
+            rollWidthIn: SHEET_WIDTH_IN,
+            widthIn: SHEET_WIDTH_IN,
+            heightIn: billedLength,
+          },
+          cut: { enabled: cutOut },
+          images: imagesFromDriveFiles(
+            drive.files.map((file) => ({ name: file.name, id: file.id })),
+            designs.map((design) => ({
+              id: design.id,
+              name: design.name,
+              placement: design.placement,
+              size: design.size,
+              customWidth: design.customWidth,
+              customHeight: design.customHeight,
+              quantity: design.quantity,
+              keepUpright: design.keepUpright,
+              pixelWidth: design.pixelWidth,
+              pixelHeight: design.pixelHeight,
+            })),
+          ),
+          fromUpload: true,
         })
-        setDriveFolderUrl(drive.folderUrl)
+        setProjectId(saved.projectId)
+        setProjectRevision(saved.revision)
+        setProjectCreatedAt(saved.payload.createdAt)
+        setProjectStatus(
+          `Saved ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} ✓`,
+        )
+      } catch {
+        setProjectStatus('Not saved — retrying')
+        setSaveError('Files are in Drive, but project.ssp.json could not be written.')
       }
 
       setBuilt(true)
@@ -535,15 +640,8 @@ export default function Home() {
   }
 
   return <main className="builder-shell">
-    <div className="builder-topbar">
-      <img src={logoUrl} alt="South Side DTF" className="brand-logo" />
-      <div className="title-block">
-        <h1>Shop Gang Sheet Tools</h1>
-        <p className="lead">Production builder with cut files and marks.</p>
-        <p className="sublead">Internal shop app — advanced features stay here, not on the customer builder.</p>
-      </div>
-      <ShopNav current="shop" />
-    </div>
+    <ShopTopBar onOpenProject={loadProject} />
+    {projectStatus && <p className="project-status-banner" aria-live="polite">{projectStatus}</p>}
     <ol className="how-to" aria-label="How to build your gang sheet">
       {howToSteps.map((step) => (
         <li key={step.id}>

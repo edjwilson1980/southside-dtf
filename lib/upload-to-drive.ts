@@ -138,11 +138,15 @@ export async function uploadJobToGoogleDrive(options: {
   }
 }
 
-/** Write `job.json` into an existing Drive folder after the art files land. */
+/** Write `job.json` / `project.ssp.json` into an existing Drive folder after the art files land. */
 export async function writeDriveJobRecord(options: {
   folderId: string
   content: string
   name?: string
+  /** Drive appProperties for Reopen Project search (SPEC E5). */
+  appProperties?: Record<string, string>
+  /** Update an existing file with the same name instead of creating a duplicate. */
+  upsert?: boolean
 }) {
   const res = await fetch('/api/drive/job-record', {
     method: 'POST',
@@ -153,6 +157,8 @@ export async function writeDriveJobRecord(options: {
       name: options.name || 'job.json',
       mimeType: 'application/json',
       encoding: 'utf8',
+      appProperties: options.appProperties,
+      upsert: options.upsert !== false,
     }),
   })
   const json = (await res.json()) as { error?: string; id?: string; name?: string; webViewLink?: string }

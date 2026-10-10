@@ -43,8 +43,12 @@ Shared code lives under `lib/` (compose, cut layout, sheet size, image tools).
   Photoshop files (art only) with all original uploads, and re-import Photoshop edits.
 - **Top menu** — Shop Builder · DTF Stickers · Vinyl Stickers · Halftone Generator on every page
   (Vinyl shows Coming soon until its app URL is set).
+- **Reopen Project (Shop Builder)** — staff search and open any project: shop, customer site, or
+  DTF Stickers.
+- **A JSON for every project** — including customer-site projects, written to Google Drive
+  automatically as soon as the customer's files are created.
 - **Automatic project JSON** — Drive uploads create/update `project.ssp.json` in the job folder.
-- **Version footer** — current version (v2.2.0) shown at the bottom of every builder page.
+- **Version footer** — current version (v2.3.0) shown at the bottom of every builder page.
 - Spec: [`docs/GANGSHEET_ADDON_SPEC.md`](docs/GANGSHEET_ADDON_SPEC.md)
 
 ### Shop sticker routes (staff)
