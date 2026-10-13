@@ -21,7 +21,8 @@ import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
 import { isEmbedSearchParam } from '@/lib/embed'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
-import { autoSaveProjectJson, imagesFromDriveFiles } from '@/lib/project/auto-save'
+import { autoSaveProjectJson } from '@/lib/project/auto-save'
+import { buildImagesWithEmbeddedArt } from '@/lib/project/images'
 import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
 
 type Design = {
@@ -626,38 +627,44 @@ function HomeBuilder() {
       })
       setDriveFolderUrl(drive.folderUrl)
 
-      /** SPEC E3: write project.ssp.json after files land — customer never waits on this. */
-      void autoSaveProjectJson({
-        folderId: drive.folderId,
-        source: 'customer-site',
-        name: customerName.trim(),
-        customer: { name: customerName.trim() },
-        product: {
-          printType: 'uv-dtf',
-          rollWidthIn: SHEET_WIDTH_IN,
-          widthIn: SHEET_WIDTH_IN,
-          heightIn: billedLength,
-        },
-        cut: { enabled: cutOut },
-        images: imagesFromDriveFiles(
-          drive.files.map((file) => ({ name: file.name, id: file.id })),
-          designs.map((design) => ({
-            id: design.id,
-            name: design.name,
-            placement: design.placement,
-            size: design.size,
-            customWidth: design.customWidth,
-            customHeight: design.customHeight,
-            quantity: design.quantity,
-            keepUpright: design.keepUpright,
-            pixelWidth: design.pixelWidth,
-            pixelHeight: design.pixelHeight,
-          })),
-        ),
-        fromUpload: true,
-      }).catch((err) => {
-        console.warn('[project] customer-site auto-save failed', err)
-      })
+      /** SPEC E3: write named project JSON after files land — customer never waits on this. */
+      void buildImagesWithEmbeddedArt(
+        designs.map((design) => ({
+          id: design.id,
+          name: design.name,
+          previewUrl: design.previewUrl,
+          originalUrl: design.originalUrl,
+          placement: design.placement,
+          size: design.size,
+          customWidth: design.customWidth,
+          customHeight: design.customHeight,
+          quantity: design.quantity,
+          keepUpright: design.keepUpright,
+          pixelWidth: design.pixelWidth,
+          pixelHeight: design.pixelHeight,
+        })),
+        { sheetDriveFileId: drive.fileId },
+      )
+        .then((images) =>
+          autoSaveProjectJson({
+            folderId: drive.folderId,
+            source: 'customer-site',
+            name: customerName.trim(),
+            customer: { name: customerName.trim() },
+            product: {
+              printType: 'uv-dtf',
+              rollWidthIn: SHEET_WIDTH_IN,
+              widthIn: SHEET_WIDTH_IN,
+              heightIn: billedLength,
+            },
+            cut: { enabled: cutOut },
+            images,
+            fromUpload: true,
+          }),
+        )
+        .catch((err) => {
+          console.warn('[project] customer-site auto-save failed', err)
+        })
 
       const driveLink =
         drive.webViewLink ??

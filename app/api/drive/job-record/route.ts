@@ -5,8 +5,9 @@ import {
   uploadCutterFileToFolder,
   upsertTextFileInFolder,
 } from '@/lib/google-drive'
+import { isProjectJsonFileName } from '@/lib/project/file-name'
 import { signProjectPayload } from '@/lib/project/sign'
-import { PROJECT_FORMAT, PROJECT_JSON_NAME } from '@/lib/project/types'
+import { PROJECT_FORMAT } from '@/lib/project/types'
 
 export const runtime = 'nodejs'
 
@@ -22,7 +23,7 @@ type Body = {
 }
 
 function maybeSignProjectJson(name: string, content: string): string {
-  if (name !== PROJECT_JSON_NAME) return content
+  if (!isProjectJsonFileName(name)) return content
   try {
     const parsed = JSON.parse(content) as Record<string, unknown>
     if (parsed.format !== PROJECT_FORMAT) return content

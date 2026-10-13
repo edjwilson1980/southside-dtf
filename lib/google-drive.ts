@@ -261,9 +261,41 @@ async function patchDriveAppProperties(fileId: string, appProperties: Record<str
   })
 }
 
+async function findExistingProjectJsonInFolder(
+  folderId: string,
+  preferredName: string,
+  projectId?: string,
+) {
+  const auth = await driveAuth()
+  const drive = google.drive({ version: 'v3', auth })
+  const listed = await drive.files.list({
+    q: `'${folderId}' in parents and trashed = false and (name contains '.ssp.json' or name = 'project.ssp.json')`,
+    fields: 'files(id, name, appProperties)',
+    pageSize: 20,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+  })
+  const files = listed.data.files || []
+  if (files.length === 0) return null
+
+  const exact = files.find((file) => file.name === preferredName)
+  if (exact?.id) return exact
+
+  if (projectId) {
+    const byId = files.find((file) => file.appProperties?.ssp_project_id === projectId)
+    if (byId?.id) return byId
+  }
+
+  const legacy = files.find((file) => file.name === 'project.ssp.json')
+  if (legacy?.id) return legacy
+
+  return files[0] || null
+}
+
 /**
  * Create or update a text/JSON file in a Drive folder.
- * Uses raw media upload (same reliability path as PLT) — no googleapis streams.
+ * For project JSON: finds any existing `*.ssp.json` in the folder (including legacy
+ * `project.ssp.json`) and renames it to the preferred project name.
  */
 export async function upsertTextFileInFolder(
   folderId: string,
@@ -277,14 +309,27 @@ export async function upsertTextFileInFolder(
 
   const auth = await driveAuth()
   const drive = google.drive({ version: 'v3', auth })
-  const existing = await drive.files.list({
-    q: `'${folderId}' in parents and name = '${name.replace(/'/g, "\\'")}' and trashed = false`,
-    fields: 'files(id, name)',
-    pageSize: 1,
-    supportsAllDrives: true,
-    includeItemsFromAllDrives: true,
-  })
-  const existingId = existing.data.files?.[0]?.id
+  const isProjectJson = name.toLowerCase().endsWith('.ssp.json') || name === 'project.ssp.json'
+  const projectId = appProperties?.ssp_project_id
+
+  let existingId: string | undefined
+  let existingName: string | undefined
+  if (isProjectJson) {
+    const existing = await findExistingProjectJsonInFolder(folderId, name, projectId)
+    existingId = existing?.id || undefined
+    existingName = existing?.name || undefined
+  } else {
+    const existing = await drive.files.list({
+      q: `'${folderId}' in parents and name = '${name.replace(/'/g, "\\'")}' and trashed = false`,
+      fields: 'files(id, name)',
+      pageSize: 1,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    })
+    existingId = existing.data.files?.[0]?.id || undefined
+    existingName = existing.data.files?.[0]?.name || undefined
+  }
+
   const bytes = Buffer.from(content, 'utf8')
 
   if (existingId) {
@@ -305,7 +350,22 @@ export async function upsertTextFileInFolder(
     if (!putRes.ok) {
       throw new Error(`Could not update ${name}: ${detail || putRes.statusText}`)
     }
-    if (appProperties) await patchDriveAppProperties(existingId, appProperties)
+
+    // Rename when the project name (file name) changed, or migrating off project.ssp.json.
+    if (existingName !== name) {
+      await drive.files.update({
+        fileId: existingId,
+        requestBody: {
+          name,
+          ...(appProperties ? { appProperties } : {}),
+        },
+        fields: 'id',
+        supportsAllDrives: true,
+      })
+    } else if (appProperties) {
+      await patchDriveAppProperties(existingId, appProperties)
+    }
+
     let parsed: { id?: string; name?: string; webViewLink?: string } = {}
     try {
       parsed = detail ? JSON.parse(detail) : {}
@@ -315,7 +375,7 @@ export async function upsertTextFileInFolder(
     const id = parsed.id || existingId
     return {
       id,
-      name: parsed.name || name,
+      name: name,
       webViewLink: parsed.webViewLink || `https://drive.google.com/file/d/${id}/view`,
     }
   }
@@ -332,14 +392,18 @@ export type DriveProjectSearchOptions = {
 }
 
 /**
- * List recent project.ssp.json files (SPEC E5).
- * Exact matches use appProperties; name search filters ssp_customer client-side.
+ * List recent `*.ssp.json` project files (SPEC E5).
+ * Exact matches use appProperties; name search filters ssp_customer / file name.
  */
 export async function searchDriveProjects(options: DriveProjectSearchOptions = {}) {
   const auth = await driveAuth()
   const drive = google.drive({ version: 'v3', auth })
   const limit = Math.min(Math.max(options.limit ?? 25, 1), 50)
-  const qParts = [`name = 'project.ssp.json'`, 'trashed = false']
+  // Named after the project (`Customer Name.ssp.json`) plus legacy `project.ssp.json`.
+  const qParts = [
+    `(name contains '.ssp.json' or name = 'project.ssp.json')`,
+    'trashed = false',
+  ]
   const query = options.query?.trim() || ''
   const source = options.source?.trim() || ''
 
@@ -390,9 +454,10 @@ export async function searchDriveProjects(options: DriveProjectSearchOptions = {
 
   return files.slice(0, limit).map((file) => {
     const props = file.appProperties || {}
+    const fromFileName = (file.name || '').replace(/\.ssp\.json$/i, '').trim()
     return {
       projectId: props.ssp_project_id || file.id || '',
-      name: props.ssp_customer || file.name || 'project.ssp.json',
+      name: props.ssp_customer || fromFileName || file.name || 'Untitled',
       source: props.ssp_source || 'shop-builder',
       orderId: props.ssp_order_id || undefined,
       customerName: props.ssp_customer || undefined,
@@ -419,19 +484,46 @@ export async function downloadDriveFileText(fileId: string) {
   return Buffer.from(data).toString('utf8')
 }
 
-/** Find project.ssp.json by project id appProperty. */
+/** Find a project `*.ssp.json` by project id appProperty. */
 export async function findProjectFileByProjectId(projectId: string) {
   const auth = await driveAuth()
   const drive = google.drive({ version: 'v3', auth })
   const safe = projectId.replace(/'/g, "\\'")
   const listed = await drive.files.list({
-    q: `name = 'project.ssp.json' and trashed = false and appProperties has { key='ssp_project_id' and value='${safe}' }`,
+    q: `(name contains '.ssp.json' or name = 'project.ssp.json') and trashed = false and appProperties has { key='ssp_project_id' and value='${safe}' }`,
     pageSize: 1,
     fields: 'files(id, name, appProperties, parents, webViewLink)',
     supportsAllDrives: true,
     includeItemsFromAllDrives: true,
   })
   return listed.data.files?.[0] || null
+}
+
+/** Download a Drive file's binary content (design art for reopen). */
+export async function downloadDriveFileBytes(fileId: string) {
+  const auth = await driveAuth()
+  const drive = google.drive({ version: 'v3', auth })
+  const meta = await drive.files.get({
+    fileId,
+    fields: 'id, name, mimeType',
+    supportsAllDrives: true,
+  })
+  const res = await drive.files.get(
+    { fileId, alt: 'media', supportsAllDrives: true },
+    { responseType: 'arraybuffer' },
+  )
+  const data = res.data as ArrayBuffer | Buffer | string
+  const bytes =
+    typeof data === 'string'
+      ? Buffer.from(data)
+      : Buffer.isBuffer(data)
+        ? data
+        : Buffer.from(data)
+  return {
+    bytes,
+    mimeType: meta.data.mimeType || 'application/octet-stream',
+    name: meta.data.name || 'file',
+  }
 }
 
 /** Smoke-test: create a tiny folder then delete it. */

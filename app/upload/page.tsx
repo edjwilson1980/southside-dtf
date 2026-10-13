@@ -15,7 +15,8 @@ import {
   type ScaledSheet,
 } from '@/lib/upload-scale'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
-import { autoSaveProjectJson, imagesFromDriveFiles } from '@/lib/project/auto-save'
+import { autoSaveProjectJson } from '@/lib/project/auto-save'
+import { buildImagesWithEmbeddedArt } from '@/lib/project/images'
 import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
 import { sheetStamp } from '@/lib/sheet-name'
 import { SHEET_ACCEPT, SHEET_ACCEPT_LABEL, isAcceptedSheetFile } from '@/lib/accepted-uploads'
@@ -314,18 +315,36 @@ function UploadFlow() {
       })
       setDriveFolderUrl(drive.folderUrl)
 
-      /** SPEC E3: automatic project.ssp.json for customer upload jobs. */
-      void autoSaveProjectJson({
-        folderId: drive.folderId,
-        source: 'customer-site',
-        name: customerName.trim(),
-        customer: { name: customerName.trim() },
-        product: { printType: 'uv-dtf', sheetType: 'uploaded' },
-        images: imagesFromDriveFiles(
-          drive.files.map((file) => ({ name: file.name, id: file.id })),
-        ),
-        fromUpload: true,
-      }).catch((err) => {
+      /** SPEC E3: automatic named project JSON for customer upload jobs. */
+      void (async () => {
+        const previewUrls = jobs.map((job) => URL.createObjectURL(job.item.entry.file))
+        try {
+          const images = await buildImagesWithEmbeddedArt(
+            jobs.map((job, index) => ({
+              id: `img_${index + 1}`,
+              name: job.item.entry.file.name,
+              previewUrl: previewUrls[index],
+              quantity: 1,
+            })),
+          )
+          // Attach Drive file ids so reopen can also fetch from Drive if needed.
+          for (const [index, image] of images.entries()) {
+            const uploaded = drive.files.find((file) => file.name === jobs[index]?.printName)
+            if (uploaded?.id) image.driveFileId = uploaded.id
+          }
+          await autoSaveProjectJson({
+            folderId: drive.folderId,
+            source: 'customer-site',
+            name: customerName.trim(),
+            customer: { name: customerName.trim() },
+            product: { printType: 'uv-dtf', sheetType: 'uploaded' },
+            images,
+            fromUpload: true,
+          })
+        } finally {
+          for (const url of previewUrls) URL.revokeObjectURL(url)
+        }
+      })().catch((err) => {
         console.warn('[project] customer upload auto-save failed', err)
       })
 

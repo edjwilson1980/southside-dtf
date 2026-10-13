@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.1] — 2026-10-13
+
+### Fixed
+- Project JSON embeds design art (`dataUrl`) so Reopen Project shows the actual images
+  instead of empty/black placeholders.
+- Project JSON files are named after the project (`Customer Name.ssp.json`) instead of a
+  fixed `project.ssp.json`. Legacy files still open and are renamed on the next save.
+
 ## [2.3.0] — 2026-10-09
 
 ### Added
