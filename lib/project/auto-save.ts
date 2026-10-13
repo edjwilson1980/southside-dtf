@@ -2,10 +2,10 @@ import { writeDriveJobRecord } from '@/lib/upload-to-drive'
 import { BUILDER_VERSION } from '@/lib/version'
 import { nextRevision } from './conflict'
 import { projectDriveAppProperties } from './driveTags'
+import { projectJsonFileName } from './file-name'
 import { rememberRecentProject } from './recent'
 import {
   PROJECT_FORMAT,
-  PROJECT_JSON_NAME,
   PROJECT_SCHEMA_VERSION,
   type ProjectCustomer,
   type ProjectImageRef,
@@ -45,11 +45,12 @@ export type AutoSaveResult = {
   projectId: string
   revision: number
   payload: SspProject
+  fileName: string
   fileId?: string
   webViewLink?: string
 }
 
-/** Build the shared project.ssp.json body (SPEC B4 / E2). */
+/** Build the shared project JSON body (SPEC B4 / E2). */
 export function buildProjectDocument(input: Omit<AutoSaveInput, 'folderId'>): SspProject {
   const now = new Date().toISOString()
   const projectId = input.projectId?.trim() || newProjectId()
@@ -85,11 +86,12 @@ export function buildProjectDocument(input: Omit<AutoSaveInput, 'folderId'>): Ss
 }
 
 /**
- * SPEC B2 / E2 / E3 — write project.ssp.json into the Drive job folder
- * after files are created. Retries up to 3 times.
+ * Write `{Project Name}.ssp.json` into the Drive job folder after files are created.
+ * Retries up to 3 times. Upserts / renames any existing `*.ssp.json` in that folder.
  */
 export async function autoSaveProjectJson(input: AutoSaveInput): Promise<AutoSaveResult> {
   const finalDoc = buildProjectDocument(input)
+  const fileName = projectJsonFileName(finalDoc.name)
   const content = JSON.stringify(finalDoc, null, 2)
   const appProperties = projectDriveAppProperties({
     projectId: finalDoc.projectId,
@@ -100,12 +102,12 @@ export async function autoSaveProjectJson(input: AutoSaveInput): Promise<AutoSav
   })
 
   let lastError: Error | null = null
-  let written: { id?: string; webViewLink?: string } = {}
+  let written: { id?: string; webViewLink?: string; name?: string } = {}
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       written = await writeDriveJobRecord({
         folderId: input.folderId,
-        name: PROJECT_JSON_NAME,
+        name: fileName,
         content,
         appProperties,
         upsert: true,
@@ -113,7 +115,7 @@ export async function autoSaveProjectJson(input: AutoSaveInput): Promise<AutoSav
       lastError = null
       break
     } catch (err) {
-      lastError = err instanceof Error ? err : new Error('Could not write project.ssp.json')
+      lastError = err instanceof Error ? err : new Error(`Could not write ${fileName}`)
       await wait(400 * 2 ** attempt)
     }
   }
@@ -136,12 +138,13 @@ export async function autoSaveProjectJson(input: AutoSaveInput): Promise<AutoSav
     projectId: finalDoc.projectId,
     revision: finalDoc.revision,
     payload: finalDoc,
+    fileName: written.name || fileName,
     fileId: written.id,
     webViewLink: written.webViewLink,
   }
 }
 
-/** Convenience: map Drive upload files onto lightweight image refs. */
+/** Convenience: map Drive upload files onto lightweight image refs (no embedded art). */
 export function imagesFromDriveFiles(
   files: Array<{ name: string; id: string }>,
   extras?: Array<Partial<ProjectImageRef>>,

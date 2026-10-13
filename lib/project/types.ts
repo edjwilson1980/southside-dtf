@@ -15,6 +15,7 @@ export const PROJECT_SOURCE_LABEL: Record<ProjectSource, string> = {
 
 export const PROJECT_FORMAT = 'ssp-gangsheet-project' as const
 export const PROJECT_SCHEMA_VERSION = 2
+/** @deprecated Prefer projectJsonFileName(projectName) — legacy fixed name only. */
 export const PROJECT_JSON_NAME = 'project.ssp.json'
 
 export type ProjectCustomer = {
