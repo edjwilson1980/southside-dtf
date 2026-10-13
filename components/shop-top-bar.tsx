@@ -10,7 +10,10 @@ const logoUrl =
   'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/SSP%20Logo%20%28Black%20Outline%29-A5PrDBPZRDhydxNxRumbsTUFufpLv9.png'
 
 type ShopTopBarProps = {
-  onOpenProject: (project: SspProject, meta?: { folderId?: string; fileId?: string }) => void
+  onOpenProject: (
+    project: SspProject,
+    meta?: { folderId?: string; fileId?: string },
+  ) => void | Promise<void>
 }
 
 /** Shop Builder title row + Reopen Project (top right) — SPEC E1. */
