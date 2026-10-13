@@ -65,3 +65,16 @@ export function topMenuKeyForPath(pathname: string): TopMenuKey | null {
   }
   return null
 }
+
+/**
+ * Staff top menu belongs on shop tools only.
+ * Customer storefront / WordPress embeds hide it so phones keep usable space.
+ */
+export function showTopMenuForPath(pathname: string): boolean {
+  const path = pathname.replace(/\/$/, '') || '/'
+  if (path === '/shop' || path.startsWith('/shop/')) return true
+  if (path === '/builder' || path.startsWith('/builder/')) return true
+  if (path === '/stickers' || path.startsWith('/stickers/')) return true
+  if (path === '/cutter-test' || path.startsWith('/cutter-test/')) return true
+  return false
+}

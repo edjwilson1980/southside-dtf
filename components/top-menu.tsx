@@ -1,7 +1,7 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
-import { TOP_MENU, topMenuKeyForPath, type TopMenuKey } from '@/lib/nav'
+import { showTopMenuForPath, TOP_MENU, topMenuKeyForPath, type TopMenuKey } from '@/lib/nav'
 
 type TopMenuProps = {
   /** Force active key (overrides path detection). */
@@ -11,6 +11,8 @@ type TopMenuProps = {
 export function TopMenu({ active }: TopMenuProps) {
   const pathname = usePathname() || '/'
   const current = active ?? topMenuKeyForPath(pathname)
+
+  if (!showTopMenuForPath(pathname)) return null
 
   return (
     <nav className="top-menu" aria-label="Main tools">

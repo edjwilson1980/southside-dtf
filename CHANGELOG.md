@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.2] — 2026-10-13
+
+### Fixed
+- Customer builder is phone-friendly: design rows stack as readable cards, placement
+  grid and checkout controls fit small screens, and iOS no longer zoom-jumps on inputs.
+- Staff top menu is hidden on customer storefront pages (`/`, `/upload`, `/send`, embeds)
+  so shoppers keep the full screen for building.
+
 ## [2.3.1] — 2026-10-13
 
 ### Fixed

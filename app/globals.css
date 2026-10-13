@@ -1704,3 +1704,330 @@ button.thumb:disabled { cursor: default; }
   background: #eaf7fc;
   color: var(--chicago-blue);
 }
+
+/* =============================================================================
+   Phone / small-tablet responsive — placed last so it wins over earlier rules.
+   Customer complaint: design rows and controls were cramped / hard to use.
+   ============================================================================= */
+html, body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+.builder-shell,
+.builder-grid,
+.workspace,
+.order-panel,
+.design-list,
+.design-row {
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 900px) {
+  .builder-shell {
+    padding: 16px 12px 28px;
+  }
+  .builder-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .order-panel {
+    position: static;
+  }
+  .how-to {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 10px;
+  }
+  .how-to-item {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    text-align: left;
+    gap: 8px;
+    padding: 10px;
+  }
+  .how-to-item strong {
+    flex: 1;
+    font-size: 13px;
+  }
+  .how-to-item span {
+    width: 100%;
+    padding-left: 42px;
+    font-size: 12px;
+  }
+  .placement-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .duplicate-picker-options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .builder-shell {
+    padding: 12px 10px calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+  .builder-shell.embed-mode {
+    padding: 8px 8px calc(20px + env(safe-area-inset-bottom, 0px));
+  }
+  .builder-topbar {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .brand-logo {
+    width: 52px;
+    height: 72px;
+  }
+  .title-block h1 {
+    font-size: clamp(26px, 8vw, 32px);
+    letter-spacing: -0.03em;
+  }
+  .lead {
+    font-size: 15px;
+    margin-top: 6px;
+  }
+  .sublead {
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  /* Compact step chips — less vertical noise on phones */
+  .how-to {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px;
+    margin-bottom: 14px;
+    scrollbar-width: thin;
+  }
+  .how-to > li {
+    flex: 0 0 auto;
+    list-style: none;
+  }
+  .how-to-item {
+    width: 150px;
+    min-height: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 10px;
+  }
+  .how-to-item span {
+    display: none;
+  }
+  .how-to-item strong {
+    font-size: 12px;
+    line-height: 1.25;
+  }
+
+  .workspace,
+  .order-panel {
+    padding: 12px;
+  }
+  .inline-guide {
+    padding: 12px;
+    margin-bottom: 14px;
+  }
+  .inline-guide-copy h2 {
+    font-size: 17px;
+  }
+  .inline-guide-copy p {
+    font-size: 13px;
+  }
+  .guide-quick-picks {
+    gap: 6px;
+  }
+  .guide-quick-picks button {
+    font-size: 12px;
+    padding: 7px 9px;
+  }
+
+  .dropzone {
+    min-height: 168px;
+    padding: 16px 12px;
+  }
+  .dropzone strong {
+    font-size: 16px;
+    text-align: center;
+  }
+  .dropzone span,
+  .dropzone small {
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .placement-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .placement-card {
+    min-height: 92px;
+    font-size: 12px;
+    padding: 8px 4px;
+  }
+  .placement-card em {
+    bottom: -10px;
+    font-size: 9px;
+    padding: 2px 7px;
+  }
+
+  /*
+   * Design rows: stack as readable cards on phones.
+   * Earlier multi-column grids crushed labels and quantity controls.
+   */
+  .design-row {
+    display: grid !important;
+    grid-template-columns: 76px minmax(0, 1fr) !important;
+    gap: 10px 12px;
+    padding: 12px;
+    align-items: start;
+  }
+  .design-row .drag-handle {
+    display: none;
+  }
+  .design-row > .thumb,
+  .design-row > button.thumb {
+    grid-column: 1;
+    grid-row: 1;
+    width: 76px;
+    height: 76px;
+  }
+  .design-row > .design-name {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .design-row > .object-type,
+  .design-row > label,
+  .design-row > .custom-dimensions,
+  .design-row > .design-actions-stack,
+  .design-row > .notes {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+  }
+  .design-row .design-actions-stack {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .design-row .row-action {
+    width: 44px;
+    height: 40px;
+  }
+  .design-row label {
+    font-size: 12px;
+    gap: 5px;
+  }
+  .design-row select,
+  .design-row input,
+  .design-row .number-input {
+    width: 100%;
+    height: 44px;
+    font-size: 16px; /* prevents iOS focus-zoom */
+  }
+  .customer-name-field input,
+  .workspace-customer-name input {
+    font-size: 16px;
+    min-height: 44px;
+  }
+  .custom-dimensions > div {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .custom-dimensions input {
+    width: 100%;
+  }
+  .number-input button {
+    width: 40px;
+  }
+
+  .design-footer-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .design-footer-actions .add-design,
+  .duplicate-design {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .metrics {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .metric {
+    min-height: 64px;
+    padding: 10px;
+  }
+  .metric strong {
+    font-size: 17px;
+  }
+  .metric i {
+    display: none;
+  }
+
+  .sheet-preview {
+    padding: 22px 10px 12px;
+  }
+  .build-button,
+  .confirm-button,
+  .cart-button {
+    width: 100%;
+    min-height: 48px;
+    font-size: 15px;
+  }
+  .precut-button {
+    text-align: left;
+  }
+
+  .size-recommendations {
+    grid-template-columns: 1fr;
+  }
+  .duplicate-picker-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inspect-popup {
+    width: 100%;
+    max-height: 100dvh;
+    height: 100dvh;
+    border-radius: 0;
+    padding: 12px;
+  }
+  .inspect-head h2 {
+    font-size: 18px;
+  }
+  .inspect-primary-actions,
+  .inspect-edit-actions,
+  .bg-compare-actions {
+    grid-template-columns: 1fr;
+  }
+  .sheet-preview-popup {
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    padding: 12px;
+  }
+
+  .top-menu-inner {
+    padding: 8px 10px;
+  }
+}
+
+@media (max-width: 400px) {
+  .placement-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .title-block h1 {
+    font-size: 24px;
+  }
+  .how-to-item {
+    width: 132px;
+  }
+}
