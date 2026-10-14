@@ -1,5 +1,20 @@
+import { trimEmptySpace } from '@/lib/crop-image'
 import type { ProjectImageRef } from './types'
 import { resolveProjectImageUrls } from './images'
+
+/** Crop empty margins so the chosen print size applies to the art, not its padding. */
+async function trimRestoredArt(url: string): Promise<{ url: string; width: number; height: number } | null> {
+  if (!url) return null
+  try {
+    const result = await trimEmptySpace(url)
+    if (!result.trimmed) return { url, width: result.width, height: result.height }
+    const nextUrl = URL.createObjectURL(result.blob)
+    if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+    return { url: nextUrl, width: result.width, height: result.height }
+  } catch {
+    return null
+  }
+}
 
 export type RestoredDesignSeed = {
   id: number
@@ -144,8 +159,10 @@ export async function restoreDesignsFromProject(
   options: RestoreDesignOptions,
 ): Promise<{ designs: RestoredDesignSeed[]; missingArtCount: number }> {
   const imageUrls = await resolveProjectImageUrls(images)
+  const trimmed = await Promise.all(imageUrls.map((url) => trimRestoredArt(url)))
   const designs: RestoredDesignSeed[] = (images || []).map((image, index) => {
-    const url = imageUrls[index] || ''
+    const art = trimmed[index]
+    const url = art?.url || imageUrls[index] || ''
     const coerced = coercePlacementAndSize(image, options)
     return {
       id: typeof image.id === 'number' ? image.id : Date.now() + index,
@@ -158,8 +175,10 @@ export async function restoreDesignsFromProject(
       originalUrl: url,
       previewUrl: url,
       enhanced: false,
-      pixelWidth: image.pixelWidth || image.original?.pxW || image.processed?.pxW || 0,
-      pixelHeight: image.pixelHeight || image.original?.pxH || image.processed?.pxH || 0,
+      pixelWidth:
+        art?.width || image.pixelWidth || image.original?.pxW || image.processed?.pxW || 0,
+      pixelHeight:
+        art?.height || image.pixelHeight || image.original?.pxH || image.processed?.pxH || 0,
       keepUpright: Boolean(image.keepUpright),
       needsReupload: !url,
     }
