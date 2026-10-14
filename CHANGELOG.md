@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.3.3] — 2026-10-14
+
+### Fixed
+- Project JSON (`{Customer}.ssp.json`) reliably lands in the Google Drive job folder again.
+  Oversized embedded image data URLs were blowing past Vercel’s body limit, so the write
+  failed silently. Design art is now uploaded into the folder separately; the JSON keeps
+  only Drive file ids.
+- Drive upsert no longer depends on fragile `name contains '.ssp.json'` search — folder
+  children are listed and filtered in code so create/update succeeds.
+
 ## [2.3.2] — 2026-10-13
 
 ### Fixed

@@ -22,7 +22,7 @@ import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib
 import { isEmbedSearchParam } from '@/lib/embed'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { autoSaveProjectJson } from '@/lib/project/auto-save'
-import { buildImagesWithEmbeddedArt } from '@/lib/project/images'
+import { buildImagesForDriveProject } from '@/lib/project/images'
 import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
 
 type Design = {
@@ -628,7 +628,7 @@ function HomeBuilder() {
       setDriveFolderUrl(drive.folderUrl)
 
       /** SPEC E3: write named project JSON after files land — customer never waits on this. */
-      void buildImagesWithEmbeddedArt(
+      void buildImagesForDriveProject(
         designs.map((design) => ({
           id: design.id,
           name: design.name,
@@ -643,7 +643,11 @@ function HomeBuilder() {
           pixelWidth: design.pixelWidth,
           pixelHeight: design.pixelHeight,
         })),
-        { sheetDriveFileId: drive.fileId },
+        {
+          folderId: drive.folderId,
+          customerName: customerName.trim(),
+          sheetDriveFileId: drive.fileId,
+        },
       )
         .then((images) =>
           autoSaveProjectJson({
@@ -663,7 +667,7 @@ function HomeBuilder() {
           }),
         )
         .catch((err) => {
-          console.warn('[project] customer-site auto-save failed', err)
+          console.error('[project] customer-site auto-save failed', err)
         })
 
       const driveLink =

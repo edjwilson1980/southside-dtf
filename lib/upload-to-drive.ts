@@ -138,6 +138,62 @@ export async function uploadJobToGoogleDrive(options: {
   }
 }
 
+/**
+ * Upload files into an existing Drive folder (browser → Google resumable PUT).
+ * Used for per-design art so the project JSON stays small enough for Vercel.
+ */
+export async function uploadFilesToExistingDriveFolder(options: {
+  folderId: string
+  files: DriveFileUpload[]
+  customerName?: string
+}): Promise<DriveUploadedFile[]> {
+  if (!options.folderId) throw new Error('folderId is required.')
+  if (!options.files.length) return []
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : undefined
+  const sessionRes = await fetch('/api/drive/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      folderId: options.folderId,
+      customerName: options.customerName || 'Job',
+      stamp: 'art',
+      origin,
+      files: options.files.map((file) => ({
+        name: file.name,
+        mimeType: file.mimeType,
+        size: file.blob.size,
+      })),
+    }),
+  })
+  const sessionJson = (await sessionRes.json()) as {
+    error?: string
+    uploads?: Array<{ name: string; uploadUrl: string }>
+  }
+  if (!sessionRes.ok) {
+    throw new Error(sessionJson.error || 'Could not start design art uploads to Google Drive.')
+  }
+
+  const uploads = sessionJson.uploads ?? []
+  const uploadedFiles: DriveUploadedFile[] = []
+  for (const file of options.files) {
+    const session = uploads.find((item) => item.name === file.name)
+    if (!session?.uploadUrl) {
+      throw new Error(`Missing Google Drive upload session for ${file.name}.`)
+    }
+    const uploaded = await putDriveFileChunked(file, session.uploadUrl)
+    if (!uploaded.id) {
+      throw new Error(`Could not save ${file.name} to Google Drive.`)
+    }
+    uploadedFiles.push({
+      name: file.name,
+      id: uploaded.id,
+      webViewLink: uploaded.webViewLink || `https://drive.google.com/file/d/${uploaded.id}/view`,
+    })
+  }
+  return uploadedFiles
+}
+
 /** Write `job.json` / `project.ssp.json` into an existing Drive folder after the art files land. */
 export async function writeDriveJobRecord(options: {
   folderId: string

@@ -3,6 +3,7 @@ import { BUILDER_VERSION } from '@/lib/version'
 import { nextRevision } from './conflict'
 import { projectDriveAppProperties } from './driveTags'
 import { projectJsonFileName } from './file-name'
+import { stripImageDataUrls } from './images'
 import { rememberRecentProject } from './recent'
 import {
   PROJECT_FORMAT,
@@ -12,6 +13,9 @@ import {
   type ProjectSource,
   type SspProject,
 } from './types'
+
+/** Keep job-record POST well under Vercel's ~4.5MB body limit. */
+const MAX_DRIVE_JSON_CHARS = 2_500_000
 
 function newProjectId() {
   const rand = Math.random().toString(36).slice(2, 8)
@@ -90,9 +94,26 @@ export function buildProjectDocument(input: Omit<AutoSaveInput, 'folderId'>): Ss
  * Retries up to 3 times. Upserts / renames any existing `*.ssp.json` in that folder.
  */
 export async function autoSaveProjectJson(input: AutoSaveInput): Promise<AutoSaveResult> {
-  const finalDoc = buildProjectDocument(input)
+  // Never put full image dataUrls in the Drive write — they blow past Vercel body limits
+  // and the JSON never lands in the job folder.
+  const finalDoc = buildProjectDocument({
+    ...input,
+    images: stripImageDataUrls(input.images),
+  })
   const fileName = projectJsonFileName(finalDoc.name)
-  const content = JSON.stringify(finalDoc, null, 2)
+  let content = JSON.stringify(finalDoc, null, 2)
+  if (content.length > MAX_DRIVE_JSON_CHARS) {
+    finalDoc.images = (finalDoc.images || []).map((image) => {
+      const { dataUrl: _d, ...rest } = image
+      return rest
+    })
+    content = JSON.stringify(finalDoc, null, 2)
+  }
+  if (content.length > MAX_DRIVE_JSON_CHARS) {
+    throw new Error(
+      `Project JSON is too large to write to Drive (${Math.round(content.length / 1024)} KB).`,
+    )
+  }
   const appProperties = projectDriveAppProperties({
     projectId: finalDoc.projectId,
     source: finalDoc.source,
