@@ -38,8 +38,7 @@ import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/accepted-uploads'
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
-import { autoSaveProjectJson } from '@/lib/project/auto-save'
-import { buildImagesForDriveProject } from '@/lib/project/images'
+import { saveProjectWithArt } from '@/lib/project/auto-save'
 import { restoreDesignsFromProject } from '@/lib/project/restore'
 import { projectJsonFileName } from '@/lib/project/file-name'
 import { PROJECT_FORMAT, type SspProject } from '@/lib/project/types'
@@ -713,6 +712,62 @@ export default function StickerMakerPage() {
     setPreviewing(false)
   }
 
+  function stickerArtInputs() {
+    return designs.map((design) => {
+      const printSize = getDesignSize(design)
+      return {
+        id: design.id,
+        name: design.name,
+        previewUrl: design.previewUrl,
+        originalUrl: design.originalUrl,
+        placement: design.placement,
+        size: design.size,
+        customWidth: design.customWidth,
+        customHeight: design.customHeight,
+        quantity: design.quantity,
+        keepUpright: design.keepUpright,
+        pixelWidth: design.pixelWidth,
+        pixelHeight: design.pixelHeight,
+        sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
+        cut: { shape: 'box', offsetMm: UV_BORDER_MM, squareCutMm: UV_BORDER_MM },
+      }
+    })
+  }
+
+  /**
+   * Write `{Customer}.ssp.json` to Drive — creating the job folder when none
+   * exists yet — then attach design art. The JSON lands even if art fails.
+   */
+  async function saveStickerProjectToDrive(options: {
+    folderId?: string
+    fromUpload: boolean
+    product: Record<string, unknown>
+    cut: { enabled?: boolean }
+  }) {
+    const name = customerName.trim()
+    const folderId = options.folderId || driveFolderId || undefined
+    const saved = await saveProjectWithArt({
+      folderId,
+      createFolder: folderId ? undefined : { customerName: name, stamp: sheetStamp() },
+      source: 'dtf-stickers',
+      projectId,
+      revision: projectRevision,
+      createdAt: projectCreatedAt,
+      name,
+      customer: { name },
+      product: options.product,
+      cut: options.cut,
+      designs: stickerArtInputs(),
+      fromUpload: options.fromUpload,
+    })
+    setProjectId(saved.projectId)
+    setProjectRevision(saved.revision)
+    setProjectCreatedAt(saved.payload.createdAt)
+    setDriveFolderId(saved.folderId)
+    setDriveFolderUrl(saved.folderUrl)
+    return saved
+  }
+
   async function saveJobFile() {
     if (!customerName.trim()) {
       setSaveError('Enter a customer name before saving the job.')
@@ -724,57 +779,26 @@ export default function StickerMakerPage() {
       const json = JSON.stringify(payload, null, 2)
       const blob = new Blob([json], { type: 'application/json' })
       downloadBlob(blob, projectJsonFileName(customerName.trim() || 'job'))
-      if (driveFolderId) {
-        try {
-          // Drive write: upload art separately and keep JSON small (no dataUrls).
-          const driveImages = await buildImagesForDriveProject(
-            designs.map((design) => {
-              const printSize = getDesignSize(design)
-              return {
-                id: design.id,
-                name: design.name,
-                previewUrl: design.previewUrl,
-                originalUrl: design.originalUrl,
-                placement: design.placement,
-                size: design.size,
-                customWidth: design.customWidth,
-                customHeight: design.customHeight,
-                quantity: design.quantity,
-                keepUpright: design.keepUpright,
-                pixelWidth: design.pixelWidth,
-                pixelHeight: design.pixelHeight,
-                sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
-                cut: { shape: 'box', offsetMm: UV_BORDER_MM, squareCutMm: UV_BORDER_MM },
-              }
-            }),
-            {
-              folderId: driveFolderId,
-              customerName: customerName.trim(),
-            },
-          )
-          const saved = await autoSaveProjectJson({
-            folderId: driveFolderId,
-            source: 'dtf-stickers',
-            projectId,
-            revision: projectRevision,
-            createdAt: projectCreatedAt,
-            name: customerName.trim(),
-            customer: { name: customerName.trim() },
-            product: payload.product,
-            cut: payload.cut,
-            images: driveImages,
-            fromUpload: false,
-          })
-          setProjectId(saved.projectId)
-          setProjectRevision(saved.revision)
-          setProjectCreatedAt(saved.payload.createdAt)
-        } catch {
-          setJobStatus('Not saved — retrying')
-          throw new Error('Downloaded the job file, but could not update the project JSON in Drive.')
-        }
+      let saved: Awaited<ReturnType<typeof saveStickerProjectToDrive>>
+      try {
+        saved = await saveStickerProjectToDrive({
+          fromUpload: false,
+          product: payload.product,
+          cut: payload.cut,
+        })
+      } catch (err) {
+        setJobStatus('Not saved')
+        throw new Error(
+          err instanceof Error
+            ? `Downloaded the job file, but the project JSON could not be written to Drive: ${err.message}`
+            : 'Downloaded the job file, but the project JSON could not be written to Drive.',
+        )
       }
-      setJobStatus(`Saved ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} ✓`)
-      setSaveError(null)
+      const when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+      setJobStatus(`Saved ${saved.fileName} · ${when} ✓`)
+      setSaveError(
+        saved.artError ? `Project JSON saved, but design art did not upload: ${saved.artError}` : null,
+      )
     } catch (err) {
       setJobStatus(null)
       setSaveError(err instanceof Error ? err.message : 'Could not save the job file.')
@@ -953,53 +977,24 @@ export default function StickerMakerPage() {
           driveFiles: drive.files.map((file) => ({ name: file.name, id: file.id })),
           includeDataUrls: false,
         })
-        const images = await buildImagesForDriveProject(
-          designs.map((design) => {
-            const printSize = getDesignSize(design)
-            return {
-              id: design.id,
-              name: design.name,
-              previewUrl: design.previewUrl,
-              originalUrl: design.originalUrl,
-              placement: design.placement,
-              size: design.size,
-              customWidth: design.customWidth,
-              customHeight: design.customHeight,
-              quantity: design.quantity,
-              keepUpright: design.keepUpright,
-              pixelWidth: design.pixelWidth,
-              pixelHeight: design.pixelHeight,
-              sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
-              cut: { shape: 'box', offsetMm: UV_BORDER_MM, squareCutMm: UV_BORDER_MM },
-            }
-          }),
-          {
-            folderId: drive.folderId,
-            customerName: customerName.trim(),
-          },
-        )
-        const saved = await autoSaveProjectJson({
+        const saved = await saveStickerProjectToDrive({
           folderId: drive.folderId,
-          source: 'dtf-stickers',
-          projectId,
-          revision: projectRevision,
-          createdAt: projectCreatedAt,
-          name: customerName.trim(),
-          customer: { name: customerName.trim() },
+          fromUpload: true,
           product: payload.product,
           cut: payload.cut,
-          images,
-          fromUpload: true,
         })
-        setProjectId(saved.projectId)
-        setProjectRevision(saved.revision)
-        setProjectCreatedAt(saved.payload.createdAt)
-        setJobStatus(
-          `Saved ${saved.fileName} · ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} ✓`,
+        const when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+        setJobStatus(`Saved ${saved.fileName} · ${when} ✓`)
+        if (saved.artError) {
+          setSaveError(`Project JSON saved, but design art did not upload: ${saved.artError}`)
+        }
+      } catch (err) {
+        setJobStatus('Not saved')
+        setSaveError(
+          err instanceof Error
+            ? `Files are in Drive, but the project JSON could not be written: ${err.message}. Use Save Job to retry.`
+            : 'Files are in Drive, but the project JSON could not be written. Use Save Job to retry.',
         )
-      } catch {
-        setJobStatus('Not saved — retrying')
-        setSaveError('Files are in Drive, but the project JSON could not be written. Use Save Job to retry.')
       }
       setBuilt(true)
       setSheetPreviewOpen(false)

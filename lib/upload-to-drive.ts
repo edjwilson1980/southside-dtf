@@ -194,21 +194,40 @@ export async function uploadFilesToExistingDriveFolder(options: {
   return uploadedFiles
 }
 
-/** Write `job.json` / `project.ssp.json` into an existing Drive folder after the art files land. */
+export type DriveJobRecordResult = {
+  id?: string
+  name?: string
+  webViewLink?: string
+  /** Folder the record landed in (new when `createFolder` was used). */
+  folderId?: string
+  folderUrl?: string
+  folderName?: string
+}
+
+/**
+ * Write `job.json` / `{Project}.ssp.json` into a Drive folder.
+ * Pass `createFolder` instead of `folderId` to make the customer job folder first
+ * (Save Job before any sheet has been built).
+ */
 export async function writeDriveJobRecord(options: {
-  folderId: string
+  folderId?: string
+  createFolder?: { customerName: string; stamp: string }
   content: string
   name?: string
   /** Drive appProperties for Reopen Project search (SPEC E5). */
   appProperties?: Record<string, string>
   /** Update an existing file with the same name instead of creating a duplicate. */
   upsert?: boolean
-}) {
+}): Promise<DriveJobRecordResult> {
+  if (!options.folderId && !options.createFolder) {
+    throw new Error('A Drive folder is required to save the project JSON.')
+  }
   const res = await fetch('/api/drive/job-record', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       folderId: options.folderId,
+      createFolder: options.createFolder,
       content: options.content,
       name: options.name || 'job.json',
       mimeType: 'application/json',
@@ -217,8 +236,15 @@ export async function writeDriveJobRecord(options: {
       upsert: options.upsert !== false,
     }),
   })
-  const json = (await res.json()) as { error?: string; id?: string; name?: string; webViewLink?: string }
-  if (!res.ok) throw new Error(json.error || 'Could not write job.json to Google Drive.')
+  let json: DriveJobRecordResult & { error?: string } = {}
+  try {
+    json = (await res.json()) as DriveJobRecordResult & { error?: string }
+  } catch {
+    json = {}
+  }
+  if (!res.ok) {
+    throw new Error(json.error || `Could not write ${options.name || 'job.json'} to Google Drive (HTTP ${res.status}).`)
+  }
   return json
 }
 

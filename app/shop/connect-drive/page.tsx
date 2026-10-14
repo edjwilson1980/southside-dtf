@@ -27,9 +27,18 @@ export default function ConnectDrivePage() {
     setVerifyMsg(null)
     try {
       const res = await fetch('/api/drive/verify', { method: 'POST' })
-      const json = (await res.json()) as { error?: string; folderUrl?: string; mode?: string }
+      const json = (await res.json()) as {
+        error?: string
+        folderUrl?: string
+        jsonFileUrl?: string
+        mode?: string
+      }
       if (!res.ok) throw new Error(json.error || 'Drive check failed.')
-      setVerifyMsg(`Connected (${json.mode}). Test folder: ${json.folderUrl}`)
+      setVerifyMsg(
+        `Connected (${json.mode}). Test folder: ${json.folderUrl}${
+          json.jsonFileUrl ? ` · project JSON written: ${json.jsonFileUrl}` : ''
+        }`,
+      )
     } catch (err) {
       setVerifyMsg(err instanceof Error ? err.message : 'Drive check failed.')
     } finally {
@@ -135,11 +144,12 @@ export default function ConnectDrivePage() {
         <section>
           <h2>Verify uploads</h2>
           <p className="watch">
-            After the env vars are set, this creates a tiny test folder inside Gang sheet uploads. If Google says storage
-            is full, free space on the shop Gmail Drive first.
+            After the env vars are set, this creates a tiny test folder inside Gang sheet uploads and writes a
+            <code> Drive check.ssp.json</code> into it using the same code path as real project files. If Google says
+            storage is full, free space on the shop Gmail Drive first.
           </p>
           <button type="button" disabled={verifyBusy} onClick={() => void verifyWrite()}>
-            {verifyBusy ? 'Checking…' : 'Test Drive write access'}
+            {verifyBusy ? 'Checking…' : 'Test Drive write + project JSON'}
           </button>
           {verifyMsg ? <p className={verifyMsg.startsWith('Connected') ? 'watch' : 'error'}>{verifyMsg}</p> : null}
         </section>
