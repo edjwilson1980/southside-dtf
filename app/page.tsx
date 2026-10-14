@@ -629,24 +629,35 @@ function HomeBuilder() {
 
       /** SPEC E3: write named project JSON after files land — customer never waits on this. */
       void buildImagesForDriveProject(
-        designs.map((design) => ({
-          id: design.id,
-          name: design.name,
-          previewUrl: design.previewUrl,
-          originalUrl: design.originalUrl,
-          placement: design.placement,
-          size: design.size,
-          customWidth: design.customWidth,
-          customHeight: design.customHeight,
-          quantity: design.quantity,
-          keepUpright: design.keepUpright,
-          pixelWidth: design.pixelWidth,
-          pixelHeight: design.pixelHeight,
-        })),
+        designs.map((design) => {
+          const printSize = piecePrintSize({
+            placement: design.placement,
+            size: design.size,
+            customWidth: design.customWidth,
+            customHeight: design.customHeight,
+            pixelWidth: design.pixelWidth,
+            pixelHeight: design.pixelHeight,
+            widthIn: parsePrintWidthInches(design.size, design.placement, design.customWidth),
+          })
+          return {
+            id: design.id,
+            name: design.name,
+            previewUrl: design.previewUrl,
+            originalUrl: design.originalUrl,
+            placement: design.placement,
+            size: design.size,
+            customWidth: design.customWidth,
+            customHeight: design.customHeight,
+            quantity: design.quantity,
+            keepUpright: design.keepUpright,
+            pixelWidth: design.pixelWidth,
+            pixelHeight: design.pixelHeight,
+            sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
+          }
+        }),
         {
           folderId: drive.folderId,
           customerName: customerName.trim(),
-          sheetDriveFileId: drive.fileId,
         },
       )
         .then((images) =>

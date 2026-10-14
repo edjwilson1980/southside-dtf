@@ -44,13 +44,24 @@ function safeArtFileName(name: string, index: number) {
   return `art-${index + 1}-${base}.png`
 }
 
+async function blobFromDesignUrl(url: string): Promise<Blob | null> {
+  if (!url) return null
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    return blob.size > 0 ? blob : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Build image rows with embedded data URLs — for local Save Job / download only.
  * Do NOT send this payload to `/api/drive/job-record` (hits Vercel body limits).
  */
 export async function buildImagesWithEmbeddedArt(
   designs: DesignArtInput[],
-  options?: { sheetDriveFileId?: string },
 ): Promise<ProjectImageRef[]> {
   const images: ProjectImageRef[] = []
   for (const design of designs) {
@@ -78,7 +89,6 @@ export async function buildImagesWithEmbeddedArt(
       cut: design.cut,
       sizeIn: design.sizeIn,
       ...(dataUrl ? { dataUrl } : {}),
-      ...(options?.sheetDriveFileId ? { driveFileId: options.sheetDriveFileId } : {}),
     })
   }
   return images
@@ -87,13 +97,15 @@ export async function buildImagesWithEmbeddedArt(
 /**
  * Build image rows for Drive project JSON: upload each design's art into the job
  * folder (resumable, outside Vercel), then store only Drive file ids — no dataUrls.
+ *
+ * Never stores the composed sheet PNG as a design's art id — that broke reopen
+ * previews when individual art uploads failed.
  */
 export async function buildImagesForDriveProject(
   designs: DesignArtInput[],
   options: {
     folderId: string
     customerName?: string
-    sheetDriveFileId?: string
   },
 ): Promise<ProjectImageRef[]> {
   const uploads: DriveFileUpload[] = []
@@ -101,22 +113,17 @@ export async function buildImagesForDriveProject(
 
   for (let index = 0; index < designs.length; index += 1) {
     const design = designs[index]
-    const sourceUrl = design.previewUrl || design.originalUrl || ''
-    if (!sourceUrl) continue
-    try {
-      const res = await fetch(sourceUrl)
-      if (!res.ok) continue
-      const blob = await res.blob()
-      if (blob.size <= 0) continue
-      uploads.push({
-        name: safeArtFileName(design.name, index),
-        mimeType: blob.type || 'image/png',
-        blob,
-      })
-      indexByUpload.push(index)
-    } catch {
-      // Skip unreadable art; JSON still writes metadata.
-    }
+    // Prefer the edited preview; fall back to the original upload.
+    const blob =
+      (await blobFromDesignUrl(design.previewUrl || '')) ||
+      (await blobFromDesignUrl(design.originalUrl || ''))
+    if (!blob) continue
+    uploads.push({
+      name: safeArtFileName(design.name, index),
+      mimeType: blob.type || 'image/png',
+      blob,
+    })
+    indexByUpload.push(index)
   }
 
   const uploaded =
@@ -131,7 +138,7 @@ export async function buildImagesForDriveProject(
   return designs.map((design, index) => {
     const uploadPos = indexByUpload.indexOf(index)
     const artFile = uploadPos >= 0 ? uploaded[uploadPos] : undefined
-    const driveFileId = artFile?.id || options.sheetDriveFileId
+    const driveFileId = artFile?.id
     return {
       id: design.id,
       name: design.name,
@@ -170,39 +177,115 @@ export function stripImageDataUrls(images: ProjectImageRef[] | undefined): Proje
   return (images || []).map(({ dataUrl: _dataUrl, ...rest }) => rest)
 }
 
+function readBlobPixelSize(blob: Blob): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob)
+    const image = new Image()
+    image.onload = () => {
+      const width = image.naturalWidth
+      const height = image.naturalHeight
+      URL.revokeObjectURL(url)
+      resolve({ width, height })
+    }
+    image.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve({ width: 0, height: 0 })
+    }
+    image.src = url
+  })
+}
+
+/**
+ * Reject files that are clearly the composed sheet (or otherwise wrong) when the
+ * project recorded the design's pixel size. Older builds sometimes stored the
+ * sheet PNG id on every image row.
+ */
+function looksLikeWrongArt(
+  loaded: { width: number; height: number },
+  expectedW?: number,
+  expectedH?: number,
+): boolean {
+  if (!loaded.width || !loaded.height) return true
+  if (!expectedW || !expectedH) return false
+  const widthRatio = loaded.width / expectedW
+  const heightRatio = loaded.height / expectedH
+  // Same art (possibly lightly cropped) stays near 1×1.
+  if (widthRatio >= 0.5 && widthRatio <= 2.2 && heightRatio >= 0.5 && heightRatio <= 2.2) {
+    return false
+  }
+  // Sheet PNGs are much wider/taller than a single design.
+  return widthRatio > 2.5 || heightRatio > 2.5 || loaded.width * loaded.height > expectedW * expectedH * 6
+}
+
+async function fetchDriveArtBlob(fileId: string): Promise<Blob | null> {
+  if (!fileId) return null
+  try {
+    const res = await fetch(`/api/drive/media?fileId=${encodeURIComponent(fileId)}`)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    return blob.size > 0 ? blob : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Resolve preview URLs for reopen: prefer embedded dataUrl, else fetch Drive media.
+ * Tries processed → driveFileId → original. Drops sheet-sized mismatches.
  */
 export async function resolveProjectImageUrls(
   images: ProjectImageRef[] | undefined,
 ): Promise<string[]> {
   if (!images?.length) return []
+
+  // If every row shares one Drive id, that id is almost certainly the sheet PNG
+  // from the old fallback — do not use it as per-design art.
+  const sharedIds = images
+    .map(
+      (image) =>
+        image.processed?.driveFileId || image.driveFileId || image.original?.driveFileId || '',
+    )
+    .filter(Boolean)
+  const uniqueShared = new Set(sharedIds)
+  const rejectSharedSheetId =
+    images.length > 1 && uniqueShared.size === 1 ? [...uniqueShared][0] : ''
+
   const urls: string[] = []
   for (const image of images) {
     if (image.dataUrl) {
       urls.push(image.dataUrl)
       continue
     }
-    const fileId =
-      image.driveFileId ||
-      image.processed?.driveFileId ||
-      image.original?.driveFileId ||
-      ''
-    if (!fileId) {
-      urls.push('')
-      continue
-    }
-    try {
-      const res = await fetch(`/api/drive/media?fileId=${encodeURIComponent(fileId)}`)
-      if (!res.ok) {
-        urls.push('')
+
+    const candidates = [
+      image.processed?.driveFileId,
+      image.driveFileId,
+      image.original?.driveFileId,
+    ].filter((id): id is string => Boolean(id && id !== rejectSharedSheetId))
+
+    // Deduplicate while preserving order.
+    const tried = new Set<string>()
+    let resolved = ''
+    let fallback = ''
+    const expectedW = image.pixelWidth || image.processed?.pxW || image.original?.pxW
+    const expectedH = image.pixelHeight || image.processed?.pxH || image.original?.pxH
+
+    for (const fileId of candidates) {
+      if (tried.has(fileId)) continue
+      tried.add(fileId)
+      const blob = await fetchDriveArtBlob(fileId)
+      if (!blob) continue
+      const size = await readBlobPixelSize(blob)
+      if (looksLikeWrongArt(size, expectedW, expectedH)) {
+        // Keep a fallback only when we have no expected size to judge against.
+        if (!expectedW || !expectedH) fallback = fallback || URL.createObjectURL(blob)
         continue
       }
-      const blob = await res.blob()
-      urls.push(URL.createObjectURL(blob))
-    } catch {
-      urls.push('')
+      resolved = URL.createObjectURL(blob)
+      break
     }
+
+    urls.push(resolved || fallback)
   }
   return urls
 }

@@ -20,7 +20,8 @@ import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
 import { ShopTopBar } from '@/components/shop-top-bar'
 import { autoSaveProjectJson } from '@/lib/project/auto-save'
-import { buildImagesForDriveProject, resolveProjectImageUrls } from '@/lib/project/images'
+import { buildImagesForDriveProject } from '@/lib/project/images'
+import { restoreDesignsFromProject } from '@/lib/project/restore'
 import type { ProjectSource, SspProject } from '@/lib/project/types'
 
 type Design = {
@@ -40,6 +41,8 @@ type Design = {
   pixelWidth: number
   pixelHeight: number
   keepUpright: boolean
+  /** Set when Drive art is missing — staff should replace this design's artwork. */
+  needsReupload?: boolean
 }
 const sizeGuideUrl = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/DTF%20size%20chart%20%20front2-SIpj1XrVDRyRDtQhaACxzNHj5geNxv.png'
 const placements = ['Left Chest', 'Toddler Shirt', 'Youth Shirt', 'Adult Shirt', 'Hoodie Front', 'Hoodie Back', 'Hat', 'Sleeve', 'Custom']
@@ -198,6 +201,8 @@ export default function Home() {
   const [projectSource, setProjectSource] = useState<ProjectSource>('shop-builder')
   const [projectStatus, setProjectStatus] = useState<string | null>(null)
   const previewGen = useRef(0)
+  /** After Reopen Project, build the gang-sheet preview once designs are ready. */
+  const pendingAutoPreview = useRef(false)
 
   async function loadProject(project: SspProject, meta?: { folderId?: string; fileId?: string }) {
     if (project.name) setCustomerName(project.customer?.name || project.name)
@@ -210,33 +215,11 @@ export default function Home() {
       setDriveFolderUrl(`https://drive.google.com/drive/folders/${meta.folderId}`)
     }
     setProjectStatus('Loading project art…')
-    const imageUrls = await resolveProjectImageUrls(project.images)
-    const nextDesigns: Design[] = (project.images || []).map((image, index) => {
-      const url = imageUrls[index] || image.dataUrl || ''
-      const placementValue =
-        image.placement && placements.includes(image.placement) ? image.placement : 'Custom'
-      return {
-        id: typeof image.id === 'number' ? image.id : Date.now() + index,
-        designNumber: index + 1,
-        name: image.name || image.fileName || `Design ${index + 1}`,
-        placement: placementValue,
-        size:
-          image.size ||
-          (image.sizeIn
-            ? `${image.sizeIn.w ?? 0} × ${image.sizeIn.h ?? 0} in`
-            : recommendedSize(placementValue)),
-        customWidth: image.customWidth || (image.sizeIn?.w != null ? String(image.sizeIn.w) : ''),
-        customHeight: image.customHeight || (image.sizeIn?.h != null ? String(image.sizeIn.h) : ''),
-        quantity: Math.max(1, image.quantity || 1),
-        notes: '',
-        color: index % 2 ? 'red' : 'blue',
-        originalUrl: url,
-        previewUrl: url,
-        enhanced: false,
-        pixelWidth: image.pixelWidth || image.original?.pxW || image.processed?.pxW || 0,
-        pixelHeight: image.pixelHeight || image.original?.pxH || image.processed?.pxH || 0,
-        keepUpright: Boolean(image.keepUpright),
-      }
+    setSaveError(null)
+    const { designs: nextDesigns, missingArtCount } = await restoreDesignsFromProject(project.images, {
+      placements,
+      sizeOptions,
+      recommendedSize,
     })
     setDesigns((current) => {
       for (const design of current) {
@@ -246,8 +229,19 @@ export default function Home() {
     })
     setBuilt(false)
     setPreviewing(false)
-    setProjectStatus(`Reopened “${project.name || project.projectId}” ✓`)
-    setSaveError(null)
+    const label = project.name || project.customer?.name || project.projectId
+    if (missingArtCount > 0) {
+      setProjectStatus(
+        `Reopened “${label}” — ${missingArtCount} design${missingArtCount === 1 ? '' : 's'} need re-upload`,
+      )
+      setSaveError(
+        `${missingArtCount} design${missingArtCount === 1 ? '' : 's'} could not load artwork from Drive. Use Replace on those rows, then Preview again.`,
+      )
+      pendingAutoPreview.current = nextDesigns.some((design) => design.previewUrl)
+    } else {
+      setProjectStatus(`Reopened “${label}” ✓`)
+      pendingAutoPreview.current = nextDesigns.length > 0
+    }
   }
 
   async function addFiles(list: FileList | File[]) {
@@ -508,6 +502,19 @@ export default function Home() {
     })
   }, [layoutKey, customerName])
 
+  useEffect(() => {
+    if (!pendingAutoPreview.current) return
+    if (!customerName.trim() || designs.length === 0 || previewBusy || saving) return
+    if (!designs.some((design) => design.previewUrl)) {
+      pendingAutoPreview.current = false
+      return
+    }
+    pendingAutoPreview.current = false
+    void previewGangSheet()
+    // previewGangSheet closes over latest layout; run once designs settle after reopen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutKey, customerName, designs.length])
+
   function sheetPxPerIn(maxEdge: number, preferred: number) {
     return Math.max(24, Math.min(preferred, Math.floor(maxEdge / Math.max(printHeight, SHEET_WIDTH_IN))))
   }
@@ -591,24 +598,27 @@ export default function Home() {
 
       try {
         const images = await buildImagesForDriveProject(
-          designs.map((design) => ({
-            id: design.id,
-            name: design.name,
-            previewUrl: design.previewUrl,
-            originalUrl: design.originalUrl,
-            placement: design.placement,
-            size: design.size,
-            customWidth: design.customWidth,
-            customHeight: design.customHeight,
-            quantity: design.quantity,
-            keepUpright: design.keepUpright,
-            pixelWidth: design.pixelWidth,
-            pixelHeight: design.pixelHeight,
-          })),
+          designs.map((design) => {
+            const printSize = getDesignSize(design)
+            return {
+              id: design.id,
+              name: design.name,
+              previewUrl: design.previewUrl,
+              originalUrl: design.originalUrl,
+              placement: design.placement,
+              size: design.size,
+              customWidth: design.customWidth,
+              customHeight: design.customHeight,
+              quantity: design.quantity,
+              keepUpright: design.keepUpright,
+              pixelWidth: design.pixelWidth,
+              pixelHeight: design.pixelHeight,
+              sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
+            }
+          }),
           {
             folderId: drive.folderId,
             customerName: customerName.trim(),
-            sheetDriveFileId: drive.fileId,
           },
         )
         const saved = await autoSaveProjectJson({
@@ -731,7 +741,7 @@ export default function Home() {
           <h2 className="design-count">Your designs ({designs.length})</h2>
         </div>
         {designs.length === 0 && <div className="empty-designs"><FileImage size={24} /><span>Your uploaded designs will appear here.</span></div>}
-        <div className="design-list">{designs.map((design) => <div className="design-row" key={design.id}><div className="drag-handle">⋮<br />⋮</div><button type="button" className={`thumb ${design.previewUrl ? 'has-art' : design.color}`} disabled={!design.previewUrl} onClick={() => design.previewUrl && setInspectId(design.id)} aria-label={`Inspect ${design.name}`}>{design.previewUrl ? <img src={design.previewUrl} alt="" /> : <><ImageIcon size={24} /><small>ARTWORK</small></>}<span className="thumb-status">Click to inspect</span></button><div className="design-name"><strong>{design.name}</strong>{(() => { const dpi = printDpi(design.pixelWidth, getDesignWidth(design)); const quality = qualityFromDpi(dpi); return <span className={quality.tone === 'good' ? 'quality' : quality.tone === 'poor' ? 'quality-warn' : 'transparent'}>{quality.tone === 'good' ? <Check size={13} /> : null}{dpi ? `${dpi} DPI · ${quality.label}` : 'Click art to check quality'}</span> })()}{design.enhanced && <span className="quality">Upscaled</span>}<button type="button" className="compare-link" disabled={!design.previewUrl} onClick={() => setInspectId(design.id)}>View large · Upscale</button></div><label className="object-type">What are you printing?<select aria-label={`What are you printing for ${design.name}`} value={design.placement} onChange={(e) => { const nextPlacement = e.target.value; updateDesign(design.id, { placement: nextPlacement, size: nextPlacement === 'Custom' ? '0 × 0 in' : (sizeOptions[nextPlacement as keyof typeof sizeOptions] ?? sizeOptions.default)[0], customWidth: nextPlacement === 'Custom' ? '' : design.customWidth, customHeight: nextPlacement === 'Custom' ? '' : design.customHeight }) }}>{placements.map((option) => <option key={option}>{option}</option>)}</select></label>{design.placement === 'Custom' ? <div className="custom-dimensions"><span>Custom image size (max {SHEET_WIDTH_IN} in wide × 199 in high)</span><div><label>Width (in)<input aria-label={`Custom width for ${design.name}`} type="number" min="0.25" max={SHEET_WIDTH_IN} step="0.25" placeholder="Width" value={design.customWidth} onChange={(e) => { const width = Math.min(SHEET_WIDTH_IN, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(width); updateDesign(design.id, { customWidth: value, size: `${value || '0'} × ${design.customHeight || '0'} in` }) }} /></label><label>Height (in)<input aria-label={`Custom height for ${design.name}`} type="number" min="0.25" max="199" step="0.25" placeholder="Height" value={design.customHeight} onChange={(e) => { const height = Math.min(199, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(height); updateDesign(design.id, { customHeight: value, size: `${design.customWidth || '0'} × ${value || '0'} in` }) }} /></label></div></div> : <label>Size<select aria-label={`Print size for ${design.name}`} value={design.size} onChange={(e) => updateDesign(design.id, { size: e.target.value })}>{(sizeOptions[design.placement as keyof typeof sizeOptions] ?? sizeOptions.default).map((option) => <option key={option}>{option}</option>)}</select></label>}<label>Quantity<div className="number-input"><button aria-label="Decrease design quantity" onClick={() => updateDesign(design.id, { quantity: Math.max(1, design.quantity - 1) })}><Minus size={13} /></button><input aria-label={`Quantity for ${design.name}`} type="number" min="1" step="1" value={design.quantity} onChange={(event) => updateDesign(design.id, { quantity: Math.max(1, Math.floor(Number(event.target.value) || 1)) })} /><button aria-label="Increase design quantity" onClick={() => updateDesign(design.id, { quantity: design.quantity + 1 })}><Plus size={13} /></button></div></label><div className="design-actions-stack"><button type="button" className="row-action" title="Replace artwork" aria-label={`Replace artwork for ${design.name}`} onClick={() => startReplace(design.id)}><Replace size={15} /></button><button type="button" className="row-action" title="Duplicate this design" aria-label={`Duplicate ${design.name}`} onClick={() => setDuplicateTargetId(design.id)}><Copy size={15} /></button><button type="button" className={`row-action${design.keepUpright ? " upright" : ""}`} aria-pressed={design.keepUpright} title={design.keepUpright ? "Keep this design upright" : "Allow turning to fit more across"} aria-label={design.keepUpright ? `Keep ${design.name} upright` : `Allow turning ${design.name}`} onClick={() => updateDesign(design.id, { keepUpright: !design.keepUpright })}><RotateCw size={15} /></button><button type="button" className="row-action danger" title="Remove design" aria-label={`Remove ${design.name}`} onClick={() => removeDesign(design.id)}><Trash2 size={15} /></button></div></div>)}</div>
+        <div className="design-list">{designs.map((design) => <div className="design-row" key={design.id}><div className="drag-handle">⋮<br />⋮</div><button type="button" className={`thumb ${design.previewUrl ? 'has-art' : design.color}`} disabled={!design.previewUrl} onClick={() => design.previewUrl && setInspectId(design.id)} aria-label={`Inspect ${design.name}`}>{design.previewUrl ? <img src={design.previewUrl} alt="" /> : <><ImageIcon size={24} /><small>{design.needsReupload ? 'RE-UPLOAD' : 'ARTWORK'}</small></>}<span className="thumb-status">{design.needsReupload ? 'Replace artwork' : 'Click to inspect'}</span></button><div className="design-name"><strong>{design.name}</strong>{design.needsReupload ? <span className="quality-warn">Re-upload this image</span> : (() => { const dpi = printDpi(design.pixelWidth, getDesignWidth(design)); const quality = qualityFromDpi(dpi); return <span className={quality.tone === 'good' ? 'quality' : quality.tone === 'poor' ? 'quality-warn' : 'transparent'}>{quality.tone === 'good' ? <Check size={13} /> : null}{dpi ? `${dpi} DPI · ${quality.label}` : 'Click art to check quality'}</span> })()}{design.enhanced && <span className="quality">Upscaled</span>}<button type="button" className="compare-link" disabled={!design.previewUrl} onClick={() => setInspectId(design.id)}>View large · Upscale</button></div><label className="object-type">What are you printing?<select aria-label={`What are you printing for ${design.name}`} value={design.placement} onChange={(e) => { const nextPlacement = e.target.value; updateDesign(design.id, { placement: nextPlacement, size: nextPlacement === 'Custom' ? '0 × 0 in' : (sizeOptions[nextPlacement as keyof typeof sizeOptions] ?? sizeOptions.default)[0], customWidth: nextPlacement === 'Custom' ? '' : design.customWidth, customHeight: nextPlacement === 'Custom' ? '' : design.customHeight }) }}>{placements.map((option) => <option key={option}>{option}</option>)}</select></label>{design.placement === 'Custom' ? <div className="custom-dimensions"><span>Custom image size (max {SHEET_WIDTH_IN} in wide × 199 in high)</span><div><label>Width (in)<input aria-label={`Custom width for ${design.name}`} type="number" min="0.25" max={SHEET_WIDTH_IN} step="0.25" placeholder="Width" value={design.customWidth} onChange={(e) => { const width = Math.min(SHEET_WIDTH_IN, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(width); updateDesign(design.id, { customWidth: value, size: `${value || '0'} × ${design.customHeight || '0'} in` }) }} /></label><label>Height (in)<input aria-label={`Custom height for ${design.name}`} type="number" min="0.25" max="199" step="0.25" placeholder="Height" value={design.customHeight} onChange={(e) => { const height = Math.min(199, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(height); updateDesign(design.id, { customHeight: value, size: `${design.customWidth || '0'} × ${value || '0'} in` }) }} /></label></div></div> : <label>Size<select aria-label={`Print size for ${design.name}`} value={design.size} onChange={(e) => updateDesign(design.id, { size: e.target.value })}>{(sizeOptions[design.placement as keyof typeof sizeOptions] ?? sizeOptions.default).map((option) => <option key={option}>{option}</option>)}</select></label>}<label>Quantity<div className="number-input"><button aria-label="Decrease design quantity" onClick={() => updateDesign(design.id, { quantity: Math.max(1, design.quantity - 1) })}><Minus size={13} /></button><input aria-label={`Quantity for ${design.name}`} type="number" min="1" step="1" value={design.quantity} onChange={(event) => updateDesign(design.id, { quantity: Math.max(1, Math.floor(Number(event.target.value) || 1)) })} /><button aria-label="Increase design quantity" onClick={() => updateDesign(design.id, { quantity: design.quantity + 1 })}><Plus size={13} /></button></div></label><div className="design-actions-stack"><button type="button" className="row-action" title="Replace artwork" aria-label={`Replace artwork for ${design.name}`} onClick={() => startReplace(design.id)}><Replace size={15} /></button><button type="button" className="row-action" title="Duplicate this design" aria-label={`Duplicate ${design.name}`} onClick={() => setDuplicateTargetId(design.id)}><Copy size={15} /></button><button type="button" className={`row-action${design.keepUpright ? " upright" : ""}`} aria-pressed={design.keepUpright} title={design.keepUpright ? "Keep this design upright" : "Allow turning to fit more across"} aria-label={design.keepUpright ? `Keep ${design.name} upright` : `Allow turning ${design.name}`} onClick={() => updateDesign(design.id, { keepUpright: !design.keepUpright })}><RotateCw size={15} /></button><button type="button" className="row-action danger" title="Remove design" aria-label={`Remove ${design.name}`} onClick={() => removeDesign(design.id)}><Trash2 size={15} /></button></div></div>)}</div>
         <div className="design-footer-actions"><button className="add-design" disabled={!customerName.trim()} onClick={() => { if (customerName.trim()) inputRef.current?.click() }}><Plus size={20} /> Add Another Design</button><button className="duplicate-design" disabled={designs.length === 0} onClick={duplicateLatestDesign}><Copy size={18} /> Duplicate Design</button></div>
         {duplicateTargetId !== null && <div className="duplicate-picker"><div><strong>What are you printing?</strong><span>Choose the garment or placement for this copy.</span></div><div className="duplicate-picker-options">{placements.map((item) => <button key={item} type="button" onClick={() => duplicateDesign(duplicateTargetId, item)}><PlacementIcon placement={item} /><span>{item}</span></button>)}</div><button className="cancel-duplicate" type="button" onClick={() => setDuplicateTargetId(null)}>Cancel</button></div>}
         {sizeGuidePlacement && <div className="size-popup-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSizeGuidePlacement(null) }}><section className="size-popup" role="dialog" aria-modal="true" aria-labelledby="size-popup-title"><div className="size-popup-header"><div><span className="eyebrow">Recommended sizes</span><h2 id="size-popup-title">{sizeGuidePlacement}</h2><p>These are the max print sizes for this placement. Choose the matching size in the size menu.</p></div><button className="size-popup-close" aria-label="Close recommended sizes" onClick={() => setSizeGuidePlacement(null)}>×</button></div><div className="size-recommendations">{(sizeOptions[sizeGuidePlacement as keyof typeof sizeOptions] ?? sizeOptions.default).map((option) => <div key={option} className="size-recommendation"><strong>{option.split(' · ')[0]}</strong><span>{option.includes(' · ') ? option.split(' · ')[1] : option}</span></div>)}</div><button className="size-popup-done" onClick={() => setSizeGuidePlacement(null)}>Continue</button></section></div>}
