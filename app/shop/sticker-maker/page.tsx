@@ -39,7 +39,8 @@ import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/accepted-uploads'
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
 import { autoSaveProjectJson } from '@/lib/project/auto-save'
-import { buildImagesForDriveProject, resolveProjectImageUrls } from '@/lib/project/images'
+import { buildImagesForDriveProject } from '@/lib/project/images'
+import { restoreDesignsFromProject } from '@/lib/project/restore'
 import { projectJsonFileName } from '@/lib/project/file-name'
 import { PROJECT_FORMAT, type SspProject } from '@/lib/project/types'
 
@@ -201,6 +202,7 @@ export default function StickerMakerPage() {
   const previewGen = useRef(0)
   const shapesRefreshGen = useRef(0)
   const reopenFromUrlDone = useRef(false)
+  const pendingAutoPreview = useRef(false)
 
   const mediaWidthIn = UV_DTF_MEDIA_WIDTH_IN
   const mediaHeightIn = uvLengthIn
@@ -509,6 +511,18 @@ export default function StickerMakerPage() {
     })
   }, [layoutKey, customerName])
 
+  useEffect(() => {
+    if (!pendingAutoPreview.current) return
+    if (!customerName.trim() || designs.length === 0 || previewBusy || saving) return
+    if (!designs.some((design) => design.previewUrl)) {
+      pendingAutoPreview.current = false
+      return
+    }
+    pendingAutoPreview.current = false
+    void previewStickerSheet()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutKey, customerName, designs.length])
+
   function sheetPxPerIn(maxEdge: number, preferred: number) {
     return Math.max(24, Math.min(preferred, Math.floor(maxEdge / Math.max(printHeight, mediaWidthIn))))
   }
@@ -599,9 +613,11 @@ export default function StickerMakerPage() {
       const driveMatch = options?.driveFiles?.find((file) =>
         file.name.toLowerCase().includes(design.name.replace(/\.[^.]+$/, '').toLowerCase().slice(0, 20)),
       )
+      const printSize = getDesignSize(design)
       images.push({
         id: design.id,
         name: design.name,
+        placement: design.placement,
         size: design.size,
         customWidth: design.customWidth,
         customHeight: design.customHeight,
@@ -609,9 +625,10 @@ export default function StickerMakerPage() {
         keepUpright: design.keepUpright,
         pixelWidth: design.pixelWidth,
         pixelHeight: design.pixelHeight,
+        sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
         ...(dataUrl ? { dataUrl } : {}),
         ...(driveMatch ? { driveFileId: driveMatch.id } : {}),
-        cut: { shape: 'box' as const, offsetMm: UV_BORDER_MM },
+        cut: { shape: 'box' as const, offsetMm: UV_BORDER_MM, squareCutMm: UV_BORDER_MM },
       })
     }
     const now = new Date().toISOString()
@@ -660,39 +677,38 @@ export default function StickerMakerPage() {
     if (typeof project.revision === 'number') setProjectRevision(project.revision)
     if (project.createdAt) setProjectCreatedAt(project.createdAt)
     setJobStatus('Loading project art…')
-    const imageUrls = await resolveProjectImageUrls(project.images)
-    /** Ignore legacy per-image shape / offsetMm — always Square Cut 2.5 mm when Cut is on. */
-    const nextDesigns: Design[] = (project.images || []).map((image, index) => {
-      const url = imageUrls[index] || image.dataUrl || ''
-      return {
-        id: typeof image.id === 'number' ? image.id : Date.now() + index,
-        designNumber: index + 1,
-        name: image.name || image.fileName || `Sticker ${index + 1}`,
-        placement: 'Custom' as const,
-        size:
-          image.size ||
-          stickerSizeLabel(image.customWidth || DEFAULT_STICKER_W, image.customHeight || DEFAULT_STICKER_H),
-        customWidth: image.customWidth || DEFAULT_STICKER_W,
-        customHeight: image.customHeight || DEFAULT_STICKER_H,
-        quantity: Math.max(1, image.quantity || 1),
-        notes: '',
-        color: index % 2 ? 'red' : 'blue',
-        originalUrl: url,
-        previewUrl: url,
-        enhanced: false,
-        pixelWidth: image.pixelWidth || 0,
-        pixelHeight: image.pixelHeight || 0,
-        keepUpright: Boolean(image.keepUpright),
-      }
+    setSaveError(null)
+    const { designs: nextDesigns, missingArtCount } = await restoreDesignsFromProject(project.images, {
+      placements: ['Custom'],
+      sizeOptions: { Custom: [], default: [] },
+      recommendedSize: () => stickerSizeLabel(DEFAULT_STICKER_W, DEFAULT_STICKER_H),
+      forcePlacement: 'Custom',
+      defaultCustomWidth: DEFAULT_STICKER_W,
+      defaultCustomHeight: DEFAULT_STICKER_H,
     })
+    const stickerDesigns: Design[] = nextDesigns.map((design) => ({
+      ...design,
+      placement: 'Custom' as const,
+    }))
     setDesigns((current) => {
       for (const design of current) {
-        revokeUnusedUrls([design.originalUrl, design.previewUrl], nextDesigns)
+        revokeUnusedUrls([design.originalUrl, design.previewUrl], stickerDesigns)
       }
-      return nextDesigns
+      return stickerDesigns
     })
-    setJobStatus(`Reopened “${project.name || label || project.projectId}” ✓`)
-    setSaveError(null)
+    const title = project.name || label || project.projectId
+    if (missingArtCount > 0) {
+      setJobStatus(
+        `Reopened “${title}” — ${missingArtCount} design${missingArtCount === 1 ? '' : 's'} need re-upload`,
+      )
+      setSaveError(
+        `${missingArtCount} design${missingArtCount === 1 ? '' : 's'} could not load artwork from Drive. Replace those images, then Preview again.`,
+      )
+      pendingAutoPreview.current = stickerDesigns.some((design) => design.previewUrl)
+    } else {
+      setJobStatus(`Reopened “${title}” ✓`)
+      pendingAutoPreview.current = stickerDesigns.length > 0
+    }
     setBuilt(false)
     setPreviewing(false)
   }
@@ -712,20 +728,25 @@ export default function StickerMakerPage() {
         try {
           // Drive write: upload art separately and keep JSON small (no dataUrls).
           const driveImages = await buildImagesForDriveProject(
-            designs.map((design) => ({
-              id: design.id,
-              name: design.name,
-              previewUrl: design.previewUrl,
-              originalUrl: design.originalUrl,
-              size: design.size,
-              customWidth: design.customWidth,
-              customHeight: design.customHeight,
-              quantity: design.quantity,
-              keepUpright: design.keepUpright,
-              pixelWidth: design.pixelWidth,
-              pixelHeight: design.pixelHeight,
-              cut: { shape: 'box', offsetMm: UV_BORDER_MM, squareCutMm: UV_BORDER_MM },
-            })),
+            designs.map((design) => {
+              const printSize = getDesignSize(design)
+              return {
+                id: design.id,
+                name: design.name,
+                previewUrl: design.previewUrl,
+                originalUrl: design.originalUrl,
+                placement: design.placement,
+                size: design.size,
+                customWidth: design.customWidth,
+                customHeight: design.customHeight,
+                quantity: design.quantity,
+                keepUpright: design.keepUpright,
+                pixelWidth: design.pixelWidth,
+                pixelHeight: design.pixelHeight,
+                sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
+                cut: { shape: 'box', offsetMm: UV_BORDER_MM, squareCutMm: UV_BORDER_MM },
+              }
+            }),
             {
               folderId: driveFolderId,
               customerName: customerName.trim(),
@@ -933,24 +954,28 @@ export default function StickerMakerPage() {
           includeDataUrls: false,
         })
         const images = await buildImagesForDriveProject(
-          designs.map((design) => ({
-            id: design.id,
-            name: design.name,
-            previewUrl: design.previewUrl,
-            originalUrl: design.originalUrl,
-            size: design.size,
-            customWidth: design.customWidth,
-            customHeight: design.customHeight,
-            quantity: design.quantity,
-            keepUpright: design.keepUpright,
-            pixelWidth: design.pixelWidth,
-            pixelHeight: design.pixelHeight,
-            cut: { shape: 'box', offsetMm: UV_BORDER_MM, squareCutMm: UV_BORDER_MM },
-          })),
+          designs.map((design) => {
+            const printSize = getDesignSize(design)
+            return {
+              id: design.id,
+              name: design.name,
+              previewUrl: design.previewUrl,
+              originalUrl: design.originalUrl,
+              placement: design.placement,
+              size: design.size,
+              customWidth: design.customWidth,
+              customHeight: design.customHeight,
+              quantity: design.quantity,
+              keepUpright: design.keepUpright,
+              pixelWidth: design.pixelWidth,
+              pixelHeight: design.pixelHeight,
+              sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
+              cut: { shape: 'box', offsetMm: UV_BORDER_MM, squareCutMm: UV_BORDER_MM },
+            }
+          }),
           {
             folderId: drive.folderId,
             customerName: customerName.trim(),
-            sheetDriveFileId: drive.fileId,
           },
         )
         const saved = await autoSaveProjectJson({

@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.3.4] — 2026-10-14
+
+### Fixed
+- Reopen Project fully restores editable jobs: garment/shirt placement, print sizes
+  (`sizeIn`), customer name, and design art from Drive — then auto-builds the gang
+  sheet preview so the preview screen shows the sheet immediately.
+- Project JSON no longer stores the composed sheet PNG as each design’s art id (that
+  broke thumbs and preview on reopen). Missing art prompts a clear re-upload.
+
 ## [2.3.3] — 2026-10-14
 
 ### Fixed
