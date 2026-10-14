@@ -21,8 +21,7 @@ import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
 import { isEmbedSearchParam } from '@/lib/embed'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
-import { autoSaveProjectJson } from '@/lib/project/auto-save'
-import { buildImagesForDriveProject } from '@/lib/project/images'
+import { saveProjectWithArt } from '@/lib/project/auto-save'
 import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
 
 type Design = {
@@ -628,8 +627,20 @@ function HomeBuilder() {
       setDriveFolderUrl(drive.folderUrl)
 
       /** SPEC E3: write named project JSON after files land — customer never waits on this. */
-      void buildImagesForDriveProject(
-        designs.map((design) => {
+      void saveProjectWithArt({
+        folderId: drive.folderId,
+        source: 'customer-site',
+        name: customerName.trim(),
+        customer: { name: customerName.trim() },
+        product: {
+          printType: 'uv-dtf',
+          rollWidthIn: SHEET_WIDTH_IN,
+          widthIn: SHEET_WIDTH_IN,
+          heightIn: billedLength,
+        },
+        cut: { enabled: cutOut },
+        fromUpload: true,
+        designs: designs.map((design) => {
           const printSize = piecePrintSize({
             placement: design.placement,
             size: design.size,
@@ -655,28 +666,12 @@ function HomeBuilder() {
             sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
           }
         }),
-        {
-          folderId: drive.folderId,
-          customerName: customerName.trim(),
-        },
-      )
-        .then((images) =>
-          autoSaveProjectJson({
-            folderId: drive.folderId,
-            source: 'customer-site',
-            name: customerName.trim(),
-            customer: { name: customerName.trim() },
-            product: {
-              printType: 'uv-dtf',
-              rollWidthIn: SHEET_WIDTH_IN,
-              widthIn: SHEET_WIDTH_IN,
-              heightIn: billedLength,
-            },
-            cut: { enabled: cutOut },
-            images,
-            fromUpload: true,
-          }),
-        )
+      })
+        .then((saved) => {
+          if (saved.artError) {
+            console.warn('[project] customer-site art upload failed', saved.artError)
+          }
+        })
         .catch((err) => {
           console.error('[project] customer-site auto-save failed', err)
         })

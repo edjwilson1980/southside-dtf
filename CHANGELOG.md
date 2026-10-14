@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.3.6] — 2026-10-14
+
+### Fixed
+- Project JSON now lands in Drive even when design-art uploads fail: the
+  `{Customer}.ssp.json` is written first with design metadata, then art is attached.
+  Drive tagging/rename problems no longer make the write report as failed.
+- Shop Builder gets a **Save Project** button (top right) and Sticker Maker **Save Job**
+  writes to Drive before any sheet is built — the job folder is created on demand.
+- Clear, specific error text when a Drive write fails, plus server-side logging.
+- Connect Drive page: the test button now also writes a `Drive check.ssp.json` using the
+  real project-JSON code path and reports which step failed.
+
 ## [2.3.5] — 2026-10-14
 
 ### Fixed

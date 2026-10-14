@@ -250,15 +250,26 @@ async function driveAccessToken() {
   return accessToken
 }
 
+/**
+ * Tag a file for Reopen Project search. Tags are a convenience — never let a
+ * tagging failure make the project JSON itself look like it was not written.
+ */
 async function patchDriveAppProperties(fileId: string, appProperties: Record<string, string>) {
-  const auth = await driveAuth()
-  const drive = google.drive({ version: 'v3', auth })
-  await drive.files.update({
-    fileId,
-    requestBody: { appProperties },
-    fields: 'id',
-    supportsAllDrives: true,
-  })
+  try {
+    const auth = await driveAuth()
+    const drive = google.drive({ version: 'v3', auth })
+    await drive.files.update({
+      fileId,
+      requestBody: { appProperties },
+      fields: 'id',
+      supportsAllDrives: true,
+    })
+  } catch (err) {
+    console.error('[drive] appProperties tag failed', {
+      fileId,
+      message: err instanceof Error ? err.message : String(err),
+    })
+  }
 }
 
 function isSspJsonName(name?: string | null) {
@@ -363,15 +374,22 @@ export async function upsertTextFileInFolder(
 
     // Rename when the project name (file name) changed, or migrating off project.ssp.json.
     if (existingName !== name) {
-      await drive.files.update({
-        fileId: existingId,
-        requestBody: {
-          name,
-          ...(appProperties ? { appProperties } : {}),
-        },
-        fields: 'id',
-        supportsAllDrives: true,
-      })
+      try {
+        await drive.files.update({
+          fileId: existingId,
+          requestBody: {
+            name,
+            ...(appProperties ? { appProperties } : {}),
+          },
+          fields: 'id',
+          supportsAllDrives: true,
+        })
+      } catch (err) {
+        console.error('[drive] rename project JSON failed', {
+          fileId: existingId,
+          message: err instanceof Error ? err.message : String(err),
+        })
+      }
     } else if (appProperties) {
       await patchDriveAppProperties(existingId, appProperties)
     }
@@ -549,27 +567,66 @@ export async function downloadDriveFileBytes(fileId: string) {
   }
 }
 
-/** Smoke-test: create a tiny folder then delete it. */
+/**
+ * Smoke-test the exact production path: create a job folder, then write a
+ * `Drive check.ssp.json` into it with the same upsert used for real projects.
+ * Reports which step failed so the shop can act on it.
+ */
 export async function verifyDriveWriteAccess() {
   const auth = await driveAuth()
   const drive = google.drive({ version: 'v3', auth })
   const parent = driveParentFolderId()
-  const created = await drive.files.create({
-    requestBody: {
-      name: `Drive connect check ${new Date().toISOString()}`,
-      mimeType: 'application/vnd.google-apps.folder',
-      parents: [parent],
-    },
-    fields: 'id,name,webViewLink',
-    supportsAllDrives: true,
-  })
-  const folderId = created.data.id
-  if (!folderId) throw new Error('Drive check failed: no folder id.')
-  // Leave the check folder so the shop can see it; they can delete it.
-  return {
-    folderId,
-    folderName: created.data.name || 'Drive connect check',
-    folderUrl: created.data.webViewLink || `https://drive.google.com/drive/folders/${folderId}`,
-    mode: isGoogleDriveOAuthConfigured() ? 'oauth' : 'service-account',
+  let step = 'create folder'
+  try {
+    const created = await drive.files.create({
+      requestBody: {
+        name: `Drive connect check ${new Date().toISOString()}`,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: [parent],
+      },
+      fields: 'id,name,webViewLink',
+      supportsAllDrives: true,
+    })
+    const folderId = created.data.id
+    if (!folderId) throw new Error('Google Drive did not return a folder id.')
+
+    step = 'write project JSON'
+    const check = await upsertTextFileInFolder(
+      folderId,
+      'Drive check.ssp.json',
+      JSON.stringify(
+        { format: 'ssp-drive-check', checkedAt: new Date().toISOString(), parent },
+        null,
+        2,
+      ),
+      'application/json',
+      { ssp_check: '1' },
+    )
+
+    step = 'update project JSON'
+    await upsertTextFileInFolder(
+      folderId,
+      'Drive check.ssp.json',
+      JSON.stringify(
+        { format: 'ssp-drive-check', checkedAt: new Date().toISOString(), parent, pass: 2 },
+        null,
+        2,
+      ),
+      'application/json',
+      { ssp_check: '2' },
+    )
+
+    // Leave the check folder so the shop can see it; they can delete it.
+    return {
+      folderId,
+      folderName: created.data.name || 'Drive connect check',
+      folderUrl: created.data.webViewLink || `https://drive.google.com/drive/folders/${folderId}`,
+      jsonFileId: check.id,
+      jsonFileUrl: check.webViewLink,
+      mode: isGoogleDriveOAuthConfigured() ? 'oauth' : 'service-account',
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`Drive check failed at "${step}": ${message}`)
   }
 }

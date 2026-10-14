@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import {
+  createCustomerDriveFolder,
   isGoogleDriveConfigured,
   uploadBufferToFolder,
   uploadCutterFileToFolder,
@@ -10,9 +11,12 @@ import { signProjectPayload } from '@/lib/project/sign'
 import { PROJECT_FORMAT } from '@/lib/project/types'
 
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 type Body = {
   folderId?: string
+  /** Create the customer job folder first when no folder exists yet (Save Job before build). */
+  createFolder?: { customerName?: string; stamp?: string }
   content?: string
   name?: string
   mimeType?: string
@@ -35,17 +39,19 @@ function maybeSignProjectJson(name: string, content: string): string {
   }
 }
 
-/** Writes a small file (job.json, project.ssp.json, or work-order PDF) into an existing Drive job folder. */
+/** Writes a small file (job.json, project.ssp.json, or work-order PDF) into a Drive job folder. */
 export async function POST(req: Request) {
+  let fileName = 'job.json'
   try {
     if (!isGoogleDriveConfigured()) {
       return NextResponse.json({ error: 'Google Drive is not connected yet.' }, { status: 503 })
     }
 
     const body = (await req.json()) as Body
-    const folderId = String(body.folderId ?? '').trim()
+    let folderId = String(body.folderId ?? '').trim()
     let content = String(body.content ?? '')
     const name = String(body.name ?? 'job.json').trim() || 'job.json'
+    fileName = name
     const encoding = body.encoding === 'base64' ? 'base64' : 'utf8'
     const mimeType =
       String(body.mimeType ?? '').trim() ||
@@ -59,16 +65,30 @@ export async function POST(req: Request) {
       body.appProperties && typeof body.appProperties === 'object'
         ? Object.fromEntries(
             Object.entries(body.appProperties)
-              .filter(([, value]) => value != null)
+              .filter(([, value]) => value != null && String(value).trim() !== '')
               .map(([key, value]) => [key, String(value)]),
           )
         : undefined
 
-    if (!folderId) {
-      return NextResponse.json({ error: 'folderId is required.' }, { status: 400 })
-    }
     if (!content) {
       return NextResponse.json({ error: 'File content is required.' }, { status: 400 })
+    }
+
+    let folderUrl: string | undefined
+    let folderName: string | undefined
+    if (!folderId) {
+      const customerName = String(body.createFolder?.customerName ?? '').trim()
+      const stamp = String(body.createFolder?.stamp ?? '').trim()
+      if (!customerName || !stamp) {
+        return NextResponse.json(
+          { error: 'folderId is required (or createFolder with customerName and stamp).' },
+          { status: 400 },
+        )
+      }
+      const folder = await createCustomerDriveFolder(customerName, stamp)
+      folderId = folder.folderId
+      folderUrl = folder.folderUrl
+      folderName = folder.folderName
     }
 
     if (encoding === 'utf8' && name.toLowerCase().endsWith('.json')) {
@@ -82,18 +102,18 @@ export async function POST(req: Request) {
           ? await upsertTextFileInFolder(folderId, name, content, mimeType, appProperties)
           : await uploadCutterFileToFolder(folderId, name, content, mimeType)
 
-    if (encoding === 'base64' && appProperties) {
-      // Binary uploads skip upsert path — properties set only for JSON upserts above.
-    }
-
     return NextResponse.json({
       ok: true,
       id: file.id,
       name: file.name,
       webViewLink: file.webViewLink,
+      folderId,
+      folderUrl: folderUrl || `https://drive.google.com/drive/folders/${folderId}`,
+      folderName,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Could not write file to Google Drive.'
+    console.error('[drive/job-record] failed', { fileName, message })
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

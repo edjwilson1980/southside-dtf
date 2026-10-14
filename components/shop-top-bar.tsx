@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { FolderOpen } from 'lucide-react'
+import { FolderOpen, Save } from 'lucide-react'
 import { ShopNav } from '@/components/shop-nav'
 import { ReopenProjectDialog } from '@/components/reopen-project-dialog'
 import type { SspProject } from '@/lib/project/types'
@@ -14,15 +14,30 @@ type ShopTopBarProps = {
     project: SspProject,
     meta?: { folderId?: string; fileId?: string },
   ) => void | Promise<void>
+  /** Writes `{Customer}.ssp.json` to Drive now, creating the job folder if needed. */
+  onSaveProject?: () => void
+  saveDisabled?: boolean
+  saving?: boolean
 }
 
-/** Shop Builder title row + Reopen Project (top right) — SPEC E1. */
-export function ShopTopBar({ onOpenProject }: ShopTopBarProps) {
+/** Shop Builder title row + Save / Reopen Project (top right) — SPEC E1. */
+export function ShopTopBar({ onOpenProject, onSaveProject, saveDisabled, saving }: ShopTopBarProps) {
   const [reopenOpen, setReopenOpen] = useState(false)
 
   return (
     <>
       <div className="shop-utility-bar" aria-label="Project actions">
+        {onSaveProject ? (
+          <button
+            type="button"
+            className="sticker-job-btn"
+            disabled={saveDisabled}
+            title={saveDisabled && !saving ? 'Enter a customer name first' : undefined}
+            onClick={onSaveProject}
+          >
+            <Save size={16} /> {saving ? 'Saving…' : 'Save Project'}
+          </button>
+        ) : null}
         <button
           type="button"
           className="sticker-job-btn"

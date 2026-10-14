@@ -19,8 +19,7 @@ import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/accepted-uploads'
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
 import { ShopTopBar } from '@/components/shop-top-bar'
-import { autoSaveProjectJson } from '@/lib/project/auto-save'
-import { buildImagesForDriveProject } from '@/lib/project/images'
+import { saveProjectWithArt } from '@/lib/project/auto-save'
 import { restoreDesignsFromProject } from '@/lib/project/restore'
 import type { ProjectSource, SspProject } from '@/lib/project/types'
 
@@ -189,6 +188,8 @@ export default function Home() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null)
+  const [driveFolderId, setDriveFolderId] = useState<string | null>(null)
+  const [projectSaving, setProjectSaving] = useState(false)
   const [sheetPreviewUrl, setSheetPreviewUrl] = useState<string | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const [previewBusy, setPreviewBusy] = useState(false)
@@ -212,6 +213,7 @@ export default function Home() {
     setProjectCreatedAt(project.createdAt)
     setProjectSource(project.source || 'shop-builder')
     if (meta?.folderId) {
+      setDriveFolderId(meta.folderId)
       setDriveFolderUrl(`https://drive.google.com/drive/folders/${meta.folderId}`)
     }
     setProjectStatus('Loading project art…')
@@ -563,6 +565,91 @@ export default function Home() {
     }
   }
 
+  function designArtInputs() {
+    return designs.map((design) => {
+      const printSize = getDesignSize(design)
+      return {
+        id: design.id,
+        name: design.name,
+        previewUrl: design.previewUrl,
+        originalUrl: design.originalUrl,
+        placement: design.placement,
+        size: design.size,
+        customWidth: design.customWidth,
+        customHeight: design.customHeight,
+        quantity: design.quantity,
+        keepUpright: design.keepUpright,
+        pixelWidth: design.pixelWidth,
+        pixelHeight: design.pixelHeight,
+        sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
+      }
+    })
+  }
+
+  /**
+   * Write `{Customer}.ssp.json` to Drive. Creates the job folder when none exists
+   * yet (Save Project before a build). Never throws — reports via status/error.
+   */
+  async function saveProjectJsonToDrive(options: {
+    folderId?: string
+    fromUpload: boolean
+    heightIn: number
+  }): Promise<boolean> {
+    const name = customerName.trim()
+    try {
+      const saved = await saveProjectWithArt({
+        folderId: options.folderId || driveFolderId || undefined,
+        createFolder: options.folderId || driveFolderId ? undefined : { customerName: name, stamp: sheetStamp() },
+        source: projectSource === 'customer-site' ? 'customer-site' : 'shop-builder',
+        projectId,
+        revision: projectRevision,
+        createdAt: projectCreatedAt,
+        name,
+        customer: { name },
+        product: {
+          printType: 'uv-dtf',
+          rollWidthIn: SHEET_WIDTH_IN,
+          widthIn: SHEET_WIDTH_IN,
+          heightIn: options.heightIn,
+        },
+        cut: { enabled: cutOut },
+        designs: designArtInputs(),
+        fromUpload: options.fromUpload,
+      })
+      setProjectId(saved.projectId)
+      setProjectRevision(saved.revision)
+      setProjectCreatedAt(saved.payload.createdAt)
+      setDriveFolderId(saved.folderId)
+      setDriveFolderUrl(saved.folderUrl)
+      const when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+      setProjectStatus(`Saved ${saved.fileName} · ${when} ✓`)
+      if (saved.artError) {
+        setSaveError(`Project JSON saved, but design art did not upload: ${saved.artError}`)
+      }
+      return true
+    } catch (err) {
+      setProjectStatus('Not saved')
+      setSaveError(
+        err instanceof Error
+          ? `Project JSON could not be written to Drive: ${err.message}`
+          : 'Project JSON could not be written to Drive.',
+      )
+      return false
+    }
+  }
+
+  async function saveProjectNow() {
+    if (!customerName.trim() || projectSaving) return
+    setProjectSaving(true)
+    setSaveError(null)
+    setProjectStatus('Saving project…')
+    try {
+      await saveProjectJsonToDrive({ fromUpload: false, heightIn: billedLength })
+    } finally {
+      setProjectSaving(false)
+    }
+  }
+
   async function buildAndStore() {
     if (!customerName.trim() || designs.length === 0 || saving || !previewing) return
     setSaving(true)
@@ -595,64 +682,9 @@ export default function Home() {
         cutterFile,
       })
       setDriveFolderUrl(drive.folderUrl)
+      setDriveFolderId(drive.folderId)
 
-      try {
-        const images = await buildImagesForDriveProject(
-          designs.map((design) => {
-            const printSize = getDesignSize(design)
-            return {
-              id: design.id,
-              name: design.name,
-              previewUrl: design.previewUrl,
-              originalUrl: design.originalUrl,
-              placement: design.placement,
-              size: design.size,
-              customWidth: design.customWidth,
-              customHeight: design.customHeight,
-              quantity: design.quantity,
-              keepUpright: design.keepUpright,
-              pixelWidth: design.pixelWidth,
-              pixelHeight: design.pixelHeight,
-              sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
-            }
-          }),
-          {
-            folderId: drive.folderId,
-            customerName: customerName.trim(),
-          },
-        )
-        const saved = await autoSaveProjectJson({
-          folderId: drive.folderId,
-          source: projectSource === 'customer-site' ? 'customer-site' : 'shop-builder',
-          projectId,
-          revision: projectRevision,
-          createdAt: projectCreatedAt,
-          name: customerName.trim(),
-          customer: { name: customerName.trim() },
-          product: {
-            printType: 'uv-dtf',
-            rollWidthIn: SHEET_WIDTH_IN,
-            widthIn: SHEET_WIDTH_IN,
-            heightIn: billedLength,
-          },
-          cut: { enabled: cutOut },
-          images,
-          fromUpload: true,
-        })
-        setProjectId(saved.projectId)
-        setProjectRevision(saved.revision)
-        setProjectCreatedAt(saved.payload.createdAt)
-        setProjectStatus(
-          `Saved ${saved.fileName} · ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} ✓`,
-        )
-      } catch (err) {
-        setProjectStatus('Not saved — retrying')
-        setSaveError(
-          err instanceof Error
-            ? `Files are in Drive, but the project JSON could not be written: ${err.message}`
-            : 'Files are in Drive, but the project JSON could not be written.',
-        )
-      }
+      await saveProjectJsonToDrive({ folderId: drive.folderId, fromUpload: true, heightIn: billedLength })
 
       setBuilt(true)
       setSheetPreviewOpen(false)
@@ -664,7 +696,12 @@ export default function Home() {
   }
 
   return <main className="builder-shell">
-    <ShopTopBar onOpenProject={(project, meta) => void loadProject(project, meta)} />
+    <ShopTopBar
+      onOpenProject={(project, meta) => void loadProject(project, meta)}
+      onSaveProject={() => void saveProjectNow()}
+      saveDisabled={!customerName.trim() || projectSaving || saving}
+      saving={projectSaving}
+    />
     {projectStatus && <p className="project-status-banner" aria-live="polite">{projectStatus}</p>}
     <ol className="how-to" aria-label="How to build your gang sheet">
       {howToSteps.map((step) => (
