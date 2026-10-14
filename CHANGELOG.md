@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.3.5] — 2026-10-14
+
+### Fixed
+- Custom sizes are a footprint, not an orientation: a portrait design set to 12 × 9 in
+  now prints 9 × 12 instead of shrinking to 6.75 × 9. The packer still turns designs
+  to fit as many as possible on the sheet. Garment presets are unchanged.
+- Reopened projects trim empty space around each design before sizing, so the chosen
+  size applies to the artwork rather than its padding.
+
 ## [2.3.4] — 2026-10-14
 
 ### Fixed

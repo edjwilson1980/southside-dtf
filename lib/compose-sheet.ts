@@ -61,11 +61,26 @@ export function fitWithinBox(
   boxHeightIn: number,
   pixelWidth: number,
   pixelHeight: number,
+  options?: {
+    /**
+     * Treat the box as a footprint, not an orientation: a portrait design in a
+     * 12 × 9 box is printed 9 × 12 instead of shrinking to 6.75 × 9. The packer
+     * turns it afterwards if that fits more on the sheet.
+     */
+    matchOrientation?: boolean
+  },
 ): { widthIn: number; heightIn: number } {
-  const width = Math.max(0, boxWidthIn)
-  const height = Math.max(0, boxHeightIn)
+  let width = Math.max(0, boxWidthIn)
+  let height = Math.max(0, boxHeightIn)
   if (!(pixelWidth > 0) || !(pixelHeight > 0) || width <= 0 || height <= 0) {
     return { widthIn: width, heightIn: height }
+  }
+  if (options?.matchOrientation && Math.abs(width - height) > EPS) {
+    const artLandscape = pixelWidth > pixelHeight
+    const boxLandscape = width > height
+    if (artLandscape !== boxLandscape) {
+      ;[width, height] = [height, width]
+    }
   }
   const aspect = pixelHeight / pixelWidth
   const byWidth = { widthIn: width, heightIn: width * aspect }
@@ -105,6 +120,14 @@ function pieceBoxInches(piece: PieceSizeInput): { widthIn: number; heightIn: num
  */
 export function piecePrintSize(piece: PieceSizeInput): { widthIn: number; heightIn: number } {
   const box = pieceBoxInches(piece)
+  // Custom W × H is the size the customer wants printed, whichever way the art
+  // is turned. Garment presets stay as max width × height on the shirt.
+  if (piece.placement === 'Custom') {
+    const matched = fitWithinBox(box.widthIn, box.heightIn, piece.pixelWidth, piece.pixelHeight, {
+      matchOrientation: true,
+    })
+    if (matched.widthIn <= SHEET_WIDTH_IN + EPS) return matched
+  }
   return fitWithinBox(box.widthIn, box.heightIn, piece.pixelWidth, piece.pixelHeight)
 }
 
