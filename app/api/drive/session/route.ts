@@ -14,6 +14,8 @@ type SessionBody = {
   customerName?: string
   stamp?: string
   files?: DriveUploadSpec[]
+  /** When set, upload into this existing folder instead of creating a new one. */
+  folderId?: string
   /** window.location.origin — required for browser PUTs to Google (CORS). */
   origin?: string
   /** Small PLT text uploaded by the server into the same job folder. */
@@ -39,6 +41,7 @@ export async function POST(req: Request) {
     const body = (await req.json()) as SessionBody
     const customerName = String(body.customerName ?? '').trim()
     const stamp = String(body.stamp ?? '').trim()
+    const existingFolderId = String(body.folderId ?? '').trim()
     const files = Array.isArray(body.files) ? body.files : []
     const browserOrigin =
       String(body.origin ?? '').trim() ||
@@ -49,11 +52,13 @@ export async function POST(req: Request) {
     const cutterMime = String(body.cutterFile?.mimeType ?? 'text/plain').trim() || 'text/plain'
     const wantsCutter = Boolean(body.cutterFile)
 
-    if (!customerName) {
-      return NextResponse.json({ error: 'Customer name is required.' }, { status: 400 })
-    }
-    if (!stamp) {
-      return NextResponse.json({ error: 'Job stamp is required.' }, { status: 400 })
+    if (!existingFolderId) {
+      if (!customerName) {
+        return NextResponse.json({ error: 'Customer name is required.' }, { status: 400 })
+      }
+      if (!stamp) {
+        return NextResponse.json({ error: 'Job stamp is required.' }, { status: 400 })
+      }
     }
     if (files.length === 0 && !wantsCutter) {
       return NextResponse.json({ error: 'At least one file is required.' }, { status: 400 })
@@ -67,7 +72,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Cutter file needs a name and content.' }, { status: 400 })
     }
 
-    const folder = await createCustomerDriveFolder(customerName, stamp)
+    const folder = existingFolderId
+      ? {
+          folderId: existingFolderId,
+          folderName: customerName || 'Job',
+          folderUrl: `https://drive.google.com/drive/folders/${existingFolderId}`,
+        }
+      : await createCustomerDriveFolder(customerName, stamp)
     const uploads =
       files.length > 0
         ? await createResumableUploadSessions(folder.folderId, files, browserOrigin)

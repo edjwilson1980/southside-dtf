@@ -261,6 +261,16 @@ async function patchDriveAppProperties(fileId: string, appProperties: Record<str
   })
 }
 
+function isSspJsonName(name?: string | null) {
+  const lower = (name || '').trim().toLowerCase()
+  return lower === 'project.ssp.json' || lower.endsWith('.ssp.json')
+}
+
+/**
+ * Find an existing project JSON in a folder.
+ * Lists folder children and filters in JS — Drive's `name contains '.ssp.json'`
+ * is unreliable (prefix/word matching) and can make upsert fail before create.
+ */
 async function findExistingProjectJsonInFolder(
   folderId: string,
   preferredName: string,
@@ -269,13 +279,13 @@ async function findExistingProjectJsonInFolder(
   const auth = await driveAuth()
   const drive = google.drive({ version: 'v3', auth })
   const listed = await drive.files.list({
-    q: `'${folderId}' in parents and trashed = false and (name contains '.ssp.json' or name = 'project.ssp.json')`,
+    q: `'${folderId}' in parents and trashed = false`,
     fields: 'files(id, name, appProperties)',
-    pageSize: 20,
+    pageSize: 100,
     supportsAllDrives: true,
     includeItemsFromAllDrives: true,
   })
-  const files = listed.data.files || []
+  const files = (listed.data.files || []).filter((file) => isSspJsonName(file.name))
   if (files.length === 0) return null
 
   const exact = files.find((file) => file.name === preferredName)
@@ -399,16 +409,24 @@ export async function searchDriveProjects(options: DriveProjectSearchOptions = {
   const auth = await driveAuth()
   const drive = google.drive({ version: 'v3', auth })
   const limit = Math.min(Math.max(options.limit ?? 25, 1), 50)
-  // Named after the project (`Customer Name.ssp.json`) plus legacy `project.ssp.json`.
-  const qParts = [
-    `(name contains '.ssp.json' or name = 'project.ssp.json')`,
-    'trashed = false',
-  ]
+  const qParts = ['trashed = false']
   const query = options.query?.trim() || ''
   const source = options.source?.trim() || ''
 
   if (source && source !== 'all') {
     qParts.push(`appProperties has { key='ssp_source' and value='${source.replace(/'/g, "\\'")}' }`)
+  } else {
+    // Any of our three sources, or the legacy fixed filename.
+    qParts.push(
+      '(' +
+        [
+          `appProperties has { key='ssp_source' and value='shop-builder' }`,
+          `appProperties has { key='ssp_source' and value='customer-site' }`,
+          `appProperties has { key='ssp_source' and value='dtf-stickers' }`,
+          `name = 'project.ssp.json'`,
+        ].join(' or ') +
+        ')',
+    )
   }
 
   // Exact keys: project id, order #, email
@@ -427,13 +445,18 @@ export async function searchDriveProjects(options: DriveProjectSearchOptions = {
   const listed = await drive.files.list({
     q: qParts.join(' and '),
     orderBy: 'modifiedTime desc',
-    pageSize: query && !/^prj_/i.test(query) && !/^\d+$/.test(query) && !query.includes('@') ? 50 : limit,
+    pageSize:
+      query && !/^prj_/i.test(query) && !/^\d+$/.test(query) && !query.includes('@')
+        ? 50
+        : Math.max(limit, 25),
     fields: 'files(id, name, modifiedTime, appProperties, parents, webViewLink)',
     supportsAllDrives: true,
     includeItemsFromAllDrives: true,
   })
 
-  let files = listed.data.files || []
+  let files = (listed.data.files || []).filter(
+    (file) => isSspJsonName(file.name) || Boolean(file.appProperties?.ssp_project_id),
+  )
   if (query && !/^prj_/i.test(query) && !/^\d+$/.test(query) && !query.includes('@')) {
     const needle = query.toLowerCase()
     files = files.filter((file) => {
@@ -490,7 +513,7 @@ export async function findProjectFileByProjectId(projectId: string) {
   const drive = google.drive({ version: 'v3', auth })
   const safe = projectId.replace(/'/g, "\\'")
   const listed = await drive.files.list({
-    q: `(name contains '.ssp.json' or name = 'project.ssp.json') and trashed = false and appProperties has { key='ssp_project_id' and value='${safe}' }`,
+    q: `trashed = false and appProperties has { key='ssp_project_id' and value='${safe}' }`,
     pageSize: 1,
     fields: 'files(id, name, appProperties, parents, webViewLink)',
     supportsAllDrives: true,

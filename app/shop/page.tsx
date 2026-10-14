@@ -20,7 +20,7 @@ import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
 import { ShopTopBar } from '@/components/shop-top-bar'
 import { autoSaveProjectJson } from '@/lib/project/auto-save'
-import { buildImagesWithEmbeddedArt, resolveProjectImageUrls } from '@/lib/project/images'
+import { buildImagesForDriveProject, resolveProjectImageUrls } from '@/lib/project/images'
 import type { ProjectSource, SspProject } from '@/lib/project/types'
 
 type Design = {
@@ -590,7 +590,7 @@ export default function Home() {
       setDriveFolderUrl(drive.folderUrl)
 
       try {
-        const images = await buildImagesWithEmbeddedArt(
+        const images = await buildImagesForDriveProject(
           designs.map((design) => ({
             id: design.id,
             name: design.name,
@@ -605,7 +605,11 @@ export default function Home() {
             pixelWidth: design.pixelWidth,
             pixelHeight: design.pixelHeight,
           })),
-          { sheetDriveFileId: drive.fileId },
+          {
+            folderId: drive.folderId,
+            customerName: customerName.trim(),
+            sheetDriveFileId: drive.fileId,
+          },
         )
         const saved = await autoSaveProjectJson({
           folderId: drive.folderId,
@@ -631,9 +635,13 @@ export default function Home() {
         setProjectStatus(
           `Saved ${saved.fileName} · ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} ✓`,
         )
-      } catch {
+      } catch (err) {
         setProjectStatus('Not saved — retrying')
-        setSaveError('Files are in Drive, but the project JSON could not be written.')
+        setSaveError(
+          err instanceof Error
+            ? `Files are in Drive, but the project JSON could not be written: ${err.message}`
+            : 'Files are in Drive, but the project JSON could not be written.',
+        )
       }
 
       setBuilt(true)

@@ -1,6 +1,7 @@
+import { uploadFilesToExistingDriveFolder, type DriveFileUpload } from '@/lib/upload-to-drive'
 import type { ProjectImageRef } from './types'
 
-/** Browser: turn a blob:/http(s): preview URL into a data URL for the project JSON. */
+/** Browser: turn a blob:/http(s): preview URL into a data URL for local Save Job downloads. */
 export async function urlToDataUrl(url: string): Promise<string> {
   if (!url) return ''
   if (url.startsWith('data:')) return url
@@ -32,9 +33,20 @@ export type DesignArtInput = {
   sizeIn?: ProjectImageRef['sizeIn']
 }
 
+function safeArtFileName(name: string, index: number) {
+  const base =
+    name
+      .replace(/\.[^.]+$/, '')
+      .replace(/[\\/:*?"<>|]+/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 40) || `design-${index + 1}`
+  return `art-${index + 1}-${base}.png`
+}
+
 /**
- * Build image rows for project JSON with embedded art (data URLs).
- * This is what makes Reopen show the actual designs instead of empty/black thumbs.
+ * Build image rows with embedded data URLs — for local Save Job / download only.
+ * Do NOT send this payload to `/api/drive/job-record` (hits Vercel body limits).
  */
 export async function buildImagesWithEmbeddedArt(
   designs: DesignArtInput[],
@@ -73,8 +85,93 @@ export async function buildImagesWithEmbeddedArt(
 }
 
 /**
+ * Build image rows for Drive project JSON: upload each design's art into the job
+ * folder (resumable, outside Vercel), then store only Drive file ids — no dataUrls.
+ */
+export async function buildImagesForDriveProject(
+  designs: DesignArtInput[],
+  options: {
+    folderId: string
+    customerName?: string
+    sheetDriveFileId?: string
+  },
+): Promise<ProjectImageRef[]> {
+  const uploads: DriveFileUpload[] = []
+  const indexByUpload: number[] = []
+
+  for (let index = 0; index < designs.length; index += 1) {
+    const design = designs[index]
+    const sourceUrl = design.previewUrl || design.originalUrl || ''
+    if (!sourceUrl) continue
+    try {
+      const res = await fetch(sourceUrl)
+      if (!res.ok) continue
+      const blob = await res.blob()
+      if (blob.size <= 0) continue
+      uploads.push({
+        name: safeArtFileName(design.name, index),
+        mimeType: blob.type || 'image/png',
+        blob,
+      })
+      indexByUpload.push(index)
+    } catch {
+      // Skip unreadable art; JSON still writes metadata.
+    }
+  }
+
+  const uploaded =
+    uploads.length > 0
+      ? await uploadFilesToExistingDriveFolder({
+          folderId: options.folderId,
+          files: uploads,
+          customerName: options.customerName,
+        })
+      : []
+
+  return designs.map((design, index) => {
+    const uploadPos = indexByUpload.indexOf(index)
+    const artFile = uploadPos >= 0 ? uploaded[uploadPos] : undefined
+    const driveFileId = artFile?.id || options.sheetDriveFileId
+    return {
+      id: design.id,
+      name: design.name,
+      fileName: artFile?.name || design.name,
+      size: design.size,
+      customWidth: design.customWidth,
+      customHeight: design.customHeight,
+      quantity: Math.max(1, design.quantity || 1),
+      keepUpright: Boolean(design.keepUpright),
+      pixelWidth: design.pixelWidth,
+      pixelHeight: design.pixelHeight,
+      placement: design.placement,
+      cut: design.cut,
+      sizeIn: design.sizeIn,
+      ...(driveFileId
+        ? {
+            driveFileId,
+            original: {
+              driveFileId,
+              pxW: design.pixelWidth,
+              pxH: design.pixelHeight,
+            },
+            processed: {
+              driveFileId,
+              pxW: design.pixelWidth,
+              pxH: design.pixelHeight,
+            },
+          }
+        : {}),
+    }
+  })
+}
+
+/** Strip bulky dataUrls so the job-record POST stays under Vercel body limits. */
+export function stripImageDataUrls(images: ProjectImageRef[] | undefined): ProjectImageRef[] {
+  return (images || []).map(({ dataUrl: _dataUrl, ...rest }) => rest)
+}
+
+/**
  * Resolve preview URLs for reopen: prefer embedded dataUrl, else fetch Drive media.
- * Returns a map of image index → object URL or data URL.
  */
 export async function resolveProjectImageUrls(
   images: ProjectImageRef[] | undefined,

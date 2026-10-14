@@ -16,7 +16,7 @@ import {
 } from '@/lib/upload-scale'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { autoSaveProjectJson } from '@/lib/project/auto-save'
-import { buildImagesWithEmbeddedArt } from '@/lib/project/images'
+import { buildImagesForDriveProject } from '@/lib/project/images'
 import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
 import { sheetStamp } from '@/lib/sheet-name'
 import { SHEET_ACCEPT, SHEET_ACCEPT_LABEL, isAcceptedSheetFile } from '@/lib/accepted-uploads'
@@ -317,35 +317,34 @@ function UploadFlow() {
 
       /** SPEC E3: automatic named project JSON for customer upload jobs. */
       void (async () => {
-        const previewUrls = jobs.map((job) => URL.createObjectURL(job.item.entry.file))
-        try {
-          const images = await buildImagesWithEmbeddedArt(
-            jobs.map((job, index) => ({
-              id: `img_${index + 1}`,
-              name: job.item.entry.file.name,
-              previewUrl: previewUrls[index],
-              quantity: 1,
-            })),
-          )
-          // Attach Drive file ids so reopen can also fetch from Drive if needed.
-          for (const [index, image] of images.entries()) {
-            const uploaded = drive.files.find((file) => file.name === jobs[index]?.printName)
-            if (uploaded?.id) image.driveFileId = uploaded.id
+        // Uploaded print files are already in Drive — reference those ids (no dataUrls).
+        const images = jobs.map((job, index) => {
+          const uploaded = drive.files.find((file) => file.name === job.printName)
+          return {
+            id: `img_${index + 1}`,
+            name: job.item.entry.file.name,
+            fileName: job.printName,
+            quantity: 1,
+            driveFileId: uploaded?.id,
+            original: uploaded?.id
+              ? { driveFileId: uploaded.id }
+              : undefined,
+            processed: uploaded?.id
+              ? { driveFileId: uploaded.id }
+              : undefined,
           }
-          await autoSaveProjectJson({
-            folderId: drive.folderId,
-            source: 'customer-site',
-            name: customerName.trim(),
-            customer: { name: customerName.trim() },
-            product: { printType: 'uv-dtf', sheetType: 'uploaded' },
-            images,
-            fromUpload: true,
-          })
-        } finally {
-          for (const url of previewUrls) URL.revokeObjectURL(url)
-        }
+        })
+        await autoSaveProjectJson({
+          folderId: drive.folderId,
+          source: 'customer-site',
+          name: customerName.trim(),
+          customer: { name: customerName.trim() },
+          product: { printType: 'uv-dtf', sheetType: 'uploaded' },
+          images,
+          fromUpload: true,
+        })
       })().catch((err) => {
-        console.warn('[project] customer upload auto-save failed', err)
+        console.error('[project] customer upload auto-save failed', err)
       })
 
       // One cart line per uploaded sheet, each with its own Drive link and price.

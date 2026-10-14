@@ -39,7 +39,7 @@ import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/accepted-uploads'
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
 import { autoSaveProjectJson } from '@/lib/project/auto-save'
-import { buildImagesWithEmbeddedArt, resolveProjectImageUrls } from '@/lib/project/images'
+import { buildImagesForDriveProject, resolveProjectImageUrls } from '@/lib/project/images'
 import { projectJsonFileName } from '@/lib/project/file-name'
 import { PROJECT_FORMAT, type SspProject } from '@/lib/project/types'
 
@@ -710,6 +710,27 @@ export default function StickerMakerPage() {
       downloadBlob(blob, projectJsonFileName(customerName.trim() || 'job'))
       if (driveFolderId) {
         try {
+          // Drive write: upload art separately and keep JSON small (no dataUrls).
+          const driveImages = await buildImagesForDriveProject(
+            designs.map((design) => ({
+              id: design.id,
+              name: design.name,
+              previewUrl: design.previewUrl,
+              originalUrl: design.originalUrl,
+              size: design.size,
+              customWidth: design.customWidth,
+              customHeight: design.customHeight,
+              quantity: design.quantity,
+              keepUpright: design.keepUpright,
+              pixelWidth: design.pixelWidth,
+              pixelHeight: design.pixelHeight,
+              cut: { shape: 'box', offsetMm: UV_BORDER_MM, squareCutMm: UV_BORDER_MM },
+            })),
+            {
+              folderId: driveFolderId,
+              customerName: customerName.trim(),
+            },
+          )
           const saved = await autoSaveProjectJson({
             folderId: driveFolderId,
             source: 'dtf-stickers',
@@ -720,7 +741,7 @@ export default function StickerMakerPage() {
             customer: { name: customerName.trim() },
             product: payload.product,
             cut: payload.cut,
-            images: payload.images,
+            images: driveImages,
             fromUpload: false,
           })
           setProjectId(saved.projectId)
@@ -911,7 +932,7 @@ export default function StickerMakerPage() {
           driveFiles: drive.files.map((file) => ({ name: file.name, id: file.id })),
           includeDataUrls: false,
         })
-        const images = await buildImagesWithEmbeddedArt(
+        const images = await buildImagesForDriveProject(
           designs.map((design) => ({
             id: design.id,
             name: design.name,
@@ -926,7 +947,11 @@ export default function StickerMakerPage() {
             pixelHeight: design.pixelHeight,
             cut: { shape: 'box', offsetMm: UV_BORDER_MM, squareCutMm: UV_BORDER_MM },
           })),
-          { sheetDriveFileId: drive.fileId },
+          {
+            folderId: drive.folderId,
+            customerName: customerName.trim(),
+            sheetDriveFileId: drive.fileId,
+          },
         )
         const saved = await autoSaveProjectJson({
           folderId: drive.folderId,
