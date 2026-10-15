@@ -22,7 +22,7 @@ checks.push([send.includes("sheetType: 'intake'"), 'intake marks sheetType intak
 checks.push([php.includes("($sheet_type === 'intake') ? floatval($payload['buildFee'] ?? 0) : 0"), 'plugin stores build fee only for intake'])
 checks.push([php.includes("!== 'intake'"), 'plugin fee hook skips non-intake sheets'])
 checks.push([pricing.includes('done-for-you path only') || pricing.includes('Never charge this on the self-serve builder'), 'pricing comments document intake-only fee'])
-checks.push([php.includes("Version: 1.22"), 'plugin version is 1.22'])
+checks.push([php.includes("Version: 1.23"), 'plugin version is 1.23'])
 
 const failed = checks.filter(([ok]) => !ok)
 for (const [ok, label] of checks) console.log(ok ? '✓' : '✗', label)

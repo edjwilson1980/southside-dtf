@@ -29,6 +29,14 @@ export type GangSheetCartPayload = {
   sheetIndex: string
   /** Builder-packed sheet vs customer-uploaded file. */
   sheetType?: 'built' | 'uploaded' | 'intake'
+  /**
+   * Film type. `uv-dtf` routes the line to the UV DTF sticker product in
+   * WooCommerce (plugin 1.23+). Omit / `dtf` for standard transfers.
+   */
+  printType?: 'dtf' | 'uv-dtf'
+  /** UV DTF only — spec A7 Cut / No Cut for the whole job (fixed 2.5 mm Square Cut). */
+  cutEnabled?: boolean
+  cutMm?: number
   sourceWidthIn?: number
   sourceHeightIn?: number
   scaleFactor?: number
