@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.3.7] — 2026-10-15
+
+### Fixed
+- Customer-site projects reopen with their artwork. Each design's art now uploads in the
+  same Drive batch as the print PNG, and the project JSON (with art ids) is written
+  **before** Add to Cart. Previously the art upload ran in the background and was cut
+  off when the store page redirected to the cart, leaving every image as RE-UPLOAD.
+- Upload-flow project JSON is likewise written before the cart redirect.
+- Shop Builder and Sticker Maker no longer carry one customer's project id and Drive
+  folder over to the next customer. Typing a different customer name starts a fresh
+  project, so jobs stop sharing an id (and Reopen opens the right customer).
+- Gang-sheet project JSON is labelled `printType: dtf` (it was `uv-dtf`); UV DTF is
+  only written by the Sticker Maker.
+
 ## [2.3.6] — 2026-10-14
 
 ### Fixed

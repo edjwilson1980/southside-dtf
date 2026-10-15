@@ -204,9 +204,34 @@ export default function Home() {
   const previewGen = useRef(0)
   /** After Reopen Project, build the gang-sheet preview once designs are ready. */
   const pendingAutoPreview = useRef(false)
+  /**
+   * Customer the current project id / folder belong to. A project is one customer's
+   * job — when staff type a different name, the next save must start a new project
+   * instead of writing into the previous customer's folder under their id.
+   */
+  const projectOwner = useRef<string | null>(null)
+
+  function ownerKey(name: string) {
+    return name.trim().toLowerCase()
+  }
+
+  useEffect(() => {
+    if (projectOwner.current === null) return
+    if (ownerKey(customerName) === projectOwner.current) return
+    projectOwner.current = null
+    setProjectId(undefined)
+    setProjectRevision(undefined)
+    setProjectCreatedAt(undefined)
+    setProjectSource('shop-builder')
+    setDriveFolderId(null)
+    setDriveFolderUrl(null)
+    setProjectStatus(null)
+  }, [customerName])
 
   async function loadProject(project: SspProject, meta?: { folderId?: string; fileId?: string }) {
-    if (project.name) setCustomerName(project.customer?.name || project.name)
+    const ownerName = project.customer?.name || project.name || ''
+    projectOwner.current = ownerKey(ownerName)
+    if (ownerName) setCustomerName(ownerName)
     if (typeof project.cut?.enabled === 'boolean') setCutOut(Boolean(project.cut.enabled))
     setProjectId(project.projectId)
     setProjectRevision(project.revision)
@@ -607,7 +632,7 @@ export default function Home() {
         name,
         customer: { name },
         product: {
-          printType: 'uv-dtf',
+          printType: 'dtf',
           rollWidthIn: SHEET_WIDTH_IN,
           widthIn: SHEET_WIDTH_IN,
           heightIn: options.heightIn,
@@ -616,6 +641,7 @@ export default function Home() {
         designs: designArtInputs(),
         fromUpload: options.fromUpload,
       })
+      projectOwner.current = ownerKey(name)
       setProjectId(saved.projectId)
       setProjectRevision(saved.revision)
       setProjectCreatedAt(saved.payload.createdAt)

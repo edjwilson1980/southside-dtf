@@ -94,20 +94,21 @@ export async function buildImagesWithEmbeddedArt(
   return images
 }
 
+export type DesignArtUploadPlan = {
+  /** Files to send to Drive — one per design that had readable art. */
+  uploads: DriveFileUpload[]
+  /** `indexByUpload[i]` is the design index for `uploads[i]`. */
+  indexByUpload: number[]
+}
+
 /**
- * Build image rows for Drive project JSON: upload each design's art into the job
- * folder (resumable, outside Vercel), then store only Drive file ids — no dataUrls.
- *
- * Never stores the composed sheet PNG as a design's art id — that broke reopen
- * previews when individual art uploads failed.
+ * Read each design's art into a Blob and name it `art-N-<design>.png` so it can
+ * ride along in the same Drive upload batch as the print files. Designs whose art
+ * cannot be read are skipped (they reopen as RE-UPLOAD rows).
  */
-export async function buildImagesForDriveProject(
+export async function prepareDesignArtUploads(
   designs: DesignArtInput[],
-  options: {
-    folderId: string
-    customerName?: string
-  },
-): Promise<ProjectImageRef[]> {
+): Promise<DesignArtUploadPlan> {
   const uploads: DriveFileUpload[] = []
   const indexByUpload: number[] = []
 
@@ -126,19 +127,24 @@ export async function buildImagesForDriveProject(
     indexByUpload.push(index)
   }
 
-  const uploaded =
-    uploads.length > 0
-      ? await uploadFilesToExistingDriveFolder({
-          folderId: options.folderId,
-          files: uploads,
-          customerName: options.customerName,
-        })
-      : []
+  return { uploads, indexByUpload }
+}
 
+/**
+ * Map uploaded art files back onto design rows (by upload name) and build the
+ * project image refs. Rows without an uploaded file carry metadata only.
+ */
+export function imagesFromUploadedArt(
+  designs: DesignArtInput[],
+  plan: DesignArtUploadPlan,
+  uploaded: Array<{ name: string; id: string }>,
+): ProjectImageRef[] {
+  const idByName = new Map(uploaded.map((file) => [file.name, file.id]))
   return designs.map((design, index) => {
-    const uploadPos = indexByUpload.indexOf(index)
-    const artFile = uploadPos >= 0 ? uploaded[uploadPos] : undefined
-    const driveFileId = artFile?.id
+    const uploadPos = plan.indexByUpload.indexOf(index)
+    const uploadName = uploadPos >= 0 ? plan.uploads[uploadPos]?.name : undefined
+    const driveFileId = uploadName ? idByName.get(uploadName) : undefined
+    const artFile = driveFileId ? { name: uploadName, id: driveFileId } : undefined
     return {
       id: design.id,
       name: design.name,
@@ -170,6 +176,32 @@ export async function buildImagesForDriveProject(
         : {}),
     }
   })
+}
+
+/**
+ * Build image rows for Drive project JSON: upload each design's art into the job
+ * folder (resumable, outside Vercel), then store only Drive file ids — no dataUrls.
+ *
+ * Never stores the composed sheet PNG as a design's art id — that broke reopen
+ * previews when individual art uploads failed.
+ */
+export async function buildImagesForDriveProject(
+  designs: DesignArtInput[],
+  options: {
+    folderId: string
+    customerName?: string
+  },
+): Promise<ProjectImageRef[]> {
+  const plan = await prepareDesignArtUploads(designs)
+  const uploaded =
+    plan.uploads.length > 0
+      ? await uploadFilesToExistingDriveFolder({
+          folderId: options.folderId,
+          files: plan.uploads,
+          customerName: options.customerName,
+        })
+      : []
+  return imagesFromUploadedArt(designs, plan, uploaded)
 }
 
 /** Strip bulky dataUrls so the job-record POST stays under Vercel body limits. */
