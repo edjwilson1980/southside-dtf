@@ -17,6 +17,19 @@ export function signProjectPayload(payload: Record<string, unknown>): string | u
   return `hmac-sha256:${createHmac('sha256', secret).update(body).digest('hex')}`
 }
 
+/** Add a `sig` to a project JSON string (unchanged when no secret is set or it isn't a project). */
+export function signProjectJsonContent(content: string): string {
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>
+    if (parsed.format !== 'ssp-gangsheet-project') return content
+    const sig = signProjectPayload(parsed)
+    if (!sig) return content
+    return JSON.stringify({ ...parsed, sig }, null, 2)
+  } catch {
+    return content
+  }
+}
+
 export function verifyProjectSignature(payload: Record<string, unknown>): boolean {
   const secret = projectHmacSecret()
   if (!secret) return true

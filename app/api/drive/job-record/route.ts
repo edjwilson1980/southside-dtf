@@ -7,8 +7,7 @@ import {
   upsertTextFileInFolder,
 } from '@/lib/google-drive'
 import { isProjectJsonFileName } from '@/lib/project/file-name'
-import { signProjectPayload } from '@/lib/project/sign'
-import { PROJECT_FORMAT } from '@/lib/project/types'
+import { signProjectJsonContent } from '@/lib/project/sign'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -27,16 +26,7 @@ type Body = {
 }
 
 function maybeSignProjectJson(name: string, content: string): string {
-  if (!isProjectJsonFileName(name)) return content
-  try {
-    const parsed = JSON.parse(content) as Record<string, unknown>
-    if (parsed.format !== PROJECT_FORMAT) return content
-    const sig = signProjectPayload(parsed)
-    if (!sig) return content
-    return JSON.stringify({ ...parsed, sig }, null, 2)
-  } catch {
-    return content
-  }
+  return isProjectJsonFileName(name) ? signProjectJsonContent(content) : content
 }
 
 /** Writes a small file (job.json, project.ssp.json, or work-order PDF) into a Drive job folder. */

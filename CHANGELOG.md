@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.3.7] — 2026-10-15
+
+### Added
+- **Server-side Confirm & Build for Mockup Pro** (`POST /api/project/ingest`): takes a
+  `.ssp.json` project by URL and, with no browser, builds the print-ready gang sheet PNG
+  (plus the PLT when pre-cut) and saves it in a new Drive job folder with the signed project
+  JSON. Same restore, trimming, packing, ppi rule, label, CMYK mapping and cut marks as the
+  shop's Confirm & Build. Auth: `x-ssgs-ingest-secret` = `MOCKUP_PRO_INGEST_SECRET`.
+- `scripts/verify-ingest.mjs` checks it against the shop's own packing and rules.
+
+### Changed
+- Shop placements and sizes live in `lib/shop-sizes.ts` (shared with the server build).
+- `sheetStamp` takes an optional time zone (the server stamps in shop time, America/Chicago).
+
 ## [2.3.6] — 2026-10-14
 
 ### Fixed
