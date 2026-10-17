@@ -36,6 +36,8 @@ import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
+import { isEmbedSearchParam } from '@/lib/embed'
+import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
 import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/accepted-uploads'
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
 import { saveProjectWithArt } from '@/lib/project/auto-save'
@@ -171,6 +173,11 @@ function revokeUnusedUrls(urls: Array<string | null>, remaining: Design[]) {
 }
 
 export default function StickerMakerPage() {
+  /** `?embed=1` (WordPress `/embed/stickers`) or detected iframe → store mode with Add to Cart. */
+  const [embedParam, setEmbedParam] = useState(false)
+  const { embedded, addToCart, status: cartStatus, error: cartError, reportHeight } = useStoreBridge()
+  const embed = embedParam || embedded
+  const shellRef = useRef<HTMLElement | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const replaceInputRef = useRef<HTMLInputElement>(null)
   const reopenInputRef = useRef<HTMLInputElement>(null)
@@ -230,6 +237,26 @@ export default function StickerMakerPage() {
   function setCuttingOn(enabled: boolean) {
     setCutEnabled(enabled)
   }
+
+  useEffect(() => {
+    setEmbedParam(isEmbedSearchParam(new URLSearchParams(window.location.search).get('embed')))
+  }, [])
+
+  /** Inside the store iframe the page has no scrollbar of its own — report our height. */
+  useEffect(() => {
+    if (!embed) return
+    const post = () => reportHeight(shellRef.current)
+    post()
+    const root = shellRef.current
+    if (!root || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => post())
+    observer.observe(root)
+    window.addEventListener('load', post)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('load', post)
+    }
+  }, [embed, reportHeight, designs.length, cutEnabled, built, previewing, sheetPreviewOpen, saveError, cartStatus, jobStatus])
 
   function revokePagePreviewUrls(urls: string[]) {
     for (const url of urls) URL.revokeObjectURL(url)
@@ -939,6 +966,7 @@ export default function StickerMakerPage() {
   async function buildAndStore() {
     if (!customerName.trim() || designs.length === 0 || saving || !previewing) return
     if (pageLayouts.length === 0) return
+    if (embed && cartStatus === 'sending') return
     setSaving(true)
     setSaveError(null)
     setDriveFolderUrl(null)
@@ -949,7 +977,8 @@ export default function StickerMakerPage() {
       const fileName = sheetFileName(customerName.trim(), billedLength, stamp)
       const pieces = pageLayouts[0].pieces
       const png = await composePageSheet(pieces, sheetPxPerIn(14000, 150), label, true)
-      downloadBlob(png, fileName)
+      // Store customers never get the print files — those go to Drive only.
+      if (!embed) downloadBlob(png, fileName)
       const pngFiles = [{ name: fileName, mimeType: 'image/png', blob: png }]
       const pltFiles: Array<{ name: string; content: string }> = []
 
@@ -965,8 +994,10 @@ export default function StickerMakerPage() {
         const plt = cutPltForShapes(shapes, printHeight, mediaWidthIn, artPieces)
         if (!plt) throw new Error('Could not build the cutter PLT.')
         const cutName = sheetCutFileName(customerName.trim(), billedLength, stamp)
-        await wait(200)
-        downloadBlob(new Blob([plt], { type: 'text/plain' }), cutName)
+        if (!embed) {
+          await wait(200)
+          downloadBlob(new Blob([plt], { type: 'text/plain' }), cutName)
+        }
         pltFiles.push({ name: cutName, content: plt })
       }
 
@@ -1011,12 +1042,52 @@ export default function StickerMakerPage() {
         }
       } catch (err) {
         setJobStatus('Not saved')
-        setSaveError(
-          err instanceof Error
-            ? `Files are in Drive, but the project JSON could not be written: ${err.message}. Use Save Job to retry.`
-            : 'Files are in Drive, but the project JSON could not be written. Use Save Job to retry.',
-        )
+        if (!embed) {
+          setSaveError(
+            err instanceof Error
+              ? `Files are in Drive, but the project JSON could not be written: ${err.message}. Use Save Job to retry.`
+              : 'Files are in Drive, but the project JSON could not be written. Use Save Job to retry.',
+          )
+        } else {
+          console.error('[project] sticker embed auto-save failed', err)
+        }
       }
+
+      if (embed) {
+        // WooCommerce only ever receives the Drive link — the PNG/PLT bytes stay in Drive.
+        const driveLink =
+          drive.webViewLink ??
+          drive.fileUrl ??
+          (drive.fileId ? `https://drive.google.com/file/d/${drive.fileId}/view` : null)
+        if (!driveLink || !drive.fileId) {
+          throw new Error('Could not save your stickers to our print queue. Please try again.')
+        }
+        const payload: GangSheetCartPayload = {
+          customerName: customerName.trim(),
+          sheetWidthIn: mediaWidthIn,
+          sheetHeightIn: printHeight,
+          billableHeightIn: billedLength,
+          quantity: 1,
+          designs: designs.length,
+          transfers: totalTransfers,
+          precut: false,
+          precutTotal: 0,
+          buildFee: 0,
+          fileName: `${slugify(customerName.trim())}-uv-dtf-stickers.png`,
+          fileUrl: driveLink,
+          driveFileId: drive.fileId,
+          sheetIndex: '1 of 1',
+          sheetType: 'built',
+          printType: 'uv-dtf',
+          cutEnabled,
+          cutMm: UV_BORDER_MM,
+          jobStamp: stamp,
+          printFileName: fileName,
+        }
+        const result = await addToCart(payload)
+        if (!result.ok) throw new Error(result.error)
+      }
+
       setBuilt(true)
       setSheetPreviewOpen(false)
     } catch (err) {
@@ -1026,49 +1097,61 @@ export default function StickerMakerPage() {
     }
   }
 
-  return (
-    <main className="builder-shell">
-      <div className="sticker-utility-bar" aria-label="Job actions">
-        <button
-          type="button"
-          className="sticker-job-btn"
-          onClick={() => reopenInputRef.current?.click()}
-        >
-          <FolderOpen size={16} /> Reopen Job
-        </button>
-        <button
-          type="button"
-          className="sticker-job-btn"
-          onClick={() => void exportArtForPhotoshop()}
-          disabled={designs.length === 0}
-        >
-          <Download size={16} /> Save to Photoshop
-        </button>
-        <a className="sticker-job-btn" href="/shop/connect-drive">
-          <HardDrive size={16} /> Connect to Google Drive
-        </a>
-        <input
-          ref={reopenInputRef}
-          className="sr-only"
-          type="file"
-          accept=".json,.ssp.json,application/json"
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file) void reopenJobFile(file)
-            e.target.value = ''
-          }}
-        />
-      </div>
+  const confirmLabel = embed ? 'Add to Cart' : 'Confirm & Build Stickers'
+  const confirmBusyLabel = embed ? 'Adding to cart…' : 'Saving to Drive…'
 
-      <div className="builder-topbar">
-        <img src={logoUrl} alt="South Side DTF" className="brand-logo" />
-        <div className="title-block">
-          <h1>DTF Sticker Maker</h1>
-          <p className="lead">UV DTF stickers — 22 in wide, length from 12 in. Crop, size, cut, and export.</p>
-          <p className="sublead">Crop and clean art, then export print PNG + cutter PLT (fixed 2.5 mm Square Cut).</p>
+  return (
+    <main ref={shellRef} className={`builder-shell${embed ? ' embed-mode' : ''}`}>
+      {embed ? (
+        <div className="embed-bar">
+          <strong>Make your UV DTF stickers</strong>
+          <span>22 in wide · Cut or No Cut</span>
         </div>
-        <ShopNav current="sticker-maker" hideConnectDrive />
-      </div>
+      ) : (
+        <>
+          <div className="sticker-utility-bar" aria-label="Job actions">
+            <button
+              type="button"
+              className="sticker-job-btn"
+              onClick={() => reopenInputRef.current?.click()}
+            >
+              <FolderOpen size={16} /> Reopen Job
+            </button>
+            <button
+              type="button"
+              className="sticker-job-btn"
+              onClick={() => void exportArtForPhotoshop()}
+              disabled={designs.length === 0}
+            >
+              <Download size={16} /> Save to Photoshop
+            </button>
+            <a className="sticker-job-btn" href="/shop/connect-drive">
+              <HardDrive size={16} /> Connect to Google Drive
+            </a>
+            <input
+              ref={reopenInputRef}
+              className="sr-only"
+              type="file"
+              accept=".json,.ssp.json,application/json"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) void reopenJobFile(file)
+                e.target.value = ''
+              }}
+            />
+          </div>
+
+          <div className="builder-topbar">
+            <img src={logoUrl} alt="South Side DTF" className="brand-logo" />
+            <div className="title-block">
+              <h1>DTF Sticker Maker</h1>
+              <p className="lead">UV DTF stickers — 22 in wide, length from 12 in. Crop, size, cut, and export.</p>
+              <p className="sublead">Crop and clean art, then export print PNG + cutter PLT (fixed 2.5 mm Square Cut).</p>
+            </div>
+            <ShopNav current="sticker-maker" hideConnectDrive />
+          </div>
+        </>
+      )}
 
       <ol className="how-to" aria-label="How to make stickers">
         {HOW_TO_STEPS.map((step) => (
@@ -1137,12 +1220,14 @@ export default function StickerMakerPage() {
             )}
           </div>
 
-          <div className="sticker-job-bar">
-            <button type="button" className="sticker-job-btn" onClick={() => void saveJobFile()}>
-              <Save size={16} /> Save Job
-            </button>
-            {jobStatus && <span className="sticker-job-status">{jobStatus}</span>}
-          </div>
+          {!embed && (
+            <div className="sticker-job-bar">
+              <button type="button" className="sticker-job-btn" onClick={() => void saveJobFile()}>
+                <Save size={16} /> Save Job
+              </button>
+              {jobStatus && <span className="sticker-job-status">{jobStatus}</span>}
+            </div>
+          )}
 
           <div id="step-3" className="guide-block">
             <GuideHeading
@@ -1438,7 +1523,7 @@ export default function StickerMakerPage() {
               sheetLabel={sheetLabelText}
               sheetLengthIn={billedLength}
               totalTransfers={sheetLayout.pieces.length}
-              saving={saving}
+              saving={saving || cartStatus === 'sending'}
               onClose={() => setSheetPreviewOpen(false)}
               onConfirm={() => void buildAndStore()}
               cutBoxes={cutShapes.map((shape) => shape.bounds)}
@@ -1447,9 +1532,9 @@ export default function StickerMakerPage() {
               printHeightIn={printHeight}
               sheetWidthIn={mediaWidthIn}
               cutOut={cutEnabled}
-              audience="shop"
+              audience={embed ? 'customer' : 'shop'}
               layoutPieces={layoutPieces}
-              confirmLabel="Confirm & Build Stickers"
+              confirmLabel={confirmLabel}
             />
           )}
         </section>
@@ -1610,11 +1695,18 @@ export default function StickerMakerPage() {
               <Eye size={18} /> {previewBusy ? 'Building preview…' : 'Preview Sticker Sheet'}
             </button>
             {previewing && pagePreviewUrls.length > 0 && (
-              <button className="confirm-button" disabled={saving || shapesBusy} onClick={() => void buildAndStore()}>
-                <Check size={18} /> {saving ? 'Saving to Drive…' : 'Confirm & Build Stickers'}
+              <button
+                className="confirm-button"
+                disabled={saving || shapesBusy || cartStatus === 'sending'}
+                onClick={() => void buildAndStore()}
+              >
+                <Check size={18} /> {saving || cartStatus === 'sending' ? confirmBusyLabel : confirmLabel}
               </button>
             )}
             {saveError && <p className="save-error">{saveError}</p>}
+            {embed && cartStatus === 'error' && cartError && cartError !== saveError && (
+              <p className="save-error">{cartError}</p>
+            )}
           </div>
 
           {built && (
@@ -1623,12 +1715,12 @@ export default function StickerMakerPage() {
                 <span>
                   <Check size={21} />
                 </span>
-                <strong>Your sticker sheet is built.</strong>
+                <strong>{embed ? 'Your UV DTF stickers are in the cart.' : 'Your sticker sheet is built.'}</strong>
               </div>
               <p>
-                {sheetLabelText} · {totalTransfers} pieces · {cutLabel} · Ready
+                {sheetLabelText} · {totalTransfers} pieces · {cutLabel} · {embed ? 'Taking you to the cart…' : 'Ready'}
               </p>
-              {driveFolderUrl && (
+              {!embed && driveFolderUrl && (
                 <a className="drive-link" href={driveFolderUrl} target="_blank" rel="noreferrer">
                   Open job folder in Google Drive (print PNG + cutter PLT)
                 </a>

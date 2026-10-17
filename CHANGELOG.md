@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.4.0] — 2026-10-14
+
+### Added
+- **UV DTF in the WooCommerce plugin (1.23).** New *UV DTF product ID* setting (auto-detects
+  slug `uv-dtf-stickers` / `uv-dtf`, or the first product with `pa_print_type = uv-dtf`).
+  Cart payloads with `printType: 'uv-dtf'` land on that product, pick the variation by
+  sheet length, and carry `Print type` plus `Cut: Square Cut 2.5 mm` / `Cut: No` meta
+  (hidden `_ssp_cut_enabled` on order lines, spec A7). UV DTF never gets the DTF pre-cut
+  companion line; the cut offset is always 2.5 mm server-side.
+- New shortcode mode `[southside_gangsheet mode="stickers"]` → `/embed/stickers`, the UV DTF
+  Sticker Maker in store mode: staff bars and local downloads hidden, **Add to Cart** uploads
+  the sheet to Drive and sends the UV DTF line to WooCommerce.
+- Order screens, emails, and receipts show readable labels for all `ssgs_*` line meta.
+
+### Fixed
+- Plugin 1.22 shipped with a PHP parse error in the checkout line-item hook, so it could not
+  activate. Fixed; `ssgs_build_fee` is now also persisted on intake order lines.
+
 ## [2.3.8] — 2026-10-15
 
 ### Fixed
