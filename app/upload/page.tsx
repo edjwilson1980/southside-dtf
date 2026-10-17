@@ -314,8 +314,12 @@ function UploadFlow() {
       })
       setDriveFolderUrl(drive.folderUrl)
 
-      /** SPEC E3: automatic named project JSON for customer upload jobs. */
-      void (async () => {
+      /**
+       * SPEC E3: automatic named project JSON for customer upload jobs. Awaited —
+       * the store page redirects to the cart right after add-to-cart, which would
+       * kill a write still in flight.
+       */
+      try {
         // Uploaded print files are already in Drive — reference those ids (no dataUrls).
         const images = jobs.map((job, index) => {
           const uploaded = drive.files.find((file) => file.name === job.printName)
@@ -338,13 +342,14 @@ function UploadFlow() {
           source: 'customer-site',
           name: customerName.trim(),
           customer: { name: customerName.trim() },
-          product: { printType: 'uv-dtf', sheetType: 'uploaded' },
+          product: { printType: 'dtf', sheetType: 'uploaded' },
           images,
           fromUpload: true,
         })
-      })().catch((err) => {
+      } catch (err) {
+        // The order still goes through; staff can rebuild from the Drive folder.
         console.error('[project] customer upload auto-save failed', err)
-      })
+      }
 
       // One cart line per uploaded sheet, each with its own Drive link and price.
       for (const [index, job] of jobs.entries()) {

@@ -21,7 +21,8 @@ import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
 import { isEmbedSearchParam } from '@/lib/embed'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
-import { saveProjectWithArt } from '@/lib/project/auto-save'
+import { autoSaveProjectJson } from '@/lib/project/auto-save'
+import { imagesFromUploadedArt, prepareDesignArtUploads, type DesignArtInput } from '@/lib/project/images'
 import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
 
 type Design = {
@@ -617,64 +618,68 @@ function HomeBuilder() {
         }
       }
 
+      // Each design's art goes up in the same batch as the print PNG. The store page
+      // redirects to the cart the moment WooCommerce accepts the line, so anything
+      // still in flight after add-to-cart is lost — the art must land before that.
+      const artInputs: DesignArtInput[] = designs.map((design) => {
+        const printSize = piecePrintSize({
+          placement: design.placement,
+          size: design.size,
+          customWidth: design.customWidth,
+          customHeight: design.customHeight,
+          pixelWidth: design.pixelWidth,
+          pixelHeight: design.pixelHeight,
+          widthIn: parsePrintWidthInches(design.size, design.placement, design.customWidth),
+        })
+        return {
+          id: design.id,
+          name: design.name,
+          previewUrl: design.previewUrl,
+          originalUrl: design.originalUrl,
+          placement: design.placement,
+          size: design.size,
+          customWidth: design.customWidth,
+          customHeight: design.customHeight,
+          quantity: design.quantity,
+          keepUpright: design.keepUpright,
+          pixelWidth: design.pixelWidth,
+          pixelHeight: design.pixelHeight,
+          sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
+        }
+      })
+      const artPlan = await prepareDesignArtUploads(artInputs)
+
+      // Print PNG stays first — its id is the cart's Drive link.
       const drive = await uploadJobToGoogleDrive({
         customerName: customerName.trim(),
         stamp,
-        files: [{ name: printName, mimeType: 'image/png', blob: png }],
+        files: [{ name: printName, mimeType: 'image/png', blob: png }, ...artPlan.uploads],
         cutterFile,
         onProgress: setUploadProgress,
       })
       setDriveFolderUrl(drive.folderUrl)
 
-      /** SPEC E3: write named project JSON after files land — customer never waits on this. */
-      void saveProjectWithArt({
-        folderId: drive.folderId,
-        source: 'customer-site',
-        name: customerName.trim(),
-        customer: { name: customerName.trim() },
-        product: {
-          printType: 'uv-dtf',
-          rollWidthIn: SHEET_WIDTH_IN,
-          widthIn: SHEET_WIDTH_IN,
-          heightIn: billedLength,
-        },
-        cut: { enabled: cutOut },
-        fromUpload: true,
-        designs: designs.map((design) => {
-          const printSize = piecePrintSize({
-            placement: design.placement,
-            size: design.size,
-            customWidth: design.customWidth,
-            customHeight: design.customHeight,
-            pixelWidth: design.pixelWidth,
-            pixelHeight: design.pixelHeight,
-            widthIn: parsePrintWidthInches(design.size, design.placement, design.customWidth),
-          })
-          return {
-            id: design.id,
-            name: design.name,
-            previewUrl: design.previewUrl,
-            originalUrl: design.originalUrl,
-            placement: design.placement,
-            size: design.size,
-            customWidth: design.customWidth,
-            customHeight: design.customHeight,
-            quantity: design.quantity,
-            keepUpright: design.keepUpright,
-            pixelWidth: design.pixelWidth,
-            pixelHeight: design.pixelHeight,
-            sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
-          }
-        }),
-      })
-        .then((saved) => {
-          if (saved.artError) {
-            console.warn('[project] customer-site art upload failed', saved.artError)
-          }
+      /** SPEC E3: project JSON with design art ids, written before the cart redirect. */
+      try {
+        await autoSaveProjectJson({
+          folderId: drive.folderId,
+          source: 'customer-site',
+          name: customerName.trim(),
+          customer: { name: customerName.trim() },
+          product: {
+            printType: 'dtf',
+            rollWidthIn: SHEET_WIDTH_IN,
+            widthIn: SHEET_WIDTH_IN,
+            heightIn: billedLength,
+          },
+          cut: { enabled: cutOut },
+          fromUpload: true,
+          images: imagesFromUploadedArt(artInputs, artPlan, drive.files),
         })
-        .catch((err) => {
-          console.error('[project] customer-site auto-save failed', err)
-        })
+      } catch (err) {
+        // The order still goes through; staff can rebuild from the Drive folder.
+        console.error('[project] customer-site project JSON failed', err)
+      }
 
       const driveLink =
         drive.webViewLink ??

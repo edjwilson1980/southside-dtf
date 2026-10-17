@@ -202,6 +202,24 @@ export default function StickerMakerPage() {
   const shapesRefreshGen = useRef(0)
   const reopenFromUrlDone = useRef(false)
   const pendingAutoPreview = useRef(false)
+  /** Customer the current project id / folder belong to — a new name starts a new job. */
+  const projectOwner = useRef<string | null>(null)
+
+  function ownerKey(name: string) {
+    return name.trim().toLowerCase()
+  }
+
+  useEffect(() => {
+    if (projectOwner.current === null) return
+    if (ownerKey(customerName) === projectOwner.current) return
+    projectOwner.current = null
+    setProjectId(undefined)
+    setProjectRevision(undefined)
+    setProjectCreatedAt(undefined)
+    setDriveFolderId(null)
+    setDriveFolderUrl(null)
+    setJobStatus(null)
+  }, [customerName])
 
   const mediaWidthIn = UV_DTF_MEDIA_WIDTH_IN
   const mediaHeightIn = uvLengthIn
@@ -667,7 +685,9 @@ export default function StickerMakerPage() {
         'Vinyl stickers are handled in the Vinyl Sticker Maker. This DTF Sticker Maker opens UV DTF jobs only.',
       )
     }
-    if (project.name) setCustomerName(project.customer?.name || project.name)
+    const ownerName = project.customer?.name || project.name || ''
+    projectOwner.current = ownerKey(ownerName)
+    if (ownerName) setCustomerName(ownerName)
     if (product?.heightIn) {
       setUvLengthIn(clampUvLength(Number(product.heightIn)))
     }
@@ -760,6 +780,7 @@ export default function StickerMakerPage() {
       designs: stickerArtInputs(),
       fromUpload: options.fromUpload,
     })
+    projectOwner.current = ownerKey(name)
     setProjectId(saved.projectId)
     setProjectRevision(saved.revision)
     setProjectCreatedAt(saved.payload.createdAt)
