@@ -139,6 +139,24 @@ check(cutRaw.data[mi + 3] === 255 && cutRaw.data[mi] < 10 && cutRaw.data[mi + 1]
 const plt = cutLib.cutPlt(cutLayout.pieces, cutLayout.printHeight)
 check(typeof plt === 'string' && plt.startsWith('TB26'), 'cutter PLT built')
 
+// 6. Over 200 in: the same designs × 6 become separate sheets, each ≤ 200 in and billed on its own tier.
+const bigDesigns = designs.map((d) => ({ ...d, quantity: d.quantity * 6 }))
+const multi = ingest.layoutSheets(bigDesigns, false)
+const placedAll = multi.pages.reduce((sum, page) => sum + page.layout.pieces.length, 0)
+check(placedAll === 84 && multi.sheetCount > 1, `84 transfers packed onto ${multi.sheetCount} sheets`)
+check(multi.pages.every((page) => page.billedLength <= 200), 'every sheet bills at or under 200 in')
+check(multi.billedLength === multi.pages.reduce((sum, page) => sum + page.billedLength, 0), `total billed ${multi.billedLength} in = ${multi.breakdown}`)
+check(multi.partLabels[0] === `1 of ${multi.sheetCount}` && multi.partLabels.at(-1) === `${multi.sheetCount} of ${multi.sheetCount}`, 'sheets labelled 1 of N … N of N')
+const firstOnly = ingest.layoutSheet(bigDesigns, false)
+check(firstOnly.billedLength === multi.pages[0].billedLength && firstOnly.sheetCount === multi.sheetCount && firstOnly.totalBilledLength === multi.billedLength, 'layoutSheet keeps the sheet-1 shape and reports the full job')
+let threw = null
+try {
+  ingest.layoutSheets([{ ...designs[0], quantity: 1, sizeIn: { w: 10, h: 230 } }], false)
+} catch (err) {
+  threw = err
+}
+check(threw instanceof ingest.IngestError && /too large/.test(threw.message), `a 230 in design is refused: ${threw?.message}`)
+
 const out = process.argv[2]
 if (out) {
   writeFileSync(out, png)

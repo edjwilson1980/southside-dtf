@@ -5,6 +5,37 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 /** Parent store origin allowed for postMessage (WordPress / WooCommerce). */
 export const DEFAULT_STORE_ORIGIN = 'https://southsidedtf.com'
 
+/**
+ * One sheet of a multi-sheet job. Jobs longer than 200 in are packed onto
+ * separate sheets ("1 of 3", "2 of 3"…), each with its own print file, its own
+ * cut file and its own cart line billed on the ladder.
+ */
+export type GangSheetCartSheet = {
+  /** Actual printed film length for this sheet. */
+  sheetHeightIn: number
+  /** Ladder tier this sheet is billed at (≤ 200). */
+  billableHeightIn: number
+  /** Google Drive link for this sheet's print PNG. */
+  fileUrl: string
+  driveFileId?: string
+  fileName: string
+  printFileName?: string
+  /** "2 of 3" */
+  sheetIndex: string
+  transfers: number
+  /** Pre-cut fee charged on this sheet (the job total is split across sheets). */
+  precutTotal: number
+  /** Drive link for this sheet's cutter PLT, when pre-cut is on. */
+  cutFileUrl?: string
+  cutFileName?: string
+  /** Uploaded-file sheets: per-file source size and scaling (override the job-level values). */
+  sourceWidthIn?: number
+  sourceHeightIn?: number
+  scaleFactor?: number
+  effectiveDpi?: number
+  dpiSource?: 'file' | 'assumed' | 'customer'
+}
+
 export type GangSheetCartPayload = {
   customerName: string
   sheetWidthIn: number
@@ -29,6 +60,14 @@ export type GangSheetCartPayload = {
   sheetIndex: string
   /** Builder-packed sheet vs customer-uploaded file. */
   sheetType?: 'built' | 'uploaded' | 'intake'
+  /**
+   * Film type. `uv-dtf` routes the line to the UV DTF sticker product in
+   * WooCommerce (plugin 1.23+). Omit / `dtf` for standard transfers.
+   */
+  printType?: 'dtf' | 'uv-dtf'
+  /** UV DTF only — spec A7 Cut / No Cut for the whole job (fixed 2.5 mm Square Cut). */
+  cutEnabled?: boolean
+  cutMm?: number
   sourceWidthIn?: number
   sourceHeightIn?: number
   scaleFactor?: number
@@ -36,6 +75,13 @@ export type GangSheetCartPayload = {
   dpiSource?: 'file' | 'assumed' | 'customer'
   jobStamp?: string
   printFileName?: string
+  /**
+   * Multi-sheet jobs (plugin 1.24+): one cart line per entry, each billed on
+   * its own tier. The top-level fields describe sheet 1 so older plugins still
+   * add at least that line. Sent in a single request because the store page
+   * redirects to the cart on the first successful add.
+   */
+  sheets?: GangSheetCartSheet[]
 }
 
 export type StoreBridgeStatus = 'idle' | 'sending' | 'error' | 'sent'

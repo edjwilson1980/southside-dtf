@@ -7,6 +7,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const layout = readFileSync(join(root, 'lib/cut-layout.ts'), 'utf8')
 const names = readFileSync(join(root, 'lib/sheet-name.ts'), 'utf8')
 const page = readFileSync(join(root, 'app/page.tsx'), 'utf8')
+const pages = readFileSync(join(root, 'lib/sheet-pages.ts'), 'utf8')
 
 const cut = await loadLib('lib/cut-layout.ts')
 const { buildTenethPlt, MARK_SIZE_IN, MARK_GAP_X_IN, PLT_UNITS_PER_IN } = cut
@@ -82,7 +83,7 @@ const checks = [
   [!names.includes('sectionCount'), 'cut file names carry no section number'],
   [names.includes('cut.plt`'), 'the cut file is named "<job> cut.plt"'],
   [!page.includes('for (const section of'), 'the builder downloads a single cut file'],
-  [page.includes('minGutterIn: CUT_GUTTER_IN'), 'pre-cut packing keeps designs two cut boxes apart'],
+  [pages.includes('minGutterIn: CUT_GUTTER_IN') && page.includes('paginateGangSheet('), 'pre-cut packing keeps designs two cut boxes apart'],
   [page.includes('cutTooTall'), 'a design too tall for one pass is flagged'],
 ]
 

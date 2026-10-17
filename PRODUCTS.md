@@ -11,7 +11,9 @@ These are **separate products** that share print/packing libraries. Do not mix t
   - PLT is uploaded by the server (not a customer browser download)
   - PNG is proxied through our API when small enough; larger PNGs use a Drive session started with the page Origin (required for browser CORS)
 - Drive uses shop Gmail OAuth (personal Gmail has no Shared drives). Staff connect once at `/shop/connect-drive`
-- WordPress: install `wordpress/southside-gangsheet-1.03.zip`, shortcode `[southside_gangsheet]` — embeds `/embed` and supports **Add to Cart** via postMessage
+- WordPress: install `wordpress/southside-gangsheet-1.24.zip`, shortcode `[southside_gangsheet]` — embeds `/embed` and supports **Add to Cart** via postMessage
+  - `[southside_gangsheet mode="upload"]` → `/embed/upload`; `[southside_gangsheet mode="stickers"]` → `/embed/stickers` (UV DTF sticker maker with Add to Cart)
+  - UV DTF lines go to the **UV DTF product** (Settings → Gang Sheet Builder, or auto-detected via `pa_print_type = uv-dtf`) and carry `Print type` + `Cut: Square Cut 2.5 mm / No` meta
 
 ## Shop tools (`/shop`)
 
@@ -49,9 +51,11 @@ Shared code lives under `lib/` (compose, cut layout, sheet size, image tools).
   automatically as soon as the customer's files are created. File is named after the project
   (`Customer Name.ssp.json`) and embeds design art so Reopen shows the images.
 - **Automatic project JSON** — Drive uploads create/update the project `.ssp.json` in the job folder.
-- **Version footer** — current version (v2.3.6) shown at the bottom of every builder page.
+- **Version footer** — current version (v2.5.0) shown at the bottom of every builder page.
 - Spec: [`docs/GANGSHEET_ADDON_SPEC.md`](docs/GANGSHEET_ADDON_SPEC.md)
 
 ### Shop sticker routes (staff)
 
 - `/shop/sticker-maker` — UV DTF sticker builder (22 × 12 in min); vinyl is not in this app
+- `/embed/stickers` — the same sticker maker in store mode (`?embed=1`): staff bars hidden, no
+  local downloads, **Add to Cart** sends `printType: 'uv-dtf'` + `cutEnabled` to WooCommerce

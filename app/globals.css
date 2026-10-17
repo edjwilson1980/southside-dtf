@@ -177,6 +177,15 @@ button.thumb:disabled { cursor: default; }
 .inspect-zooms button, .inspect-view-toggles button, .backdrop-picker { padding: 5px 9px; border: 1px solid var(--border); border-radius: 999px; background: #fff; color: var(--muted); font-size: 11px; font-weight: 700; cursor: pointer; }
 .inspect-zooms button.selected, .inspect-view-toggles button.selected, .backdrop-picker.selected { border-color: var(--chicago-blue); background: var(--pale-blue); color: #006e99; }
 .inspect-view-toggles button.showing-original { border-color: #087c40; background: #e8f8ee; color: #087c40; }
+.sheet-pager { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sheet-pager button { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; padding: 5px 9px; border: 1px solid var(--border); border-radius: 999px; background: #fff; color: var(--muted); font-size: 11px; font-weight: 700; cursor: pointer; }
+.sheet-pager button:disabled { opacity: .45; cursor: default; }
+.sheet-pager button.selected { border-color: var(--chicago-blue); background: var(--pale-blue); color: #006e99; }
+.sheet-pager .zoom-readout { margin-left: 2px; }
+.sheet-page-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; width: calc(100% - 28px); }
+.sheet-page-tabs button { padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px; background: #fff; color: var(--muted); font-size: 11px; font-weight: 700; cursor: pointer; }
+.sheet-page-tabs button.selected { border-color: var(--chicago-blue); background: var(--pale-blue); color: #006e99; }
+.sheet-line-prices { display: flex; flex-direction: column; gap: 2px; margin-top: 5px; color: var(--chicago-blue); font-size: 10px; font-weight: 700; }
 .inspect-original-banner { position: absolute; left: 12px; right: 12px; top: 12px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; border: 1px solid #8fd4ea; border-radius: 10px; background: #e8f7fc; box-shadow: 0 8px 20px rgb(15 23 42 / 12%); }
 .inspect-original-banner strong { color: #006e99; font-size: 13px; }
 .inspect-original-banner span { color: #344054; font-size: 12px; font-weight: 600; }
