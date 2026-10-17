@@ -6,13 +6,13 @@ Embed the customer builder and **Add to Cart** into WooCommerce on southsidedtf.
 
 Use the ready zip in this repo:
 
-- [`wordpress/southside-gangsheet-1.23.zip`](./southside-gangsheet-1.23.zip)
+- [`wordpress/southside-gangsheet-1.24.zip`](./southside-gangsheet-1.24.zip)
 
 Or zip the `southside-gangsheet/` folder yourself.
 
 ## Install on WordPress
 
-1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet-1.23.zip` → Activate
+1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet-1.24.zip` → Activate
 2. **Settings → Gang Sheet Builder**
    - Builder URL: `https://southside-dtf.vercel.app`
    - WooCommerce product ID: **4365** (or leave `0` for slug `custom-gang-sheet-builder`)
@@ -31,6 +31,14 @@ Or zip the `southside-gangsheet/` folder yourself.
 ```
 
 4. Keep `NEXT_PUBLIC_STORE_ORIGIN=https://southsidedtf.com` on Vercel.
+
+## Jobs longer than 200 in (v1.24+)
+
+- The builder packs anything longer than one 200 in sheet onto **separate sheets** labelled `1 of 3`, `2 of 3`, `3 of 3` — each with its own print PNG (and its own `… cut.plt` when pre-cut is on) in the Drive job folder.
+- The payload carries `sheets[]`; the plugin adds **one cart line per sheet**, each matched to its own length variation, so 500 in bills as **200 + 200 + 100** ($115 + $115 + $60), not as one 200 in sheet. Every sheet gets its own pre-cut companion line. Lines show `Sheet: 2 of 3`, the print file, and the cut file link.
+- All sheets go to WooCommerce in **one** request (the store page redirects to the cart as soon as the first line is accepted, which used to lose the rest).
+- Single-length payloads that are longer than the largest variation (done-for-you intake, older builders) are split server-side into `n of N` lines on the ladder; the build fee and pre-cut total are charged once, on sheet 1.
+- The plugin no longer silently falls back to the largest variation when nothing fits — it reports the length instead.
 
 ## UV DTF stickers (v1.23+)
 

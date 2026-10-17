@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const compose = readFileSync(join(root, 'lib/compose-sheet.ts'), 'utf8')
 const page = readFileSync(join(root, 'app/page.tsx'), 'utf8')
+const pages = readFileSync(join(root, 'lib/sheet-pages.ts'), 'utf8')
 
 const SHEET_GUTTER_IN = 0.125
 const SHEET_WIDTH_IN = 22.3
@@ -327,7 +328,7 @@ for (const scenario of scenarios) {
 }
 
 checks.push([compose.includes('export function packSheetPieces'), 'packSheetPieces is exported from compose-sheet'])
-checks.push([page.includes('packSheetBestGutter('), 'the builder uses packSheetBestGutter'])
+checks.push([page.includes('paginateGangSheet(') && pages.includes('packSheetBestGutter('), 'the builder paginates with packSheetBestGutter (lib/sheet-pages.ts)'])
 checks.push([!page.includes('rows.push([design])'), 'the old upload-order packer is gone'])
 
 console.log('scenario'.padEnd(44), 'before'.padStart(9), 'after'.padStart(9), 'saved'.padStart(7), 'gutter'.padStart(8))

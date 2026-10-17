@@ -1,5 +1,36 @@
 # Changelog
 
+## [2.5.0] — 2026-10-15
+
+### Fixed
+- **Jobs longer than 200 in were built and billed as one 200 in sheet.** A 500 in order
+  produced a single 200 in print file and a single $115 line. Both builders now pack the
+  job onto as many 200 in sheets as it needs; 500 in becomes three sheets billed
+  200 + 200 + 100 ($115 + $115 + $60 = $290), matching the price the page already showed.
+
+### Added
+- Every sheet is its own job part, labelled **`1 of 3`, `2 of 3`, `3 of 3`** on the printed
+  film and in its file names (`Customer 10/15 1200 (200) 2 of 3.png`). With pre-cut on, each
+  sheet gets its own matching `… 2 of 3 cut.plt`, so press and cutter stay paired.
+- Customer builder and Shop Builder preview every sheet (sheet tabs + a pager in the full
+  preview), list the per-sheet price lines, and upload all PNGs/PLTs to one Drive folder.
+  Shop Builder downloads each sheet's PNG and PLT locally as before.
+- Server-side Confirm & Build (`/api/project/ingest`) paginates the same way and returns
+  `sheets[]` (sheet 1 also stays in the old `sheet` / `cut` fields).
+- Project JSON records `product.sheetCount` and `product.sheets[]`.
+- `lib/sheet-pages.ts` (`paginateGangSheet`, `splitBilledLength`) and
+  `scripts/verify-sheet-pages.mjs`.
+
+### WooCommerce plugin 1.24
+- Cart payloads may carry `sheets[]`; the plugin adds **one line per sheet** on its own length
+  variation, with its own pre-cut companion line, in a single request (the store page redirects
+  to the cart on the first accepted line, which used to drop every request after it — the
+  `/upload` flow with several files sends one request now too).
+- Single-length payloads longer than the largest variation (intake, older builders) are
+  split server-side into `n of N` lines; build fee and pre-cut are charged once on sheet 1.
+- No more silent fallback to the largest variation when nothing fits.
+- New line meta `ssgs_cut_file_name` / `ssgs_cut_file_url` (cart row **Cut file**).
+
 ## [2.4.0] — 2026-10-14
 
 ### Added
