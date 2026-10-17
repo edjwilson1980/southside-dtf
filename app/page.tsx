@@ -11,11 +11,12 @@ import {
 import { DesignInspector } from '@/components/design-inspector'
 import { PrecutOfferModal } from '@/components/precut-offer-modal'
 import { SheetPreviewModal } from '@/components/sheet-preview-modal'
-import { composeGangSheet, packSheetBestGutter, piecePrintSize, ART_INSET_IN, CUT_ART_START_IN, SHEET_WIDTH_IN } from '@/lib/compose-sheet'
+import { composeGangSheet, piecePrintSize, ART_INSET_IN, SHEET_WIDTH_IN, type PlacedSheetPiece } from '@/lib/compose-sheet'
+import { paginateGangSheet, partLabel, type SheetPage } from '@/lib/sheet-pages'
 import { type LayoutPiece } from '@/components/sheet-layout-overlay'
 import { BUILDER_VERSION } from '@/lib/version'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
-import { CUT_GUTTER_IN, CUT_MARGIN_IN, MARK_CLEARANCE_IN, MARK_SECTION_IN, cutPlt, cutPreviewBoxes, registrationMarkBounds, registrationMarkRects, startMarkArrowPoints } from '@/lib/cut-layout'
+import { MARK_SECTION_IN, cutPlt } from '@/lib/cut-layout'
 import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
@@ -23,7 +24,7 @@ import { isEmbedSearchParam } from '@/lib/embed'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { autoSaveProjectJson } from '@/lib/project/auto-save'
 import { imagesFromUploadedArt, prepareDesignArtUploads, type DesignArtInput } from '@/lib/project/images'
-import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
+import { slugify, useStoreBridge, type GangSheetCartPayload, type GangSheetCartSheet } from '@/lib/ssgs-cart-bridge'
 
 type Design = {
   id: number
@@ -92,16 +93,6 @@ const sheetOptions = [
   { length: 200, price: 115 },
 ].map((option) => ({ ...option, label: sheetLabel(option.length) }))
 
-function billedSheetLength(artLength: number) {
-  const chargeable = Math.max(0, artLength - 1.5)
-  const safeLength = Math.max(12, Math.ceil(chargeable - 1e-9))
-  const fullSheets = Math.floor(safeLength / 200)
-  const remainder = safeLength % 200
-  if (remainder === 0) return Math.max(12, fullSheets * 200)
-  const remainderSheet = sheetOptions.find((option) => remainder <= option.length) ?? sheetOptions[sheetOptions.length - 1]
-  return fullSheets * 200 + remainderSheet.length
-}
-
 function cuttingFeeEach(transferCount: number) {
   if (transferCount <= 0) return 0
   if (transferCount <= 24) return 0.5
@@ -111,19 +102,6 @@ function cuttingFeeEach(transferCount: number) {
   return 0.1
 }
 
-function getGangSheet(length: number) {
-  const billedLength = billedSheetLength(length)
-  const fullSheets = Math.floor(billedLength / 200)
-  const remainder = billedLength % 200
-  const remainderSheet = remainder > 0 ? sheetOptions.find((option) => option.length === remainder) ?? sheetOptions[sheetOptions.length - 1] : null
-  const price = fullSheets * 115 + (remainderSheet?.price ?? 0)
-  return {
-    length: billedLength,
-    label: sheetLabel(billedLength),
-    price,
-    breakdown: fullSheets > 0 && remainderSheet ? `${fullSheets} × 200 in + ${remainderSheet.length} in` : fullSheets > 0 ? `${fullSheets} × 200 in` : remainderSheet?.label ?? sheetLabel(12),
-  }
-}
 
 function PlacementIcon({ placement }: { placement: string }) {
   if (placement === 'Left Chest') return <span className="pocket-icon" aria-hidden="true"><span /></span>
@@ -207,7 +185,9 @@ function HomeBuilder() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null)
-  const [sheetPreviewUrl, setSheetPreviewUrl] = useState<string | null>(null)
+  const [sheetPreviewUrls, setSheetPreviewUrls] = useState<string[]>([])
+  const [previewPage, setPreviewPage] = useState(0)
+  const sheetPreviewUrl = sheetPreviewUrls[previewPage] ?? sheetPreviewUrls[0] ?? null
   const [previewing, setPreviewing] = useState(false)
   const [previewBusy, setPreviewBusy] = useState(false)
   const [sheetPreviewOpen, setSheetPreviewOpen] = useState(false)
@@ -374,48 +354,31 @@ function HomeBuilder() {
     heightIn: getDesignHeight(design),
     allowRotate: !design.keepUpright,
   }))
-  /** What the sheet would cost with nothing turned — for the saving readout. */
-  const uprightLayout = packSheetBestGutter(pieceInputs, {
-    packWidthIn: SHEET_WIDTH_IN,
-    startYIn: ART_INSET_IN,
-    rotatePolicy: 'none' as const,
-  })
-  // Billable packing ignores pre-cut gutters/insets — pre-cut must not inflate sheet price.
-  const billableLayout = packSheetBestGutter(pieceInputs, {
-    packWidthIn: SHEET_WIDTH_IN,
-    startYIn: ART_INSET_IN,
-  })
-  const sheetLayout = cutOut
-    ? packSheetBestGutter(pieceInputs, {
-        packWidthIn: SHEET_WIDTH_IN - MARK_CLEARANCE_IN * 2,
-        startYIn: CUT_ART_START_IN,
-        sideInsetIn: MARK_CLEARANCE_IN,
-        minGutterIn: CUT_GUTTER_IN,
-      })
-    : billableLayout
-  const billableHeightIn = Math.max(0, billableLayout.contentEndY - ART_INSET_IN)
-  const printedHeightIn = cutOut
-    ? Math.max(0, sheetLayout.contentEndY - CUT_ART_START_IN)
-    : billableHeightIn
-  // Full film length for PNG / PLT / overlays (leading + trailing insets).
-  const printHeight = cutOut
-    ? sheetLayout.contentEndY + CUT_ART_START_IN
-    : sheetLayout.contentEndY + ART_INSET_IN
-  const cutMarkRects = cutOut ? registrationMarkRects(printHeight, SHEET_WIDTH_IN, sheetLayout.pieces) : []
-  const cutMarks = cutOut ? registrationMarkBounds(printHeight, SHEET_WIDTH_IN, sheetLayout.pieces) : []
-  const startArrow = cutMarks.find((mark) => mark.first)
-  const startArrowPoints = startArrow ? startMarkArrowPoints(startArrow) : []
-  const billedLength = billedSheetLength(billableHeightIn)
-  const cutBoxes = cutOut ? cutPreviewBoxes(sheetLayout.pieces, SHEET_WIDTH_IN, printHeight) : []
-  const cutTooTall = cutOut && sheetLayout.pieces.some((piece) => piece.heightIn + CUT_MARGIN_IN * 2 > MARK_SECTION_IN)
+  /**
+   * Pack onto as many 200 in sheets as the job needs. Every sheet is its own
+   * print file, cut file, and cart line (200 + 200 + 100 for 500 in of art).
+   */
+  const pagination = paginateGangSheet(pieceInputs, { cutOut })
+  const pages = pagination.pages
+  const sheetCount = pagination.sheetCount
+  const activePage = pages[Math.min(previewPage, Math.max(0, pages.length - 1))]
+  const sheetLayout = activePage?.layout ?? { pieces: [] as PlacedSheetPiece[], rotatedCount: 0 }
+  // Full film length of the sheet being shown (leading + trailing insets).
+  const printHeight = activePage?.printHeight ?? ART_INSET_IN * 2
+  const cutMarks = activePage?.markBounds ?? []
+  const billedLength = pagination.billedLength
+  const pageBilledLength = activePage?.billedLength ?? sheetOptions[0].length
+  const cutBoxes = activePage?.cutBoxes ?? []
+  const cutTooTall = pages.some((page) => page.cutTooTall)
+  const tooLargeCount = pagination.tooLarge.length
   const layoutPieces: LayoutPiece[] = sheetLayout.pieces.map((piece) => ({
     xIn: piece.xIn,
     yIn: piece.yIn,
     widthIn: piece.widthIn,
     heightIn: piece.heightIn,
   }))
-  const rotatedCount = sheetLayout.rotatedCount
-  const filmSavedIn = Math.max(0, uprightLayout.contentBottom - billableLayout.contentBottom)
+  const rotatedCount = pagination.rotatedCount
+  const filmSavedIn = pagination.filmSavedIn
   const rotateSaveMessage =
     rotatedCount > 0 && filmSavedIn > 0.05
       ? `Turned ${rotatedCount} design${rotatedCount === 1 ? '' : 's'} a quarter turn to fit more across — saves ${filmSavedIn.toFixed(1)} in of film.`
@@ -430,17 +393,25 @@ function HomeBuilder() {
     design.customWidth, design.customHeight, design.previewUrl,
     design.pixelWidth, design.pixelHeight,
   ].join(':')).join('|')
-  const sheet = getGangSheet(billableHeightIn)
-  const chargeableArtIn = Math.max(0, billableHeightIn - 1.5)
-  const lengthLeftIn = Math.max(0, billedLength - chargeableArtIn)
-  const fillPercent = billedLength > 0 ? Math.min(100, Math.round((chargeableArtIn / billedLength) * 100)) : 0
+  const sheet = {
+    label:
+      sheetCount > 1
+        ? `${sheetCount} sheets · ${pagination.breakdown}`
+        : (activePage?.label ?? sheetLabel(sheetOptions[0].length)),
+    price: pagination.price,
+    breakdown: pagination.breakdown,
+  }
+  // Fill readout describes the last sheet — that is where the next design lands.
+  const lastPage = pages[pages.length - 1]
+  const chargeableArtIn = Math.max(0, (lastPage?.billableHeightIn ?? 0) - 1.5)
+  const lengthLeftIn = Math.max(0, (lastPage?.billedLength ?? 0) - chargeableArtIn)
+  const fillPercent = lastPage ? Math.min(100, Math.round((chargeableArtIn / lastPage.billedLength) * 100)) : 0
   const sheetFillMessage =
     designs.length === 0
       ? null
       : lengthLeftIn <= 1
-        ? 'Sheet is full — more designs will start a second sheet'
-        : `Sheet is ${fillPercent}% full, about ${lengthLeftIn < 10 ? lengthLeftIn.toFixed(1).replace(/\.0$/, '') : Math.round(lengthLeftIn)}in of length left`
-  const sheetCount = Math.max(1, Math.ceil(billedLength / 200))
+        ? `Sheet${sheetCount > 1 ? ` ${sheetCount}` : ''} is full — more designs will start a new sheet`
+        : `${sheetCount > 1 ? `Sheet ${sheetCount} of ${sheetCount}` : 'Sheet'} is ${fillPercent}% full, about ${lengthLeftIn < 10 ? lengthLeftIn.toFixed(1).replace(/\.0$/, '') : Math.round(lengthLeftIn)}in of length left`
   const sheetName = customerName.trim() || 'Gang Sheet'
   const cutRate = cuttingFeeEach(totalTransfers)
   const offeredCutFee = totalTransfers > 0 ? cutRate * totalTransfers : 0
@@ -540,49 +511,71 @@ function HomeBuilder() {
     setSheetPreviewOpen(false)
     setJobStamp('')
     setBuilt(false)
-    setSheetPreviewUrl((url) => {
-      if (url) URL.revokeObjectURL(url)
-      return null
+    setPreviewPage(0)
+    setSheetPreviewUrls((urls) => {
+      for (const url of urls) URL.revokeObjectURL(url)
+      return []
     })
   }, [layoutKey, customerName])
 
-  function sheetPxPerIn(maxEdge: number, preferred: number) {
-    return Math.max(24, Math.min(preferred, Math.floor(maxEdge / Math.max(printHeight, SHEET_WIDTH_IN))))
+  function sheetPxPerIn(page: SheetPage<(typeof pieceInputs)[number]>, maxEdge: number, preferred: number) {
+    return Math.max(24, Math.min(preferred, Math.floor(maxEdge / Math.max(page.printHeight, SHEET_WIDTH_IN))))
   }
 
-  async function composeCurrentSheet(pxPerIn: number, label: string, mapCmyk = false) {
-    if (sheetLayout.pieces.length === 0) throw new Error('Add a design before previewing the gang sheet.')
+  async function composeSheetPage(
+    page: SheetPage<(typeof pieceInputs)[number]>,
+    pxPerIn: number,
+    label: string,
+    mapCmyk = false,
+  ) {
+    if (page.layout.pieces.length === 0) throw new Error('Add a design before previewing the gang sheet.')
     return composeGangSheet({
-      pieces: sheetLayout.pieces,
-      sheetLengthIn: printHeight,
+      pieces: page.layout.pieces,
+      sheetLengthIn: page.printHeight,
       pxPerIn,
       label,
       mapCmyk,
-      marks: cutOut ? cutMarkRects : [],
-      startArrow: cutOut ? startArrowPoints : [],
+      marks: cutOut ? page.marks : [],
+      startArrow: cutOut ? page.startArrow : [],
     })
+  }
+
+  /** Label printed on the sheet: `Customer 10/17 1530 (200) 2 of 3`. */
+  function pageJobName(page: SheetPage<(typeof pieceInputs)[number]>, stamp: string) {
+    return sheetJobName(customerName.trim(), page.billedLength, stamp, { index: page.index, count: sheetCount })
   }
 
   async function previewGangSheet() {
     if (!customerName.trim() || designs.length === 0 || previewBusy || saving) return
-    if (sheetPreviewUrl && previewing) {
+    if (pages.length === 0) {
+      setSaveError('Add a design before previewing the gang sheet.')
+      return
+    }
+    if (sheetPreviewUrls.length > 0 && previewing) {
       setSheetPreviewOpen(true)
       return
     }
     const stamp = sheetStamp()
-    const label = sheetJobName(customerName.trim(), billedLength, stamp)
     setJobStamp(stamp)
     const gen = ++previewGen.current
     setPreviewBusy(true)
     setSaveError(null)
     setBuilt(false)
     try {
-      const blob = await composeCurrentSheet(sheetPxPerIn(3600, 72), label)
-      if (gen !== previewGen.current) return
-      setSheetPreviewUrl((url) => {
-        if (url) URL.revokeObjectURL(url)
-        return URL.createObjectURL(blob)
+      const urls: string[] = []
+      for (const page of pages) {
+        const blob = await composeSheetPage(page, sheetPxPerIn(page, 3600, 72), pageJobName(page, stamp))
+        if (gen !== previewGen.current) {
+          for (const url of urls) URL.revokeObjectURL(url)
+          return
+        }
+        urls.push(URL.createObjectURL(blob))
+      }
+      setSheetPreviewUrls((old) => {
+        for (const url of old) URL.revokeObjectURL(url)
+        return urls
       })
+      setPreviewPage(0)
       setPreviewing(true)
       setSheetPreviewOpen(true)
     } catch (err) {
@@ -600,23 +593,48 @@ function HomeBuilder() {
     setUploadProgress(0)
     setDriveFolderUrl(null)
     try {
-      const stamp = jobStamp || sheetStamp()
-      const label = sheetJobName(customerName.trim(), billedLength, stamp)
-      const printName = sheetFileName(customerName.trim(), billedLength, stamp)
-      const cartFileName = `${slugify(customerName.trim())}-gangsheet.png`
-      const png = await composeCurrentSheet(sheetPxPerIn(14000, 150), label, true)
-
-      // Browser → Google Drive directly (chunked). WordPress only gets the Drive link.
-      let cutterFile: { name: string; content: string; mimeType: string } | undefined
-      if (cutOut) {
-        const pltText = cutPlt(sheetLayout.pieces, printHeight)
-        if (!pltText) throw new Error('Could not build the cutter PLT for this sheet.')
-        cutterFile = {
-          name: sheetCutFileName(customerName.trim(), billedLength, stamp),
-          content: pltText,
-          mimeType: 'text/plain',
-        }
+      if (pages.length === 0) throw new Error('Add a design before adding the gang sheet to your cart.')
+      if (tooLargeCount > 0) {
+        throw new Error(`${tooLargeCount} design${tooLargeCount === 1 ? ' is' : 's are'} too large for a ${SHEET_WIDTH_IN} × 200 in sheet. Shrink it to continue.`)
       }
+      const stamp = jobStamp || sheetStamp()
+      const who = customerName.trim()
+      const cartSlug = slugify(who)
+
+      // One print PNG per sheet, each labelled "N of M" on the film and in its
+      // file name, so a 500 in job is three sheets (200 + 200 + 100), not one.
+      const sheetFiles: Array<{
+        page: SheetPage<(typeof pieceInputs)[number]>
+        printName: string
+        cutName?: string
+        plt?: string
+        png: Blob
+      }> = []
+      for (const page of pages) {
+        const part = { index: page.index, count: sheetCount }
+        const printName = sheetFileName(who, page.billedLength, stamp, part)
+        const png = await composeSheetPage(page, sheetPxPerIn(page, 14000, 150), pageJobName(page, stamp), true)
+        let plt: string | undefined
+        let cutName: string | undefined
+        if (cutOut) {
+          plt = cutPlt(page.layout.pieces, page.printHeight)
+          if (!plt) throw new Error(`Could not build the cutter PLT for sheet ${partLabel(page.index, sheetCount)}.`)
+          cutName = sheetCutFileName(who, page.billedLength, stamp, part)
+        }
+        sheetFiles.push({ page, printName, cutName, plt, png })
+      }
+
+      // Browser → Google Drive directly (chunked). WordPress only gets the Drive links.
+      // The first PLT rides the session; any others go up as small text files.
+      const [firstCut, ...otherCuts] = sheetFiles.filter((file) => file.plt)
+      const cutterFile = firstCut?.plt && firstCut.cutName
+        ? { name: firstCut.cutName, content: firstCut.plt, mimeType: 'text/plain' }
+        : undefined
+      const extraCutUploads = otherCuts.map((file) => ({
+        name: file.cutName as string,
+        mimeType: 'text/plain',
+        blob: new Blob([file.plt as string], { type: 'text/plain' }),
+      }))
 
       // Each design's art goes up in the same batch as the print PNG. The store page
       // redirects to the cart the moment WooCommerce accepts the line, so anything
@@ -649,28 +667,64 @@ function HomeBuilder() {
       })
       const artPlan = await prepareDesignArtUploads(artInputs)
 
-      // Print PNG stays first — its id is the cart's Drive link.
+      // Print PNGs stay first, in sheet order — sheet 1's id is the cart's Drive link.
       const drive = await uploadJobToGoogleDrive({
-        customerName: customerName.trim(),
+        customerName: who,
         stamp,
-        files: [{ name: printName, mimeType: 'image/png', blob: png }, ...artPlan.uploads],
+        files: [
+          ...sheetFiles.map((file) => ({ name: file.printName, mimeType: 'image/png', blob: file.png })),
+          ...extraCutUploads,
+          ...artPlan.uploads,
+        ],
         cutterFile,
         onProgress: setUploadProgress,
       })
       setDriveFolderUrl(drive.folderUrl)
+
+      const uploadedByName = new Map(drive.files.map((file) => [file.name, file]))
+      const cartSheets: GangSheetCartSheet[] = sheetFiles.map((file) => {
+        const uploaded = uploadedByName.get(file.printName)
+        if (!uploaded) {
+          throw new Error(`Could not save sheet ${partLabel(file.page.index, sheetCount)} to our print queue. Please try again.`)
+        }
+        const cut = file.cutName ? uploadedByName.get(file.cutName) : undefined
+        // Pre-cut is billed per transfer, so each sheet carries the fee for its own pieces.
+        const sheetPrecut = cutOut ? Math.round(cutRate * file.page.transfers * 100) / 100 : 0
+        return {
+          sheetHeightIn: Math.round(file.page.printedHeightIn * 100) / 100,
+          billableHeightIn: file.page.billedLength,
+          fileUrl: uploaded.webViewLink,
+          driveFileId: uploaded.id,
+          fileName: sheetCount > 1 ? `${cartSlug}-gangsheet-${file.page.index + 1}-of-${sheetCount}.png` : `${cartSlug}-gangsheet.png`,
+          printFileName: file.printName,
+          sheetIndex: partLabel(file.page.index, sheetCount),
+          transfers: file.page.transfers,
+          precutTotal: sheetPrecut,
+          cutFileUrl: cut?.webViewLink,
+          cutFileName: file.cutName,
+        }
+      })
 
       /** SPEC E3: project JSON with design art ids, written before the cart redirect. */
       try {
         await autoSaveProjectJson({
           folderId: drive.folderId,
           source: 'customer-site',
-          name: customerName.trim(),
-          customer: { name: customerName.trim() },
+          name: who,
+          customer: { name: who },
           product: {
             printType: 'dtf',
             rollWidthIn: SHEET_WIDTH_IN,
             widthIn: SHEET_WIDTH_IN,
             heightIn: billedLength,
+            sheetCount,
+            sheets: cartSheets.map((item) => ({
+              sheetIndex: item.sheetIndex,
+              billedLengthIn: item.billableHeightIn,
+              printFileName: item.printFileName,
+              cutFileName: item.cutFileName,
+              transfers: item.transfers,
+            })),
           },
           cut: { enabled: cutOut },
           fromUpload: true,
@@ -681,38 +735,31 @@ function HomeBuilder() {
         console.error('[project] customer-site project JSON failed', err)
       }
 
-      const driveLink =
-        drive.webViewLink ??
-        drive.fileUrl ??
-        (drive.fileId ? `https://drive.google.com/file/d/${drive.fileId}/view` : null)
-      if (!driveLink || !drive.fileId) {
-        throw new Error('Could not save your sheet to our print queue. Please try again.')
+      // One request carries every sheet: the store page redirects to the cart as
+      // soon as WooCommerce accepts the first line, so separate requests would be lost.
+      const first = cartSheets[0]
+      const payload: GangSheetCartPayload = {
+        customerName: who,
+        sheetWidthIn: SHEET_WIDTH_IN,
+        sheetHeightIn: first.sheetHeightIn,
+        billableHeightIn: first.billableHeightIn,
+        quantity: 1,
+        designs: designs.length,
+        transfers: first.transfers,
+        precut: cutOut,
+        precutTotal: first.precutTotal,
+        buildFee: 0,
+        fileName: first.fileName,
+        fileUrl: first.fileUrl,
+        driveFileId: first.driveFileId,
+        sheetIndex: first.sheetIndex,
+        sheetType: 'built',
+        jobStamp: stamp,
+        printFileName: first.printFileName,
+        sheets: cartSheets,
       }
-
-      // One print-ready export covers the full packed sheet; sheetCount is the roll billing split.
-      for (let index = 0; index < sheetCount; index += 1) {
-        const payload: GangSheetCartPayload = {
-          customerName: customerName.trim(),
-          sheetWidthIn: SHEET_WIDTH_IN,
-          sheetHeightIn: printedHeightIn,
-          billableHeightIn: billedLength,
-          quantity: 1,
-          designs: designs.length,
-          transfers: totalTransfers,
-          precut: cutOut,
-          precutTotal: cutFee,
-          buildFee: 0,
-          fileName: sheetCount > 1 ? cartFileName.replace(/\.png$/i, `-${index + 1}.png`) : cartFileName,
-          fileUrl: driveLink,
-          driveFileId: drive.fileId,
-          sheetIndex: `${index + 1} of ${sheetCount}`,
-          sheetType: 'built',
-          jobStamp: stamp,
-          printFileName: printName,
-        }
-        const result = await addToCart(payload)
-        if (!result.ok) throw new Error(result.error)
-      }
+      const result = await addToCart(payload)
+      if (!result.ok) throw new Error(result.error)
 
       setBuilt(true)
       setSheetPreviewOpen(false)
@@ -879,9 +926,9 @@ function HomeBuilder() {
         {sheetPreviewOpen && sheetPreviewUrl && (
           <SheetPreviewModal
             url={sheetPreviewUrl}
-            sheetLabel={sheet.label}
-            sheetLengthIn={billedLength}
-            totalTransfers={totalTransfers}
+            sheetLabel={sheetCount > 1 ? `${sheetName} · ${partLabel(activePage?.index ?? 0, sheetCount)} · ${activePage?.label ?? ''}` : sheet.label}
+            sheetLengthIn={pageBilledLength}
+            totalTransfers={activePage?.transfers ?? totalTransfers}
             saving={saving}
             onClose={() => setSheetPreviewOpen(false)}
             onConfirm={() => requestAddToCart()}
@@ -891,6 +938,9 @@ function HomeBuilder() {
             cutOut={cutOut}
             audience="customer"
             layoutPieces={layoutPieces}
+            pageIndex={activePage?.index ?? 0}
+            pageCount={sheetCount}
+            onPageChange={setPreviewPage}
           />
         )}
         <PrecutOfferModal
@@ -946,6 +996,9 @@ function HomeBuilder() {
         {cutTooTall && (
           <p className="save-error">A design is taller than {MARK_SECTION_IN} in with its cut box, so the cutter cannot finish it in one pass. Shorten it or turn Pre-cut DTFs off.</p>
         )}
+        {tooLargeCount > 0 && (
+          <p className="save-error">{tooLargeCount} design{tooLargeCount === 1 ? ' is' : 's are'} too large for a {SHEET_WIDTH_IN} × 200 in sheet. Shrink {tooLargeCount === 1 ? 'it' : 'them'} to continue.</p>
+        )}
         {rotateSaveMessage && (
           <p className="rotate-save-note" aria-live="polite">{rotateSaveMessage}</p>
         )}
@@ -958,12 +1011,20 @@ function HomeBuilder() {
             <span className="tax-estimate">Estimated tax (11%): ${(Number(total) * 0.11).toFixed(2)}</span>
           </div>
           <div className="price-breakdown">
-            <strong>{sheetName} · {sheetCount === 1 ? '1 of 1' : `1 of ${sheetCount}`}</strong>
-            <span>{sheet.breakdown}</span>
+            <strong>{sheetName} · {sheetCount === 1 ? '1 of 1' : `${sheetCount} sheets`}</strong>
+            <span>{sheet.breakdown}{sheetCount > 1 ? ` = $${sheet.price.toFixed(2)}` : ''}</span>
             {cutOut && totalTransfers > 0 && (
               <span>Pre-cut: {totalTransfers} × ${cutRate.toFixed(2)} = ${cutFee.toFixed(2)}</span>
             )}
-            {sheetCount > 1 && <div className="sheet-part-names">{Array.from({ length: sheetCount }, (_, index) => <span key={index}>{sheetName} · {index + 1} of {sheetCount}</span>)}</div>}
+            {sheetCount > 1 && (
+              <div className="sheet-line-prices">
+                {pages.map((page) => (
+                  <span key={page.index}>
+                    {sheetName} · {partLabel(page.index, sheetCount)} · {page.label} · ${page.price.toFixed(2)}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <div className="preview-heading"><strong>Gang sheet</strong></div>
@@ -977,6 +1038,20 @@ function HomeBuilder() {
         )}
         <div className="sheet-preview">
           <span className="dimension horizontal">22 in</span>
+          {sheetCount > 1 && (
+            <div className="sheet-page-tabs" role="group" aria-label="Sheets">
+              {pages.map((page) => (
+                <button
+                  key={page.index}
+                  type="button"
+                  className={page.index === (activePage?.index ?? 0) ? 'selected' : ''}
+                  onClick={() => setPreviewPage(page.index)}
+                >
+                  {partLabel(page.index, sheetCount)} · {page.billedLength} in
+                </button>
+              ))}
+            </div>
+          )}
           {sheetPreviewUrl ? (
             <button type="button" className="sheet-final-preview-button" onClick={() => setSheetPreviewOpen(true)}>
               <span className="sheet-final-preview-wrap">
@@ -994,7 +1069,7 @@ function HomeBuilder() {
           ) : (
             <div className="mini-sheet preview-placeholder">{previewPieces.length ? '' : <div className="preview-empty">Add designs</div>}</div>
           )}
-          <span className="dimension vertical">{billedLength} in</span>
+          <span className="dimension vertical">{pageBilledLength} in</span>
           <button className="build-button" disabled={previewBusy || saving || designs.length === 0 || !customerName.trim()} onClick={() => void previewGangSheet()}>
             <Eye size={18} /> {previewBusy ? 'Building preview…' : 'Preview Gang Sheet'}
           </button>
@@ -1028,7 +1103,7 @@ function HomeBuilder() {
             <div className="built-title"><span><Check size={21} /></span><strong>Added to your cart.</strong></div>
             <p>
               {sheet.label} · {totalTransfers} transfers · We will print{cutOut ? ' and cut' : ''} your
-              sheet.
+              {sheetCount > 1 ? ` ${sheetCount} sheets.` : ' sheet.'}
             </p>
             {driveFolderUrl && (
               <a className="drive-link" href={driveFolderUrl} target="_blank" rel="noreferrer">

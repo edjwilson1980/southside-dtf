@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Check, Minus, Plus } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
 import { CutShapeOverlay } from '@/components/cut-shape-overlay'
 import { SheetLayoutOverlay, type LayoutPiece } from '@/components/sheet-layout-overlay'
@@ -47,6 +47,10 @@ type SheetPreviewModalProps = {
   audience?: 'customer' | 'shop'
   layoutPieces?: LayoutPiece[]
   confirmLabel?: string
+  /** Multi-sheet jobs: 0-based sheet being shown and how many there are. */
+  pageIndex?: number
+  pageCount?: number
+  onPageChange?: (index: number) => void
 }
 
 export function SheetPreviewModal({
@@ -66,7 +70,11 @@ export function SheetPreviewModal({
   audience = 'shop',
   layoutPieces = [],
   confirmLabel,
+  pageIndex = 0,
+  pageCount = 1,
+  onPageChange,
 }: SheetPreviewModalProps) {
+  const paged = pageCount > 1 && typeof onPageChange === 'function'
   const paneRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
   const fitZoomRef = useRef(true)
@@ -235,6 +243,38 @@ export function SheetPreviewModal({
             </button>
             <span className="zoom-readout">{fitZoom ? 'Fit' : `${Math.round(zoomScale * 100)}%`}</span>
           </div>
+          {paged && (
+            <div className="sheet-pager" role="group" aria-label="Sheet">
+              <button
+                type="button"
+                aria-label="Previous sheet"
+                disabled={pageIndex <= 0}
+                onClick={() => onPageChange?.(Math.max(0, pageIndex - 1))}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              {Array.from({ length: pageCount }, (_, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  className={index === pageIndex ? 'selected' : ''}
+                  aria-current={index === pageIndex ? 'true' : undefined}
+                  onClick={() => onPageChange?.(index)}
+                >
+                  {index + 1}
+                </button>
+              ))}
+              <button
+                type="button"
+                aria-label="Next sheet"
+                disabled={pageIndex >= pageCount - 1}
+                onClick={() => onPageChange?.(Math.min(pageCount - 1, pageIndex + 1))}
+              >
+                <ChevronRight size={14} />
+              </button>
+              <span className="zoom-readout">Sheet {pageIndex + 1} of {pageCount}</span>
+            </div>
+          )}
         </div>
 
         <div className="sheet-preview-stage">

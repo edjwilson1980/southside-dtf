@@ -7,6 +7,7 @@ import {
   packSheetIntoPages,
   packSheetPieces,
   type PackItem,
+  type PlacedSheetPiece,
 } from '@/lib/compose-sheet'
 import {
   CUT_GUTTER_IN,
@@ -131,8 +132,10 @@ export function paginateGangSheet<T extends PackItem>(
       ? layout.contentEndY + CUT_ART_START_IN
       : layout.contentEndY + ART_INSET_IN
     const tier = sheetTierForArtLength(billableHeightIn)
-    const marks = cutOut ? registrationMarkRects(printHeight, sheetWidthIn, layout.pieces) : []
-    const markBounds = cutOut ? registrationMarkBounds(printHeight, sheetWidthIn, layout.pieces) : []
+    // Cut helpers only read geometry; server-side items carry no preview URL.
+    const geometry: PlacedSheetPiece[] = layout.pieces.map((piece) => ({ previewUrl: '', ...piece }))
+    const marks = cutOut ? registrationMarkRects(printHeight, sheetWidthIn, geometry) : []
+    const markBounds = cutOut ? registrationMarkBounds(printHeight, sheetWidthIn, geometry) : []
     const first = markBounds.find((mark) => mark.first)
     return {
       index,
@@ -147,7 +150,7 @@ export function paginateGangSheet<T extends PackItem>(
       marks,
       markBounds,
       startArrow: first ? startMarkArrowPoints(first) : [],
-      cutBoxes: cutOut ? cutPreviewBoxes(layout.pieces, sheetWidthIn, printHeight) : [],
+      cutBoxes: cutOut ? cutPreviewBoxes(geometry, sheetWidthIn, printHeight) : [],
       cutTooTall:
         cutOut && layout.pieces.some((piece) => piece.heightIn + CUT_MARGIN_IN * 2 > MARK_SECTION_IN),
     }
