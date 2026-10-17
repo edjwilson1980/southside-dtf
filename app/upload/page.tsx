@@ -16,7 +16,7 @@ import {
 } from '@/lib/upload-scale'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { autoSaveProjectJson } from '@/lib/project/auto-save'
-import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
+import { slugify, useStoreBridge, type GangSheetCartPayload, type GangSheetCartSheet } from '@/lib/ssgs-cart-bridge'
 import { sheetStamp } from '@/lib/sheet-name'
 import { SHEET_ACCEPT, SHEET_ACCEPT_LABEL, isAcceptedSheetFile } from '@/lib/accepted-uploads'
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
@@ -351,48 +351,62 @@ function UploadFlow() {
         console.error('[project] customer upload auto-save failed', err)
       }
 
-      // One cart line per uploaded sheet, each with its own Drive link and price.
-      for (const [index, job] of jobs.entries()) {
+      // One cart line per uploaded sheet, each with its own Drive link and price —
+      // sent in a single request, because the store page redirects to the cart as
+      // soon as the first line is accepted.
+      const sheets: GangSheetCartSheet[] = jobs.map((job, index) => {
         const uploaded = drive.files.find((file) => file.name === job.printName)
         if (!uploaded?.id || !uploaded.webViewLink) {
           throw new Error(`Could not save ${job.item.entry.file.name} to our print queue. Please try again.`)
         }
-
-        const payload: GangSheetCartPayload = {
-          customerName: customerName.trim(),
-          sheetWidthIn: SAFETY_WIDTH_IN,
+        return {
           sheetHeightIn: job.scaled.scaledHeightIn,
           // Send the billed tier (e.g. 36), not the raw float — WooCommerce picks the
           // smallest variation >= this value, so 36.49 would skip a 36 in product.
           billableHeightIn: job.item.sheet?.length ?? job.scaled.scaledHeightIn,
-          quantity: 1,
-          designs: 1,
-          transfers: 0,
-          precut: false,
-          precutTotal: 0,
-          fileName: `${safeName}-gangsheet-upload${jobs.length > 1 ? `-${index + 1}` : ''}${job.ext}`,
           fileUrl: uploaded.webViewLink,
           driveFileId: uploaded.id,
+          fileName: `${safeName}-gangsheet-upload${jobs.length > 1 ? `-${index + 1}` : ''}${job.ext}`,
+          printFileName: job.printName,
           sheetIndex: `${index + 1} of ${jobs.length}`,
-          sheetType: 'uploaded',
+          transfers: 0,
+          precutTotal: 0,
           sourceWidthIn: job.scaled.sourceWidthIn,
           sourceHeightIn: job.scaled.sourceHeightIn,
           scaleFactor: job.scaled.scaleFactor,
           effectiveDpi: job.scaled.effectiveDpi,
           dpiSource: job.item.dpiSource,
-          jobStamp: stamp,
-          printFileName: job.printName,
         }
+      })
 
-        const result = await addToCart(payload)
-        if (!result.ok) {
-          throw new Error(
-            jobs.length > 1
-              ? `Sheet ${index + 1} of ${jobs.length} could not be added to the cart: ${result.error}`
-              : result.error,
-          )
-        }
+      const first = sheets[0]
+      const payload: GangSheetCartPayload = {
+        customerName: customerName.trim(),
+        sheetWidthIn: SAFETY_WIDTH_IN,
+        sheetHeightIn: first.sheetHeightIn,
+        billableHeightIn: first.billableHeightIn,
+        quantity: 1,
+        designs: 1,
+        transfers: 0,
+        precut: false,
+        precutTotal: 0,
+        fileName: first.fileName,
+        fileUrl: first.fileUrl,
+        driveFileId: first.driveFileId,
+        sheetIndex: first.sheetIndex,
+        sheetType: 'uploaded',
+        sourceWidthIn: first.sourceWidthIn,
+        sourceHeightIn: first.sourceHeightIn,
+        scaleFactor: first.scaleFactor,
+        effectiveDpi: first.effectiveDpi,
+        dpiSource: first.dpiSource,
+        jobStamp: stamp,
+        printFileName: first.printFileName,
+        sheets,
       }
+
+      const result = await addToCart(payload)
+      if (!result.ok) throw new Error(result.error)
 
       setBuilt(true)
     } catch (err) {

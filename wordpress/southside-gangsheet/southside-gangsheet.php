@@ -2,7 +2,7 @@
 /**
  * Plugin Name: South Side Gang Sheet Builder
  * Description: Embed the South Side DTF customer gang sheet builder and UV DTF sticker maker, and add finished sheets to the WooCommerce cart.
- * Version: 1.23
+ * Version: 1.24
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.23');
+define('SSGS_PLUGIN_VERSION', '1.24');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 /** WooCommerce attribute + term that marks a product as UV DTF (spec A9). */
 define('SSGS_UV_DTF_ATTRIBUTE', 'pa_print_type');
@@ -308,23 +308,12 @@ add_action('wp_enqueue_scripts', function () {
 });
 
 /**
- * Smallest variation whose roll length fits the sheet (>= target).
- * Falls back to the largest only when the sheet exceeds every size.
+ * Purchasable variations with their roll length, shortest first.
+ * "22in x 36in" -> 36 (the second number is the roll length, not the 22in width).
  */
-function ssgs_find_variation_id($product, $sheet_height_in) {
+function ssgs_variation_sizes($product) {
   if (!$product || !$product->is_type('variable')) {
-    return 0;
-  }
-
-  $raw = floatval($sheet_height_in);
-  if ($raw <= 0) {
-    return 0;
-  }
-  // Floor so a print length like 36.49 in still matches a 36 in variation instead of
-  // skipping ahead to the next size (e.g. 90 in when intermediate sizes are missing).
-  $target = floor($raw + 1e-9);
-  if ($target < 1) {
-    $target = $raw;
+    return array();
   }
 
   $sizes = array();
@@ -352,22 +341,130 @@ function ssgs_find_variation_id($product, $sheet_height_in) {
     $sizes[] = array('id' => intval($variation_id), 'length' => $length);
   }
 
-  if (empty($sizes)) {
-    return 0;
-  }
-
   usort($sizes, function ($a, $b) {
     return $a['length'] <=> $b['length'];
   });
+  return $sizes;
+}
 
-  foreach ($sizes as $size) {
+/** Longest roll length the product sells (0 when it has no sized variations). */
+function ssgs_max_variation_length($product) {
+  $sizes = ssgs_variation_sizes($product);
+  if (empty($sizes)) {
+    return 0.0;
+  }
+  $largest = end($sizes);
+  return floatval($largest['length']);
+}
+
+/**
+ * Smallest variation whose roll length fits the sheet (>= target).
+ * Returns 0 when the sheet is longer than every size — never silently bills the
+ * largest sheet for a longer job. Over-length jobs are split into more sheets first
+ * (see ssgs_split_billed_length).
+ */
+function ssgs_find_variation_id($product, $sheet_height_in) {
+  $raw = floatval($sheet_height_in);
+  if ($raw <= 0) {
+    return 0;
+  }
+  // Floor so a print length like 36.49 in still matches a 36 in variation instead of
+  // skipping ahead to the next size (e.g. 90 in when intermediate sizes are missing).
+  $target = floor($raw + 1e-9);
+  if ($target < 1) {
+    $target = $raw;
+  }
+
+  foreach (ssgs_variation_sizes($product) as $size) {
     if ($size['length'] + 0.01 >= $target) {
       return $size['id'];
     }
   }
+  return 0;
+}
 
-  $largest = end($sizes);
-  return $largest['id'];
+/**
+ * Split a billed length that is longer than the largest sheet into per-sheet
+ * lengths: 500 in on a 200 in max -> 200, 200, 100. Each part is then matched to
+ * its own variation, so every sheet is billed on the ladder.
+ */
+function ssgs_split_billed_length($billed_in, $max_in) {
+  $total = floatval($billed_in);
+  $max = floatval($max_in);
+  if ($total <= 0) {
+    return array();
+  }
+  if ($max <= 0 || $total <= $max + 0.01) {
+    return array($total);
+  }
+  $parts = array();
+  $remaining = $total;
+  while ($remaining > $max + 0.01) {
+    $parts[] = $max;
+    $remaining -= $max;
+  }
+  if ($remaining > 0.01) {
+    $parts[] = $remaining;
+  }
+  return $parts;
+}
+
+/**
+ * One cart line per sheet. The builder sends `sheets[]` for multi-sheet jobs
+ * (each with its own Drive file); older payloads and intake jobs send a single
+ * total, which is split here when it is longer than the largest sheet.
+ */
+function ssgs_payload_lines($payload, $max_in) {
+  $lines = array();
+  if (!empty($payload['sheets']) && is_array($payload['sheets'])) {
+    $count = count($payload['sheets']);
+    foreach (array_values($payload['sheets']) as $index => $sheet) {
+      if (!is_array($sheet)) {
+        continue;
+      }
+      $line = array_merge($payload, $sheet);
+      unset($line['sheets']);
+      if (empty($line['sheetIndex'])) {
+        $line['sheetIndex'] = ($index + 1) . ' of ' . $count;
+      }
+      // The job-level build fee is charged once, on the first sheet.
+      if ($index > 0) {
+        $line['buildFee'] = 0;
+      }
+      $lines[] = $line;
+    }
+    if (!empty($lines)) {
+      return $lines;
+    }
+  }
+
+  $printed = floatval($payload['sheetHeightIn'] ?? 0);
+  $billable = floatval($payload['billableHeightIn'] ?? 0);
+  if ($billable <= 0 || $billable > $printed) {
+    $billable = $printed;
+  }
+  $parts = ssgs_split_billed_length($billable, $max_in);
+  if (count($parts) <= 1) {
+    return array($payload);
+  }
+
+  $count = count($parts);
+  foreach ($parts as $index => $part) {
+    $line = $payload;
+    $line['sheetIndex'] = ($index + 1) . ' of ' . $count;
+    $line['billableHeightIn'] = $part;
+    // Without per-sheet print lengths, each part prints as long as it bills.
+    $line['sheetHeightIn'] = $part;
+    if ($index > 0) {
+      // Pre-cut and build fees are job totals — charge them once, on sheet 1.
+      $line['precutTotal'] = 0;
+      $line['buildFee'] = 0;
+      $line['transfers'] = 0;
+      $line['designs'] = 0;
+    }
+    $lines[] = $line;
+  }
+  return $lines;
 }
 
 /**
@@ -495,104 +592,147 @@ function ssgs_handle_add_to_cart() {
     }
   }
 
-  $file_url = esc_url_raw($payload['fileUrl'] ?? '');
-  $drive_file_id = sanitize_text_field($payload['driveFileId'] ?? '');
-  if ($file_url === '' || (strpos($file_url, 'drive.google.com') === false && strpos($file_url, 'docs.google.com') === false)) {
-    wp_send_json_error(array('message' => 'Missing Google Drive file or folder link for this sheet.'), 400);
-  }
-  if ($drive_file_id === '' && preg_match('#/d/([^/]+)#', $file_url, $m)) {
-    $drive_file_id = $m[1];
-  }
-  if ($drive_file_id === '' && preg_match('#/folders/([^/?]+)#', $file_url, $m)) {
-    $drive_file_id = $m[1];
-  }
-
   $product = wc_get_product($product_id);
   if (!$product) {
     wp_send_json_error(array('message' => $is_uv_dtf ? 'UV DTF product not found.' : 'Gang sheet product not found.'), 404);
   }
 
-  $printed_height = floatval($payload['sheetHeightIn'] ?? 0);
-  $billable_height = floatval($payload['billableHeightIn'] ?? 0);
-
-  if ($printed_height <= 0) {
-    wp_send_json_error(array('message' => 'The builder did not send a sheet length.'), 400);
+  // Jobs longer than the largest sheet become more sheets ("1 of 3", "2 of 3"…),
+  // each its own line on the ladder — never one 200 in line for 500 in of film.
+  $max_in = $product->is_type('variable') ? ssgs_max_variation_length($product) : 0;
+  $lines = ssgs_payload_lines($payload, $max_in);
+  if (empty($lines)) {
+    wp_send_json_error(array('message' => 'The builder did not send any sheets.'), 400);
   }
+  $line_count = count($lines);
 
-  // Never bill for more than we print, and never bill on a missing figure.
-  if ($billable_height <= 0 || $billable_height > $printed_height) {
-    $billable_height = $printed_height;
-  }
+  // Validate every sheet before touching the cart, so a bad sheet 3 never leaves
+  // sheets 1 and 2 behind as a half-added job.
+  $prepared = array();
+  foreach ($lines as $index => $line) {
+    $sheet_label = $line_count > 1 ? sprintf(' (sheet %s)', sanitize_text_field($line['sheetIndex'] ?? ($index + 1))) : '';
 
-  $variation_id = 0;
-  $variation = array();
-  if ($product->is_type('variable')) {
-    $variation_id = ssgs_find_variation_id($product, $billable_height);
-    if ($variation_id <= 0) {
-      wp_send_json_error(array('message' => $is_uv_dtf
-        ? 'No matching sheet length variation on the UV DTF product.'
-        : 'No matching sheet length variation for this gang sheet.'), 400);
+    $file_url = esc_url_raw($line['fileUrl'] ?? '');
+    $drive_file_id = sanitize_text_field($line['driveFileId'] ?? '');
+    if ($file_url === '' || (strpos($file_url, 'drive.google.com') === false && strpos($file_url, 'docs.google.com') === false)) {
+      wp_send_json_error(array('message' => 'Missing Google Drive file or folder link for this sheet' . $sheet_label . '.'), 400);
     }
-    $variation = wc_get_product_variation_attributes($variation_id);
+    if ($drive_file_id === '' && preg_match('#/d/([^/]+)#', $file_url, $m)) {
+      $drive_file_id = $m[1];
+    }
+    if ($drive_file_id === '' && preg_match('#/folders/([^/?]+)#', $file_url, $m)) {
+      $drive_file_id = $m[1];
+    }
+
+    $printed_height = floatval($line['sheetHeightIn'] ?? 0);
+    $billable_height = floatval($line['billableHeightIn'] ?? 0);
+
+    if ($printed_height <= 0) {
+      wp_send_json_error(array('message' => 'The builder did not send a sheet length' . $sheet_label . '.'), 400);
+    }
+
+    // Never bill for more than we print, and never bill on a missing figure.
+    if ($billable_height <= 0 || $billable_height > $printed_height) {
+      $billable_height = $printed_height;
+    }
+
+    $variation_id = 0;
+    $variation = array();
+    if ($product->is_type('variable')) {
+      $variation_id = ssgs_find_variation_id($product, $billable_height);
+      if ($variation_id <= 0) {
+        $length_label = rtrim(rtrim(number_format($billable_height, 2, '.', ''), '0'), '.');
+        wp_send_json_error(array('message' => $is_uv_dtf
+          ? sprintf('No UV DTF sheet size fits %s in%s.', $length_label, $sheet_label)
+          : sprintf('No gang sheet size fits %s in%s. The longest sheet is %s in.', $length_label, $sheet_label, rtrim(rtrim(number_format($max_in, 2, '.', ''), '0'), '.'))), 400);
+      }
+      $variation = wc_get_product_variation_attributes($variation_id);
+    }
+
+    $quantity = max(1, intval($line['quantity'] ?? 1));
+    $source_w = floatval($line['sourceWidthIn'] ?? 0);
+    $source_h = floatval($line['sourceHeightIn'] ?? 0);
+    $cart_item_data = array(
+      'ssgs_customer_name' => sanitize_text_field($line['customerName'] ?? ''),
+      'ssgs_sheet_index' => sanitize_text_field($line['sheetIndex'] ?? ''),
+      'ssgs_designs' => intval($line['designs'] ?? 0),
+      'ssgs_transfers' => intval($line['transfers'] ?? 0),
+      // DTF pre-cut (kiss-cut companion line). UV DTF uses its own Square Cut below.
+      'ssgs_precut' => (!$is_uv_dtf && !empty($line['precut'])) ? 'yes' : 'no',
+      'ssgs_precut_total' => $is_uv_dtf ? 0 : floatval($line['precutTotal'] ?? 0),
+      // Build fee only for done-for-you intake — never self-serve builder or upload.
+      'ssgs_build_fee' => ($sheet_type === 'intake') ? floatval($line['buildFee'] ?? 0) : 0,
+      'ssgs_printed_height' => $printed_height,
+      'ssgs_billed_height' => $billable_height,
+      'ssgs_sheet_type' => $sheet_type,
+      'ssgs_print_type' => $print_type,
+      // Spec A7: Cut / No Cut for the whole UV DTF job; offset is always 2.5 mm.
+      'ssgs_cut' => $is_uv_dtf ? ($uv_cut_enabled ? 'yes' : 'no') : '',
+      'ssgs_cut_mm' => $uv_cut_enabled ? SSGS_UV_DTF_CUT_MM : '',
+      'ssgs_source_size' => ($source_w > 0 && $source_h > 0)
+        ? (rtrim(rtrim(number_format($source_w, 2, '.', ''), '0'), '.') . ' x ' . rtrim(rtrim(number_format($source_h, 2, '.', ''), '0'), '.') . ' in')
+        : '',
+      'ssgs_scale_factor' => isset($line['scaleFactor']) ? floatval($line['scaleFactor']) : '',
+      'ssgs_effective_dpi' => isset($line['effectiveDpi']) ? floatval($line['effectiveDpi']) : '',
+      'ssgs_dpi_source' => sanitize_text_field($line['dpiSource'] ?? ''),
+      'ssgs_job_stamp' => sanitize_text_field($line['jobStamp'] ?? ''),
+      'ssgs_print_file_name' => sanitize_file_name($line['printFileName'] ?? ''),
+      'ssgs_cut_file_name' => sanitize_file_name($line['cutFileName'] ?? ''),
+      'ssgs_cut_file_url' => esc_url_raw($line['cutFileUrl'] ?? ''),
+      'ssgs_drive_file_id' => $drive_file_id,
+      'ssgs_file_url' => $file_url,
+      'ssgs_local_file' => '',
+      'unique_key' => md5($file_url . '|' . $index . '|' . microtime(true)),
+    );
+
+    $prepared[] = array(
+      'quantity' => $quantity,
+      'variation_id' => $variation_id,
+      'variation' => $variation,
+      'cart_item_data' => $cart_item_data,
+      'precut' => !empty($line['precut']),
+      'precut_total' => floatval($line['precutTotal'] ?? 0),
+      'sheet_index' => sanitize_text_field($line['sheetIndex'] ?? ''),
+      'transfers' => intval($line['transfers'] ?? 0),
+      'file_url' => $file_url,
+    );
   }
 
-  $quantity = max(1, intval($payload['quantity'] ?? 1));
-  $source_w = floatval($payload['sourceWidthIn'] ?? 0);
-  $source_h = floatval($payload['sourceHeightIn'] ?? 0);
-  $cart_item_data = array(
-    'ssgs_customer_name' => sanitize_text_field($payload['customerName'] ?? ''),
-    'ssgs_sheet_index' => sanitize_text_field($payload['sheetIndex'] ?? ''),
-    'ssgs_designs' => intval($payload['designs'] ?? 0),
-    'ssgs_transfers' => intval($payload['transfers'] ?? 0),
-    // DTF pre-cut (kiss-cut companion line). UV DTF uses its own Square Cut below.
-    'ssgs_precut' => (!$is_uv_dtf && !empty($payload['precut'])) ? 'yes' : 'no',
-    'ssgs_precut_total' => $is_uv_dtf ? 0 : floatval($payload['precutTotal'] ?? 0),
-    // Build fee only for done-for-you intake — never self-serve builder or upload.
-    'ssgs_build_fee' => ($sheet_type === 'intake') ? floatval($payload['buildFee'] ?? 0) : 0,
-    'ssgs_printed_height' => $printed_height,
-    'ssgs_billed_height' => $billable_height,
-    'ssgs_sheet_type' => $sheet_type,
-    'ssgs_print_type' => $print_type,
-    // Spec A7: Cut / No Cut for the whole UV DTF job; offset is always 2.5 mm.
-    'ssgs_cut' => $is_uv_dtf ? ($uv_cut_enabled ? 'yes' : 'no') : '',
-    'ssgs_cut_mm' => $uv_cut_enabled ? SSGS_UV_DTF_CUT_MM : '',
-    'ssgs_source_size' => ($source_w > 0 && $source_h > 0)
-      ? (rtrim(rtrim(number_format($source_w, 2, '.', ''), '0'), '.') . ' x ' . rtrim(rtrim(number_format($source_h, 2, '.', ''), '0'), '.') . ' in')
-      : '',
-    'ssgs_scale_factor' => isset($payload['scaleFactor']) ? floatval($payload['scaleFactor']) : '',
-    'ssgs_effective_dpi' => isset($payload['effectiveDpi']) ? floatval($payload['effectiveDpi']) : '',
-    'ssgs_dpi_source' => sanitize_text_field($payload['dpiSource'] ?? ''),
-    'ssgs_job_stamp' => sanitize_text_field($payload['jobStamp'] ?? ''),
-    'ssgs_print_file_name' => sanitize_file_name($payload['printFileName'] ?? ''),
-    'ssgs_drive_file_id' => $drive_file_id,
-    'ssgs_file_url' => $file_url,
-    'ssgs_local_file' => '',
-    'unique_key' => md5($file_url . microtime()),
-  );
-
-  $added = WC()->cart->add_to_cart($product_id, $quantity, $variation_id, $variation, $cart_item_data);
-  if (!$added) {
-    wp_send_json_error(array('message' => 'WooCommerce could not add this sheet to the cart.'), 500);
-  }
-
-  $precut_total = floatval($payload['precutTotal'] ?? 0);
   $precut_id = intval($opts['precut_product_id']);
+  $added_keys = array();
+  foreach ($prepared as $entry) {
+    $added = WC()->cart->add_to_cart($product_id, $entry['quantity'], $entry['variation_id'], $entry['variation'], $entry['cart_item_data']);
+    if (!$added) {
+      // Roll back so the customer never checks out with part of the job.
+      foreach ($added_keys as $key) {
+        WC()->cart->remove_cart_item($key);
+      }
+      wp_send_json_error(array('message' => $line_count > 1
+        ? sprintf('WooCommerce could not add sheet %s to the cart.', $entry['sheet_index'])
+        : 'WooCommerce could not add this sheet to the cart.'), 500);
+    }
+    $added_keys[] = $added;
 
-  // Upload flow never sells pre-cut (precut is always false). Builder still uses Fix 2.
-  // UV DTF never gets the DTF pre-cut line — its Square Cut is part of the sticker product.
-  if (!empty($payload['precut']) && $added && !$is_upload && !$is_uv_dtf && $precut_total > 0 && $precut_id > 0) {
-    WC()->cart->add_to_cart($precut_id, $quantity, 0, array(), array(
-      'ssgs_precut_amount' => $precut_total,
-      'ssgs_precut_for' => $cart_item_data['unique_key'],
-      'ssgs_precut_sheet' => sanitize_text_field($payload['sheetIndex'] ?? ''),
-      'ssgs_transfers' => intval($payload['transfers'] ?? 0),
-      'unique_key' => md5('precut' . $cart_item_data['unique_key']),
-    ));
+    // Upload flow never sells pre-cut (precut is always false). Builder still uses Fix 2.
+    // UV DTF never gets the DTF pre-cut line — its Square Cut is part of the sticker product.
+    if ($entry['precut'] && !$is_upload && !$is_uv_dtf && $entry['precut_total'] > 0 && $precut_id > 0) {
+      $companion = WC()->cart->add_to_cart($precut_id, $entry['quantity'], 0, array(), array(
+        'ssgs_precut_amount' => $entry['precut_total'],
+        'ssgs_precut_for' => $entry['cart_item_data']['unique_key'],
+        'ssgs_precut_sheet' => $entry['sheet_index'],
+        'ssgs_transfers' => $entry['transfers'],
+        'unique_key' => md5('precut' . $entry['cart_item_data']['unique_key']),
+      ));
+      if ($companion) {
+        $added_keys[] = $companion;
+      }
+    }
   }
 
   wp_send_json_success(array(
     'cartUrl' => wc_get_cart_url(),
-    'fileUrl' => $file_url,
+    'fileUrl' => $prepared[0]['file_url'],
+    'sheets' => $line_count,
   ));
 }
 
@@ -756,6 +896,12 @@ add_filter('woocommerce_get_item_data', function ($item_data, $cart_item) {
       'value' => esc_url($cart_item['ssgs_file_url']),
     );
   }
+  if (!empty($cart_item['ssgs_cut_file_url']) && empty($cart_item['ssgs_precut_for'])) {
+    $item_data[] = array(
+      'key' => __('Cut file', 'southside-gangsheet'),
+      'value' => esc_url($cart_item['ssgs_cut_file_url']),
+    );
+  }
   return $item_data;
 }, 10, 2);
 
@@ -783,6 +929,8 @@ add_action('woocommerce_checkout_create_order_line_item', function ($item, $cart
     'ssgs_dpi_source',
     'ssgs_job_stamp',
     'ssgs_print_file_name',
+    'ssgs_cut_file_name',
+    'ssgs_cut_file_url',
     'ssgs_drive_file_id',
     'ssgs_file_url',
     'ssgs_local_file',
@@ -821,6 +969,8 @@ add_filter('woocommerce_order_item_display_meta_key', function ($display_key, $m
     'ssgs_dpi_source' => __('DPI source', 'southside-gangsheet'),
     'ssgs_job_stamp' => __('Job stamp', 'southside-gangsheet'),
     'ssgs_print_file_name' => __('Print file', 'southside-gangsheet'),
+    'ssgs_cut_file_name' => __('Cut file', 'southside-gangsheet'),
+    'ssgs_cut_file_url' => __('Cut file link', 'southside-gangsheet'),
     'ssgs_drive_file_id' => __('Drive file ID', 'southside-gangsheet'),
     'ssgs_file_url' => __('File', 'southside-gangsheet'),
   );

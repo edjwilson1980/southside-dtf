@@ -28,6 +28,12 @@ export type GangSheetCartSheet = {
   /** Drive link for this sheet's cutter PLT, when pre-cut is on. */
   cutFileUrl?: string
   cutFileName?: string
+  /** Uploaded-file sheets: per-file source size and scaling (override the job-level values). */
+  sourceWidthIn?: number
+  sourceHeightIn?: number
+  scaleFactor?: number
+  effectiveDpi?: number
+  dpiSource?: 'file' | 'assumed' | 'customer'
 }
 
 export type GangSheetCartPayload = {

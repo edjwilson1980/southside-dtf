@@ -1,5 +1,5 @@
-import { ART_INSET_IN, CUT_ART_START_IN, SHEET_WIDTH_IN, packSheetBestGutter, piecePrintSize } from '@/lib/compose-sheet'
-import { CUT_GUTTER_IN, MARK_CLEARANCE_IN, cutPlt, registrationMarkBounds, registrationMarkRects, startMarkArrowPoints } from '@/lib/cut-layout'
+import { SHEET_WIDTH_IN, piecePrintSize } from '@/lib/compose-sheet'
+import { cutPlt } from '@/lib/cut-layout'
 import {
   createCustomerDriveFolder,
   downloadDriveFileBytes,
@@ -14,8 +14,8 @@ import { projectJsonFileName } from '@/lib/project/file-name'
 import { coercePlacementAndSize } from '@/lib/project/restore'
 import { signProjectJsonContent } from '@/lib/project/sign'
 import { PROJECT_FORMAT, type ProjectImageRef, type SspProject } from '@/lib/project/types'
-import { billedSheetLength } from '@/lib/sheet-pricing'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
+import { MAX_SHEET_LENGTH_IN, paginateGangSheet, partLabel, type SheetPage } from '@/lib/sheet-pages'
 import { placements, recommendedSize, sizeOptions } from '@/lib/shop-sizes'
 import { BUILDER_VERSION } from '@/lib/version'
 import { composeGangSheetNode } from './compose-sheet-node'
@@ -39,11 +39,35 @@ type Design = {
   sizeIn: { w: number; h: number }
 }
 
+export type IngestSheet = {
+  id: string
+  url: string
+  name: string
+  /** Ladder tier this sheet is billed at (≤ 200). */
+  lengthIn: number
+  ppi: number
+  widthPx: number
+  heightPx: number
+}
+
+export type IngestCut = { id: string; url: string; name: string } | null
+
 export type IngestResult = {
   folderId: string
   folderUrl: string
-  sheet: { id: string; url: string; name: string; lengthIn: number; ppi: number; widthPx: number; heightPx: number }
-  cut: { id: string; url: string; name: string } | null
+  /** Sheet 1 — kept so callers that expect one sheet keep working. */
+  sheet: IngestSheet
+  cut: IngestCut
+  /**
+   * Every sheet of the job ("1 of 3", "2 of 3"…). Jobs longer than 200 in are
+   * split onto separate sheets, each its own print file, cut file and billed line.
+   */
+  sheets: Array<{ sheetIndex: string; sheet: IngestSheet; cut: IngestCut; transfers: number; price: number }>
+  sheetCount: number
+  /** Sum of per-sheet tiers (500 in → 200 + 200 + 100). */
+  billedLengthIn: number
+  /** e.g. "2 × 200 in + 100 in". */
+  breakdown: string
   projectFileId: string | null
   projectFileUrl: string | null
   transfers: number
@@ -96,33 +120,40 @@ export async function designsFromProject(project: SspProject): Promise<Design[]>
   return out
 }
 
-/** The shop's layout, step for step (app/shop/page.tsx: pieces, packing, lengths, marks). */
-export function layoutSheet(designs: Design[], cutOut: boolean) {
-  const pieceInputs = designs.flatMap((d) =>
+type PieceInput = { previewUrl: string; widthIn: number; heightIn: number; allowRotate: boolean }
+export type IngestPage = SheetPage<PieceInput>
+
+/**
+ * The shop's layout, step for step (lib/sheet-pages.ts): pack onto as many
+ * 200 in sheets as the job needs, each its own print file and billed line.
+ */
+export function layoutSheets(designs: Design[], cutOut: boolean) {
+  const pieceInputs: PieceInput[] = designs.flatMap((d) =>
     Array.from({ length: d.quantity }, () => ({ previewUrl: d.key, widthIn: d.sizeIn.w, heightIn: d.sizeIn.h, allowRotate: !d.keepUpright })),
   )
-  const billableLayout = packSheetBestGutter(pieceInputs, { packWidthIn: SHEET_WIDTH_IN, startYIn: ART_INSET_IN })
-  const sheetLayout = cutOut
-    ? packSheetBestGutter(pieceInputs, {
-        packWidthIn: SHEET_WIDTH_IN - MARK_CLEARANCE_IN * 2,
-        startYIn: CUT_ART_START_IN,
-        sideInsetIn: MARK_CLEARANCE_IN,
-        minGutterIn: CUT_GUTTER_IN,
-      })
-    : billableLayout
-  if (sheetLayout.unplaced?.length) throw new IngestError(`${sheetLayout.unplaced.length} design(s) are too wide for the sheet.`)
-  const billableHeightIn = Math.max(0, billableLayout.contentEndY - ART_INSET_IN)
-  const printHeight = cutOut ? sheetLayout.contentEndY + CUT_ART_START_IN : sheetLayout.contentEndY + ART_INSET_IN
-  const marks = cutOut ? registrationMarkRects(printHeight, SHEET_WIDTH_IN, sheetLayout.pieces) : []
-  const bounds = cutOut ? registrationMarkBounds(printHeight, SHEET_WIDTH_IN, sheetLayout.pieces) : []
-  const start = bounds.find((mark) => mark.first)
+  const pagination = paginateGangSheet(pieceInputs, { cutOut })
+  if (pagination.tooLarge.length) {
+    throw new IngestError(`${pagination.tooLarge.length} design(s) are too large for a ${SHEET_WIDTH_IN} × ${MAX_SHEET_LENGTH_IN} in sheet.`)
+  }
+  if (pagination.pages.length === 0) throw new IngestError('The project has no designs to place.')
+  return pagination
+}
+
+/** Sheet 1 in the shape older callers expect, plus the full set of pages. */
+export function layoutSheet(designs: Design[], cutOut: boolean) {
+  const pagination = layoutSheets(designs, cutOut)
+  const first = pagination.pages[0]
   return {
-    pieces: sheetLayout.pieces,
-    printHeight,
-    billedLength: billedSheetLength(billableHeightIn),
-    marks,
-    startArrow: start ? startMarkArrowPoints(start) : [],
-    transfers: pieceInputs.length,
+    pieces: first.layout.pieces,
+    printHeight: first.printHeight,
+    billedLength: first.billedLength,
+    marks: first.marks,
+    startArrow: first.startArrow,
+    transfers: first.transfers,
+    pages: pagination.pages,
+    sheetCount: pagination.sheetCount,
+    totalBilledLength: pagination.billedLength,
+    breakdown: pagination.breakdown,
   }
 }
 
@@ -134,33 +165,56 @@ export async function ingestProject(project: SspProject, options: { stamp?: stri
   const cutOut = Boolean(project.cut?.enabled)
 
   const designs = await designsFromProject(project)
-  const layout = layoutSheet(designs, cutOut)
-  const ppi = sheetPpi(layout.printHeight)
+  const pagination = layoutSheets(designs, cutOut)
+  const sheetCount = pagination.sheetCount
   const stamp = options.stamp || sheetStamp(options.now ?? new Date(), SHOP_TIME_ZONE)
-  const label = sheetJobName(customerName, layout.billedLength, stamp)
-  const fileName = sheetFileName(customerName, layout.billedLength, stamp)
-
-  const png = await composeGangSheetNode({
-    pieces: layout.pieces,
-    art: new Map(designs.map((d) => [d.key, d.art])),
-    sheetLengthIn: layout.printHeight,
-    pxPerIn: ppi,
-    label,
-    mapCmyk: true,
-    marks: layout.marks,
-    startArrow: layout.startArrow,
-  })
+  const art = new Map(designs.map((d) => [d.key, d.art]))
 
   const folder = await createCustomerDriveFolder(customerName, stamp)
-  const sheetFile = await uploadBufferToFolder(folder.folderId, fileName, png, 'image/png')
 
-  let cut: IngestResult['cut'] = null
-  if (cutOut) {
-    const plt = cutPlt(layout.pieces, layout.printHeight)
-    if (!plt) throw new IngestError('Could not build the cutter PLT for this sheet.')
-    const cutName = sheetCutFileName(customerName, layout.billedLength, stamp)
-    const file = await uploadCutterFileToFolder(folder.folderId, cutName, plt, 'text/plain')
-    cut = { id: file.id, url: file.webViewLink, name: cutName }
+  // One PNG (+ one PLT) per sheet, labelled "N of M" on the film and in the name.
+  const sheets: IngestResult['sheets'] = []
+  for (const page of pagination.pages) {
+    const part = { index: page.index, count: sheetCount }
+    const ppi = sheetPpi(page.printHeight)
+    const label = sheetJobName(customerName, page.billedLength, stamp, part)
+    const fileName = sheetFileName(customerName, page.billedLength, stamp, part)
+    const png = await composeGangSheetNode({
+      pieces: page.layout.pieces,
+      art,
+      sheetLengthIn: page.printHeight,
+      pxPerIn: ppi,
+      label,
+      mapCmyk: true,
+      marks: page.marks,
+      startArrow: page.startArrow,
+    })
+    const sheetFile = await uploadBufferToFolder(folder.folderId, fileName, png, 'image/png')
+
+    let cut: IngestCut = null
+    if (cutOut) {
+      const plt = cutPlt(page.layout.pieces, page.printHeight)
+      if (!plt) throw new IngestError(`Could not build the cutter PLT for sheet ${partLabel(page.index, sheetCount)}.`)
+      const cutName = sheetCutFileName(customerName, page.billedLength, stamp, part)
+      const file = await uploadCutterFileToFolder(folder.folderId, cutName, plt, 'text/plain')
+      cut = { id: file.id, url: file.webViewLink, name: cutName }
+    }
+
+    sheets.push({
+      sheetIndex: partLabel(page.index, sheetCount),
+      sheet: {
+        id: sheetFile.id,
+        url: sheetFile.webViewLink,
+        name: fileName,
+        lengthIn: page.billedLength,
+        ppi,
+        widthPx: Math.round(SHEET_WIDTH_IN * ppi),
+        heightPx: Math.round(page.printHeight * ppi),
+      },
+      cut,
+      transfers: page.transfers,
+      price: page.price,
+    })
   }
 
   // Each design's trimmed art next to the sheet, so Reopen Project can load it.
@@ -204,7 +258,20 @@ export async function ingestProject(project: SspProject, options: { stamp?: stri
     updatedAt: now,
     lastUploadAt: now,
     revision: nextRevision(project.revision),
-    product: { ...(project.product ?? {}), widthIn: SHEET_WIDTH_IN, rollWidthIn: SHEET_WIDTH_IN, heightIn: layout.billedLength },
+    product: {
+      ...(project.product ?? {}),
+      widthIn: SHEET_WIDTH_IN,
+      rollWidthIn: SHEET_WIDTH_IN,
+      heightIn: pagination.billedLength,
+      sheetCount,
+      sheets: sheets.map((item) => ({
+        sheetIndex: item.sheetIndex,
+        billedLengthIn: item.sheet.lengthIn,
+        printFileName: item.sheet.name,
+        cutFileName: item.cut?.name,
+        transfers: item.transfers,
+      })),
+    },
     images,
     // Keep where it came from (e.g. the Mockup Pro order number).
     orderRefs: project.orderRefs ?? [],
@@ -228,14 +295,17 @@ export async function ingestProject(project: SspProject, options: { stamp?: stri
     // The sheet is what matters; the project JSON is a convenience for reopening.
   }
 
-  const heightPx = Math.round(layout.printHeight * ppi)
   return {
     folderId: folder.folderId,
     folderUrl: folder.folderUrl,
-    sheet: { id: sheetFile.id, url: sheetFile.webViewLink, name: fileName, lengthIn: layout.billedLength, ppi, widthPx: Math.round(SHEET_WIDTH_IN * ppi), heightPx },
-    cut,
+    sheet: sheets[0].sheet,
+    cut: sheets[0].cut,
+    sheets,
+    sheetCount,
+    billedLengthIn: pagination.billedLength,
+    breakdown: pagination.breakdown,
     projectFileId,
     projectFileUrl,
-    transfers: layout.transfers,
+    transfers: sheets.reduce((sum, item) => sum + item.transfers, 0),
   }
 }
