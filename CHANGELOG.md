@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.5.1] — 2026-10-18
+
+### Added
+- **Gang sheet preview proofing tools** (customer builder, Shop Builder and DTF Sticker Maker
+  preview):
+  - **Background** swatches — Checker, Tan gray, White, Black, Navy, Red, Gray, or **Pick** any
+    colour — to see how the knocked-out sheet reads on different garment colours.
+  - **Close-up zoom**: 400% preset, zoom ceiling raised from 8× to 16×, zoom presets and +/−
+    now zoom about the middle of what is on screen instead of jumping to the top-left corner,
+    double-click zooms in on that spot, and the sheet can be **dragged to pan** once zoomed.
+  - **Hide guides / Show guides** switches off the red cut lines and layout boxes so the
+    printed edges can be checked on their own.
+  - **Full screen** pop-out (native fullscreen where the browser allows it, otherwise fills the
+    window). Esc leaves full screen first, then closes the preview.
+
 ## [2.5.0] — 2026-10-15
 
 ### Fixed

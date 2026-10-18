@@ -421,6 +421,24 @@ button.thumb:disabled { cursor: default; }
 }
 .sheet-preview-stage { flex: 1 1 auto; min-height: 0; }
 .sheet-preview-stage .inspect-frame { min-height: 360px; }
+.sheet-preview-stage .inspect-frame.zoom-manual { cursor: grab; }
+.sheet-preview-stage .inspect-frame.zoom-manual.dragging { cursor: grabbing; user-select: none; }
+.sheet-preview-stage .inspect-frame.on-color { background-image: none; }
+.sheet-preview-head-actions { display: flex; flex-shrink: 0; align-items: center; gap: 8px; }
+.sheet-preview-expand { display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px; border: 1px solid var(--border); border-radius: 999px; background: #fff; color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.sheet-preview-expand:hover, .sheet-preview-expand[aria-pressed="true"] { border-color: var(--chicago-blue); background: var(--pale-blue); color: #006e99; }
+.sheet-preview-backdrops { align-items: flex-start; }
+.sheet-preview-backdrops .inspect-view-toggles { align-items: center; }
+.sheet-preview-backdrops .inspect-view-toggles button { display: inline-flex; align-items: center; gap: 5px; }
+.backdrop-swatch { display: inline-block; width: 11px; height: 11px; border: 1px solid rgb(15 23 42 / 25%); border-radius: 50%; }
+.sheet-preview-backdrops .backdrop-picker { position: relative; display: inline-flex; align-items: center; gap: 5px; overflow: hidden; }
+.sheet-preview-backdrops .backdrop-picker input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+/* Pop-out: fill the window (or the native fullscreen element) edge to edge. */
+.sheet-preview-fullscreen-backdrop { padding: 0; }
+.sheet-preview-popup.fullscreen { width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; border: 0; padding: 14px 18px 16px; }
+.sheet-preview-popup.fullscreen .inspect-head p { max-width: 1100px; }
+.sheet-preview-popup:fullscreen { width: 100vw; height: 100vh; max-height: 100vh; }
+.sheet-preview-popup:fullscreen .inspect-frame { border-radius: 8px; }
 .sheet-preview-actions {
   display: grid;
   grid-template-columns: 140px 1fr;
