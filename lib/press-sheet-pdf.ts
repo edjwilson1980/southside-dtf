@@ -104,6 +104,16 @@ function text(doc: jsPDF, value: string, x: number, y: number, opts: { size?: nu
   doc.text(value, x, y, opts.align ? { align: opts.align } : undefined)
 }
 
+/** Like text(), but steps the font size down until the string fits in maxW. */
+function fitText(doc: jsPDF, value: string, x: number, y: number, maxW: number, opts: { size: number; bold?: boolean; color?: [number, number, number]; font?: 'helvetica' | 'courier' }) {
+  doc.setFont(opts.font ?? 'helvetica', opts.bold ? 'bold' : 'normal')
+  let size = opts.size
+  doc.setFontSize(size)
+  const width = doc.getTextWidth(value)
+  if (width > maxW) size = Math.max(4.5, (size * maxW) / width)
+  text(doc, value, x, y, { ...opts, size })
+}
+
 /** Draws an empty tick box and its label; returns the x where the next item can start. */
 function checkbox(doc: jsPDF, x: number, y: number, label: string, size = 8, box = 0.1) {
   setStroke(doc, INK)
@@ -125,6 +135,7 @@ function rule(state: State) {
 function ensureSpace(state: State, input: PressSheetInput, needed: number) {
   if (state.y + needed <= PAGE_H - MARGIN - 0.3) return
   state.doc.addPage()
+  state.y = MARGIN
   drawHeader(state, input, true)
 }
 
@@ -173,8 +184,8 @@ function drawFiles(state: State, input: PressSheetInput) {
     doc.setLineWidth(0.01)
     doc.roundedRect(x, y, boxW, boxH, 0.06, 0.06)
     text(doc, `SHEET ${sheet.label.toUpperCase()} · ${SHEET_WIDTH_IN} × ${sheet.billedLengthIn} IN · ${sheet.transfers} TRANSFERS`, x + 0.1, y + 0.17, { size: 7.5, bold: true })
-    text(doc, `PNG  ${sheet.printFileName}`, x + 0.1, y + 0.33, { size: 7, font: 'courier' })
-    text(doc, `PLT  ${sheet.cutFileName ?? '—'}`, x + 0.1, y + 0.46, { size: 7, font: 'courier', color: RED })
+    fitText(doc, `PNG  ${sheet.printFileName}`, x + 0.1, y + 0.33, boxW - 0.2, { size: 7, font: 'courier' })
+    fitText(doc, `PLT  ${sheet.cutFileName ?? '—'}`, x + 0.1, y + 0.46, boxW - 0.2, { size: 7, font: 'courier', color: RED })
     const pieces = sheet.pieces.map((piece) => `#${piece.designNumber} ${piece.name} × ${piece.qty}`).join(' · ')
     const pieceLines = doc.splitTextToSize(pieces, boxW - 0.2) as string[]
     text(doc, pieceLines[0] ?? '', x + 0.1, y + 0.6, { size: 7, color: MUTED, bold: true })
@@ -258,9 +269,10 @@ function drawLine(state: State, input: PressSheetInput, index: number) {
   const imageH = 1.1
   const imageCount = (front || line.location !== 'back' ? 1 : 0) + (back || line.location !== 'front' ? 1 : 0)
   const imagesW = imageCount * (imageW + 0.12)
-  const rosterRows = line.roster.length > 0 ? Math.ceil(Math.min(line.roster.length, line.quantity) / 4) : 0
+  const rosterRows = line.roster.length > 0 ? Math.ceil(Math.min(line.roster.length, line.quantity) / 4) : 1
   const namesH = line.personalized > 0 ? 0.42 + rosterRows * 0.17 : 0
-  const bodyH = Math.max(imageH + 0.62, 0.78 + namesH + 0.3)
+  // Checklist runs the full row width under both the image cards and the names box.
+  const bodyH = Math.max(imageH + 0.78, 0.82 + namesH + 0.3)
   const barH = 0.32
   ensureSpace(state, input, barH + bodyH + 0.2)
 
@@ -322,13 +334,14 @@ function drawLine(state: State, input: PressSheetInput, index: number) {
     doc.roundedRect(gridX, ny, gridW, namesH - 0.06, 0.04, 0.04)
     doc.setLineDashPattern([], 0)
     text(doc, 'PERSONALIZED NAMES', gridX + 0.1, ny + 0.17, { size: 7.5, bold: true })
-    text(doc, `${line.personalized} of ${line.quantity} · match the pre-cut name transfer to the shirt before pressing`, gridX + 1.5, ny + 0.17, { size: 7, color: MUTED, bold: true })
+    fitText(doc, `${line.personalized} of ${line.quantity} · match each name transfer to its shirt`, gridX + 1.45, ny + 0.17, gridW - 1.55, { size: 7, color: MUTED, bold: true })
     if (line.roster.length > 0) {
       const colW = (gridW - 0.2) / 4
       line.roster.slice(0, line.quantity).forEach((name, nameIndex) => {
         const col = nameIndex % 4
         const row = Math.floor(nameIndex / 4)
-        checkbox(doc, gridX + 0.1 + col * colW, ny + 0.36 + row * 0.17, name.slice(0, 22), 7)
+        const maxChars = Math.max(6, Math.floor((colW - 0.2) / 0.052))
+        checkbox(doc, gridX + 0.1 + col * colW, ny + 0.36 + row * 0.17, name.length > maxChars ? `${name.slice(0, maxChars - 1)}…` : name, 7)
       })
     } else {
       text(doc, 'Roster not supplied yet — get the list before pressing.', gridX + 0.1, ny + 0.36, { size: 7.5, bold: true, color: RED })
@@ -338,7 +351,7 @@ function drawLine(state: State, input: PressSheetInput, index: number) {
 
   // Bottom checklist.
   const cy = top + barH + bodyH - 0.12
-  let cx = gridX
+  let cx = MARGIN + 0.12
   cx = checkbox(doc, cx, cy, 'Garments counted in', 7)
   cx = checkbox(doc, cx, cy, 'Pre-cut transfers pulled', 7)
   cx = checkbox(doc, cx, cy, 'Pressed', 7)
@@ -351,7 +364,8 @@ function drawLine(state: State, input: PressSheetInput, index: number) {
 function drawFooter(doc: jsPDF, input: PressSheetInput, page: number, total: number) {
   const s = input.summary
   const math = [`${s.garments} × ${money(s.firstSideEach)}`, s.doublePress > 0 ? `${s.doublePress} × ${money(s.secondSideEach)}` : '', s.personalized > 0 ? `${s.personalized} names × ${money(s.nameFeeEach)}` : ''].filter(Boolean).join(' + ')
-  text(doc, `Customer supplies garments. All transfers are pre-cut from the cut files listed above; the red outline is the knife path. Labor: ${math} = ${money(s.labor)}.`, MARGIN, PAGE_H - 0.42, { size: 7, color: MUTED, bold: true })
+  text(doc, 'Customer supplies garments. All transfers are pre-cut from the cut files listed above; the red outline is the knife path.', MARGIN, PAGE_H - 0.42, { size: 7, color: MUTED, bold: true })
+  fitText(doc, `Labor: ${math} = ${money(s.labor)}`, MARGIN, PAGE_H - 0.28, CONTENT_W - 3.2, { size: 7, color: MUTED, bold: true })
   text(doc, `${input.customerName || 'Customer'} · ${input.stamp} · Press sheet · page ${page} of ${total}`, RIGHT, PAGE_H - 0.28, { size: 7, color: MUTED, align: 'right' })
 }
 
