@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.6.1] — 2026-10-20
+
+### Fixed
+- Sheet 1's `… cut.plt` (uploaded by the server) was missing from the Drive file list the
+  builder hands to the cart, so single-sheet pre-cut and Print & Press jobs had no **Cut file**
+  link on the cart/order line and no `cutFileUrl` in the project JSON (sheets 2+ were fine).
+  The cutter file is now listed with the other uploads. No plugin change.
+
 ## [2.6.0] — 2026-10-20
 
 ### Added

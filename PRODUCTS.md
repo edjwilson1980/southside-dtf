@@ -52,7 +52,7 @@ Shared code lives under `lib/` (compose, cut layout, sheet size, image tools).
   automatically as soon as the customer's files are created. File is named after the project
   (`Customer Name.ssp.json`) and embeds design art so Reopen shows the images.
 - **Automatic project JSON** — Drive uploads create/update the project `.ssp.json` in the job folder.
-- **Version footer** — current version (v2.6.0) shown at the bottom of every builder page.
+- **Version footer** — current version (v2.6.1) shown at the bottom of every builder page.
 - Spec: [`docs/GANGSHEET_ADDON_SPEC.md`](docs/GANGSHEET_ADDON_SPEC.md)
 
 ### Shop sticker routes (staff)
