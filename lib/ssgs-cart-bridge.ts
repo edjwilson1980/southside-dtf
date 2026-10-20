@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { PrintPressCartSummary } from '@/lib/print-press'
 
 /** Parent store origin allowed for postMessage (WordPress / WooCommerce). */
 export const DEFAULT_STORE_ORIGIN = 'https://southsidedtf.com'
@@ -82,6 +83,12 @@ export type GangSheetCartPayload = {
    * redirects to the cart on the first successful add.
    */
   sheets?: GangSheetCartSheet[]
+  /**
+   * Print & Press add-on (plugin 1.25+): labor for pressing the transfers onto
+   * customer-supplied garments. Charged once per job as a cart fee; pre-cut is
+   * on with no pre-cut charge (`precutTotal` 0 on every sheet).
+   */
+  printPress?: PrintPressCartSummary
 }
 
 export type StoreBridgeStatus = 'idle' | 'sending' | 'error' | 'sent'

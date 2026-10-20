@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: South Side Gang Sheet Builder
- * Description: Embed the South Side DTF customer gang sheet builder and UV DTF sticker maker, and add finished sheets to the WooCommerce cart.
- * Version: 1.24
+ * Description: Embed the South Side DTF customer gang sheet builder and UV DTF sticker maker, and add finished sheets (with optional Print & Press labor) to the WooCommerce cart.
+ * Version: 1.25
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.24');
+define('SSGS_PLUGIN_VERSION', '1.25');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 /** WooCommerce attribute + term that marks a product as UV DTF (spec A9). */
 define('SSGS_UV_DTF_ATTRIBUTE', 'pa_print_type');
@@ -549,6 +549,157 @@ function ssgs_cut_label($cut_enabled) {
     : __('No', 'southside-gangsheet');
 }
 
+/**
+ * Print & Press labor ladder (per garment). Mirrors lib/print-press.ts — the
+ * server recomputes the charge from the counts and never trusts the browser's total.
+ */
+function ssgs_print_press_tier($garments) {
+  $garments = intval($garments);
+  if ($garments >= 100) {
+    return array('label' => '100+', 'first' => 1.5, 'second' => 0.75);
+  }
+  if ($garments >= 21) {
+    return array('label' => '21-99', 'first' => 2.0, 'second' => 1.0);
+  }
+  if ($garments >= 11) {
+    return array('label' => '11-20', 'first' => 5.0, 'second' => 1.5);
+  }
+  return array('label' => '1-10', 'first' => 10.0, 'second' => 2.0);
+}
+
+define('SSGS_PRINT_PRESS_NAME_FEE', 0.5);
+
+/**
+ * Normalise the builder's `printPress` block into the cart-item fields.
+ * Returns null when the payload has no (usable) Print & Press add-on.
+ */
+function ssgs_parse_print_press($payload) {
+  $pp = isset($payload['printPress']) && is_array($payload['printPress']) ? $payload['printPress'] : null;
+  if (!$pp) {
+    return null;
+  }
+  $garments = max(0, intval($pp['garments'] ?? 0));
+  if ($garments <= 0) {
+    return null;
+  }
+  $double = min($garments, max(0, intval($pp['doublePress'] ?? 0)));
+  $personalized = min($garments, max(0, intval($pp['personalized'] ?? 0)));
+  $tier = ssgs_print_press_tier($garments);
+  $first = round($garments * $tier['first'], 2);
+  $second = round($double * $tier['second'], 2);
+  $names = round($personalized * SSGS_PRINT_PRESS_NAME_FEE, 2);
+  $labor = round($first + $second + $names, 2);
+
+  $lines = array();
+  if (!empty($pp['lines']) && is_array($pp['lines'])) {
+    foreach ($pp['lines'] as $line) {
+      if (!is_array($line)) {
+        continue;
+      }
+      $sizes = array();
+      if (!empty($line['sizes']) && is_array($line['sizes'])) {
+        foreach ($line['sizes'] as $size => $qty) {
+          $qty = intval($qty);
+          if ($qty > 0) {
+            $sizes[sanitize_text_field((string) $size)] = $qty;
+          }
+        }
+      }
+      $roster = array();
+      if (!empty($line['roster']) && is_array($line['roster'])) {
+        foreach (array_slice($line['roster'], 0, 500) as $name) {
+          $name = sanitize_text_field((string) $name);
+          if ($name !== '') {
+            $roster[] = $name;
+          }
+        }
+      }
+      $lines[] = array(
+        'garment' => sanitize_text_field($line['garment'] ?? ''),
+        'color' => sanitize_text_field($line['color'] ?? ''),
+        'location' => sanitize_text_field($line['location'] ?? 'front'),
+        'quantity' => max(0, intval($line['quantity'] ?? 0)),
+        'sizes' => $sizes,
+        'personalized' => max(0, intval($line['personalized'] ?? 0)),
+        'roster' => $roster,
+        'frontDesign' => isset($line['frontDesign']) && $line['frontDesign'] !== null ? intval($line['frontDesign']) : null,
+        'backDesign' => isset($line['backDesign']) && $line['backDesign'] !== null ? intval($line['backDesign']) : null,
+        'frontDesignName' => sanitize_text_field($line['frontDesignName'] ?? ''),
+        'backDesignName' => sanitize_text_field($line['backDesignName'] ?? ''),
+      );
+    }
+  }
+
+  $summary = sprintf('%d garments x %s', $garments, wp_strip_all_tags(wc_price($tier['first'])));
+  if ($double > 0) {
+    $summary .= sprintf(' + %d second side x %s', $double, wp_strip_all_tags(wc_price($tier['second'])));
+  }
+  if ($personalized > 0) {
+    $summary .= sprintf(' + %d names x %s', $personalized, wp_strip_all_tags(wc_price(SSGS_PRINT_PRESS_NAME_FEE)));
+  }
+  $summary .= ' = ' . wp_strip_all_tags(wc_price($labor));
+
+  return array(
+    'garments' => $garments,
+    'double' => $double,
+    'personalized' => $personalized,
+    'tier' => $tier['label'],
+    'first_each' => $tier['first'],
+    'second_each' => $tier['second'],
+    'labor' => $labor,
+    'summary' => $summary,
+    'lines' => $lines,
+    'press_sheet_url' => esc_url_raw($pp['pressSheetUrl'] ?? ''),
+    'press_sheet_name' => sanitize_file_name($pp['pressSheetFileName'] ?? ''),
+    'press_sheet_file_id' => sanitize_text_field($pp['pressSheetFileId'] ?? ''),
+  );
+}
+
+function ssgs_print_press_location_label($location) {
+  switch ($location) {
+    case 'both':
+      return __('Front + Back', 'southside-gangsheet');
+    case 'back':
+      return __('Back', 'southside-gangsheet');
+    default:
+      return __('Front', 'southside-gangsheet');
+  }
+}
+
+/** One readable line per garment row, for order notes and the admin screen. */
+function ssgs_print_press_line_text($line) {
+  $sizes = array();
+  foreach ((array) ($line['sizes'] ?? array()) as $size => $qty) {
+    $sizes[] = $size . ' ' . intval($qty);
+  }
+  $text = sprintf(
+    '%s %s - %s - %d pcs',
+    $line['color'] ?? '',
+    $line['garment'] === 'hoodie' ? 'Hoodie' : 'T-shirt',
+    ssgs_print_press_location_label($line['location'] ?? 'front'),
+    intval($line['quantity'] ?? 0)
+  );
+  if (!empty($sizes)) {
+    $text .= ' (' . implode(', ', $sizes) . ')';
+  }
+  if (($line['location'] ?? 'front') !== 'back' && !empty($line['frontDesign'])) {
+    $text .= sprintf(' - front: design #%d %s', intval($line['frontDesign']), $line['frontDesignName'] ?? '');
+  }
+  if (($line['location'] ?? 'front') !== 'front' && !empty($line['backDesign'])) {
+    $text .= sprintf(' - back: design #%d %s', intval($line['backDesign']), $line['backDesignName'] ?? '');
+  }
+  if (!empty($line['personalized'])) {
+    $text .= sprintf(' - %d personalized', intval($line['personalized']));
+    if (!empty($line['roster'])) {
+      $text .= ': ' . implode(', ', array_slice((array) $line['roster'], 0, 60));
+      if (count((array) $line['roster']) > 60) {
+        $text .= ', ...';
+      }
+    }
+  }
+  return trim($text);
+}
+
 function ssgs_handle_add_to_cart() {
   if (!check_ajax_referer('ssgs_add_to_cart', 'nonce', false)) {
     wp_send_json_error(array('message' => 'Invalid cart request.'), 403);
@@ -577,6 +728,9 @@ function ssgs_handle_add_to_cart() {
   $is_uv_dtf = ($print_type === 'uv-dtf');
   // UV DTF: the sticker maker's fixed 2.5 mm Square Cut, or No Cut. Never a DTF pre-cut.
   $uv_cut_enabled = $is_uv_dtf && !empty($payload['cutEnabled']);
+  // Print & Press (plugin 1.25+): labor charged once per job as a cart fee. The job
+  // is always pre-cut, but the pre-cut fee is waived — the labor price covers it.
+  $print_press = (!$is_uv_dtf && $sheet_type === 'built') ? ssgs_parse_print_press($payload) : null;
 
   if ($is_uv_dtf) {
     $product_id = ssgs_resolve_uv_dtf_product_id();
@@ -658,8 +812,8 @@ function ssgs_handle_add_to_cart() {
       'ssgs_designs' => intval($line['designs'] ?? 0),
       'ssgs_transfers' => intval($line['transfers'] ?? 0),
       // DTF pre-cut (kiss-cut companion line). UV DTF uses its own Square Cut below.
-      'ssgs_precut' => (!$is_uv_dtf && !empty($line['precut'])) ? 'yes' : 'no',
-      'ssgs_precut_total' => $is_uv_dtf ? 0 : floatval($line['precutTotal'] ?? 0),
+      'ssgs_precut' => (!$is_uv_dtf && (!empty($line['precut']) || $print_press)) ? 'yes' : 'no',
+      'ssgs_precut_total' => ($is_uv_dtf || $print_press) ? 0 : floatval($line['precutTotal'] ?? 0),
       // Build fee only for done-for-you intake — never self-serve builder or upload.
       'ssgs_build_fee' => ($sheet_type === 'intake') ? floatval($line['buildFee'] ?? 0) : 0,
       'ssgs_printed_height' => $printed_height,
@@ -684,14 +838,30 @@ function ssgs_handle_add_to_cart() {
       'ssgs_local_file' => '',
       'unique_key' => md5($file_url . '|' . $index . '|' . microtime(true)),
     );
+    if ($print_press) {
+      // Every sheet of the job is marked; the labor and press sheet ride on sheet 1 only.
+      $cart_item_data['ssgs_pp'] = 'yes';
+      if ($index === 0) {
+        $cart_item_data['ssgs_pp_labor'] = $print_press['labor'];
+        $cart_item_data['ssgs_pp_garments'] = $print_press['garments'];
+        $cart_item_data['ssgs_pp_double'] = $print_press['double'];
+        $cart_item_data['ssgs_pp_names'] = $print_press['personalized'];
+        $cart_item_data['ssgs_pp_tier'] = $print_press['tier'];
+        $cart_item_data['ssgs_pp_summary'] = $print_press['summary'];
+        $cart_item_data['ssgs_pp_lines'] = wp_json_encode($print_press['lines']);
+        $cart_item_data['ssgs_press_sheet_url'] = $print_press['press_sheet_url'];
+        $cart_item_data['ssgs_press_sheet_name'] = $print_press['press_sheet_name'];
+        $cart_item_data['ssgs_press_sheet_file_id'] = $print_press['press_sheet_file_id'];
+      }
+    }
 
     $prepared[] = array(
       'quantity' => $quantity,
       'variation_id' => $variation_id,
       'variation' => $variation,
       'cart_item_data' => $cart_item_data,
-      'precut' => !empty($line['precut']),
-      'precut_total' => floatval($line['precutTotal'] ?? 0),
+      'precut' => !empty($line['precut']) && !$print_press,
+      'precut_total' => $print_press ? 0 : floatval($line['precutTotal'] ?? 0),
       'sheet_index' => sanitize_text_field($line['sheetIndex'] ?? ''),
       'transfers' => intval($line['transfers'] ?? 0),
       'file_url' => $file_url,
@@ -733,6 +903,7 @@ function ssgs_handle_add_to_cart() {
     'cartUrl' => wc_get_cart_url(),
     'fileUrl' => $prepared[0]['file_url'],
     'sheets' => $line_count,
+    'printPressLabor' => $print_press ? $print_press['labor'] : 0,
   ));
 }
 
@@ -780,6 +951,26 @@ add_action('woocommerce_cart_calculate_fees', function ($cart) {
   }
   if ($fee > 0) {
     $cart->add_fee(__('Gang sheet build', 'southside-gangsheet'), $fee, true);
+  }
+
+  // Print & Press labor: once per job (it rides on sheet 1 of the job), not per sheet copy.
+  $labor = 0.0;
+  $garments = 0;
+  foreach ($cart->get_cart() as $cart_item) {
+    if (!empty($cart_item['ssgs_precut_for'])) {
+      continue;
+    }
+    $amount = floatval($cart_item['ssgs_pp_labor'] ?? 0);
+    if ($amount > 0) {
+      $labor += $amount;
+      $garments += intval($cart_item['ssgs_pp_garments'] ?? 0);
+    }
+  }
+  if ($labor > 0) {
+    $label = $garments > 0
+      ? sprintf(__('Print & Press labor (%d garments)', 'southside-gangsheet'), $garments)
+      : __('Print & Press labor', 'southside-gangsheet');
+    $cart->add_fee($label, $labor, true);
   }
 }, 20, 1);
 
@@ -890,6 +1081,30 @@ add_filter('woocommerce_get_item_data', function ($item_data, $cart_item) {
     }
   }
 
+  if (($cart_item['ssgs_pp'] ?? '') === 'yes' && empty($cart_item['ssgs_precut_for'])) {
+    if (!empty($cart_item['ssgs_pp_summary'])) {
+      $item_data[] = array(
+        'key' => __('Print & Press', 'southside-gangsheet'),
+        'value' => esc_html((string) $cart_item['ssgs_pp_summary']),
+      );
+    } else {
+      $item_data[] = array(
+        'key' => __('Print & Press', 'southside-gangsheet'),
+        'value' => esc_html__('Yes - labor on sheet 1', 'southside-gangsheet'),
+      );
+    }
+    $item_data[] = array(
+      'key' => __('Pre-cut fee', 'southside-gangsheet'),
+      'value' => esc_html__('Included with Print & Press', 'southside-gangsheet'),
+    );
+    if (!empty($cart_item['ssgs_press_sheet_url'])) {
+      $item_data[] = array(
+        'key' => __('Press sheet', 'southside-gangsheet'),
+        'value' => esc_url($cart_item['ssgs_press_sheet_url']),
+      );
+    }
+  }
+
   if (!empty($cart_item['ssgs_file_url'])) {
     $item_data[] = array(
       'key' => __('File', 'southside-gangsheet'),
@@ -934,9 +1149,36 @@ add_action('woocommerce_checkout_create_order_line_item', function ($item, $cart
     'ssgs_drive_file_id',
     'ssgs_file_url',
     'ssgs_local_file',
+    'ssgs_pp',
+    'ssgs_pp_labor',
+    'ssgs_pp_garments',
+    'ssgs_pp_double',
+    'ssgs_pp_names',
+    'ssgs_pp_tier',
+    'ssgs_pp_summary',
+    'ssgs_press_sheet_url',
+    'ssgs_press_sheet_name',
+    'ssgs_press_sheet_file_id',
   ) as $key) {
     if (isset($values[$key]) && $values[$key] !== '' && $values[$key] !== 0 && $values[$key] !== 0.0) {
       $item->add_meta_data($key, $values[$key], true);
+    }
+  }
+
+  // Print & Press garment lines: hidden JSON for tooling, readable rows for the crew.
+  if (($values['ssgs_pp'] ?? '') === 'yes') {
+    $item->add_meta_data('_ssp_print_press', 'yes', true);
+    if (!empty($values['ssgs_pp_lines'])) {
+      $item->add_meta_data('_ssgs_pp_lines', $values['ssgs_pp_lines'], true);
+      $lines = json_decode((string) $values['ssgs_pp_lines'], true);
+      if (is_array($lines)) {
+        foreach (array_values($lines) as $index => $line) {
+          if (!is_array($line)) {
+            continue;
+          }
+          $item->add_meta_data(sprintf('ssgs_pp_line_%d', $index + 1), ssgs_print_press_line_text($line), true);
+        }
+      }
     }
   }
 
@@ -973,8 +1215,21 @@ add_filter('woocommerce_order_item_display_meta_key', function ($display_key, $m
     'ssgs_cut_file_url' => __('Cut file link', 'southside-gangsheet'),
     'ssgs_drive_file_id' => __('Drive file ID', 'southside-gangsheet'),
     'ssgs_file_url' => __('File', 'southside-gangsheet'),
+    'ssgs_pp' => __('Print & Press', 'southside-gangsheet'),
+    'ssgs_pp_labor' => __('Print & Press labor', 'southside-gangsheet'),
+    'ssgs_pp_garments' => __('Garments', 'southside-gangsheet'),
+    'ssgs_pp_double' => __('Front + back garments', 'southside-gangsheet'),
+    'ssgs_pp_names' => __('Personalized garments', 'southside-gangsheet'),
+    'ssgs_pp_tier' => __('Print & Press tier', 'southside-gangsheet'),
+    'ssgs_pp_summary' => __('Print & Press math', 'southside-gangsheet'),
+    'ssgs_press_sheet_url' => __('Press sheet (PDF)', 'southside-gangsheet'),
+    'ssgs_press_sheet_name' => __('Press sheet file', 'southside-gangsheet'),
+    'ssgs_press_sheet_file_id' => __('Press sheet Drive ID', 'southside-gangsheet'),
   );
   $key = is_object($meta) && isset($meta->key) ? $meta->key : '';
+  if (preg_match('/^ssgs_pp_line_(\d+)$/', $key, $m)) {
+    return sprintf(__('Garment line %d', 'southside-gangsheet'), intval($m[1]));
+  }
   return isset($labels[$key]) ? $labels[$key] : $display_key;
 }, 10, 2);
 
@@ -987,8 +1242,44 @@ add_filter('woocommerce_order_item_display_meta_value', function ($display_value
   if ($key === 'ssgs_cut') {
     return esc_html(ssgs_cut_label((string) $value === 'yes'));
   }
+  if ($key === 'ssgs_pp') {
+    return esc_html((string) $value === 'yes' ? __('Yes - pre-cut included', 'southside-gangsheet') : __('No', 'southside-gangsheet'));
+  }
+  if ($key === 'ssgs_pp_labor' && is_numeric($value)) {
+    return wc_price(floatval($value));
+  }
   return $display_value;
 }, 10, 2);
+
+// Staff note on the order with the whole Print & Press breakdown, so it is visible
+// without opening line meta.
+add_action('woocommerce_checkout_order_created', function ($order) {
+  if (!$order instanceof WC_Order) {
+    return;
+  }
+  foreach ($order->get_items() as $item) {
+    if ($item->get_meta('ssgs_pp', true) !== 'yes' || !$item->get_meta('ssgs_pp_labor', true)) {
+      continue;
+    }
+    $note = array(
+      sprintf('PRINT & PRESS - %s', $item->get_meta('ssgs_pp_summary', true)),
+      'Pre-cut included (no pre-cut fee). Customer supplies garments.',
+    );
+    $lines = json_decode((string) $item->get_meta('_ssgs_pp_lines', true), true);
+    if (is_array($lines)) {
+      foreach (array_values($lines) as $index => $line) {
+        if (is_array($line)) {
+          $note[] = sprintf('%d. %s', $index + 1, ssgs_print_press_line_text($line));
+        }
+      }
+    }
+    $press_sheet = $item->get_meta('ssgs_press_sheet_url', true);
+    if ($press_sheet) {
+      $note[] = 'Press sheet PDF: ' . $press_sheet;
+    }
+    $order->add_order_note(implode("\n", $note));
+  }
+}, 20, 1);
 
 function ssgs_rename_drive_after_payment($order_id) {
   $opts = ssgs_get_options();

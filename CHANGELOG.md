@@ -1,5 +1,38 @@
 # Changelog
 
+## [2.6.0] — 2026-10-20
+
+### Added
+- **Print & Press add-on in the customer builder.** Customers who supply their own garments
+  can have us press the transfers. A new panel under the design list takes one line per
+  garment (garment, color, Front / Back / Front + Back, S–3XL counts, optional name roster)
+  and which uploaded design goes on each side. Garment counts drive the design quantities
+  (the quantity field locks to "Set by Print & Press garments"), so the gang sheet, the cut
+  files, the bill and the press sheet always agree.
+- Labor ladder per garment: **1–10 $10.00 · 11–20 $5.00 · 21–99 $2.00 · 100+ $1.50** for the
+  first side, second side **+$2.00 / +$1.50 / +$1.00 / +$0.75**, plus **$0.50 per
+  personalized garment**. Every Print & Press transfer is pre-cut; the builder's pre-cut fee is
+  waived (labor covers it) and each sheet gets its matching `… cut.plt`.
+- **Press sheet PDF** (`Customer 10/20 1400     Print & Press sheet.pdf`) is generated in the
+  browser and uploaded to the same Drive folder as the PNGs/PLTs: file list with printed /
+  cut / weeded tick boxes, size totals, one block per garment line with the front/back art,
+  per-size pull/press boxes, the name roster and a counted-in / pressed / counted-out
+  checklist, and the labor math in the footer.
+- Project JSON records `product.printPress` (garments, tier, labor, lines, press sheet link).
+- `lib/print-press.ts`, `lib/press-sheet-pdf.ts`, `components/print-press-panel.tsx`,
+  `scripts/verify-print-press.mjs`.
+
+### WooCommerce plugin 1.25
+- Cart payloads may carry `printPress`; the plugin recomputes labor server-side from the
+  garment counts (never trusts the browser total) and adds one **Print & Press labor
+  (N garments)** cart fee per job. The pre-cut companion line is skipped under Print & Press
+  while the job still carries `ssgs_precut = yes` for the cut files.
+- Cart and order lines show **Print & Press** (tier, garments, double-press, names), the
+  per-garment-line text (`Garment line N`), **Pre-cut fee: Included with Print & Press** and
+  the **Press sheet** link; hidden `_ssp_print_press` / `_ssgs_pp_lines` keep the raw data.
+  An order note repeats the full breakdown with the press sheet link.
+- No new product or setting is needed — labor is a cart fee.
+
 ## [2.5.0] — 2026-10-15
 
 ### Fixed

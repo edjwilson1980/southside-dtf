@@ -25,6 +25,17 @@ import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { autoSaveProjectJson } from '@/lib/project/auto-save'
 import { imagesFromUploadedArt, prepareDesignArtUploads, type DesignArtInput } from '@/lib/project/images'
 import { slugify, useStoreBridge, type GangSheetCartPayload, type GangSheetCartSheet } from '@/lib/ssgs-cart-bridge'
+import { PrintPressPanel, type PrintPressDesignOption } from '@/components/print-press-panel'
+import {
+  newPrintPressLine,
+  pressSheetFileName,
+  printPressCartSummary,
+  printPressDesignDemand,
+  printPressProblem,
+  printPressTotals,
+  type PrintPressLine,
+} from '@/lib/print-press'
+import { generatePressSheetPdf, pressSheetThumbFromUrl, type PressSheetSheet } from '@/lib/press-sheet-pdf'
 
 type Design = {
   id: number
@@ -193,6 +204,10 @@ function HomeBuilder() {
   const [sheetPreviewOpen, setSheetPreviewOpen] = useState(false)
   const [jobStamp, setJobStamp] = useState('')
   const [cutOut, setCutOut] = useState(false)
+  /** Print & Press add-on: labor to press the transfers onto the customer's garments. */
+  const [ppEnabled, setPpEnabled] = useState(false)
+  const [ppNamesOn, setPpNamesOn] = useState(false)
+  const [ppLines, setPpLines] = useState<PrintPressLine[]>(() => [newPrintPressLine(1)])
   const [precutOfferOpen, setPrecutOfferOpen] = useState(false)
   const [precutOfferDeclinedFor, setPrecutOfferDeclinedFor] = useState<string | null>(null)
   const [pendingCartAfterCut, setPendingCartAfterCut] = useState(false)
@@ -212,7 +227,7 @@ function HomeBuilder() {
       observer.disconnect()
       window.removeEventListener('load', post)
     }
-  }, [embed, reportHeight, designs.length, cutOut, built, previewing, sheetPreviewOpen, saveError, cartStatus, addNotice, addError])
+  }, [embed, reportHeight, designs.length, cutOut, ppEnabled, ppLines.length, ppNamesOn, built, previewing, sheetPreviewOpen, saveError, cartStatus, addNotice, addError])
 
   /** Scroll the design list into view. In the store iframe the page itself does not
    *  scroll, so ask the parent to move instead. */
@@ -329,8 +344,20 @@ function HomeBuilder() {
       })
     }
   }
-  const totalTransfers = designs.reduce((sum, design) => sum + design.quantity, 0)
-  const previewPieces = designs.flatMap((design) => Array.from({ length: design.quantity }, () => design))
+  /**
+   * Print & Press decides how many of each design the gang sheet needs: a logo
+   * on the front of 50 shirts is 50 transfers. Designs the garment lines use
+   * follow that count; anything else keeps the customer's own quantity.
+   */
+  const ppDemand = printPressDesignDemand(ppEnabled ? ppLines : [])
+  const designQuantity = (design: Design) => (ppEnabled ? ppDemand.get(design.id) || design.quantity : design.quantity)
+  const ppTotals = printPressTotals(ppLines, ppNamesOn)
+  const ppProblem = ppEnabled ? printPressProblem(ppLines, ppNamesOn, designs.map((design) => design.id)) : null
+  const ppLabor = ppEnabled ? ppTotals.labor : 0
+  // Print & Press always ships pre-cut; the crew's labor price covers the cutting.
+  const cutOutActive = cutOut || ppEnabled
+  const totalTransfers = designs.reduce((sum, design) => sum + designQuantity(design), 0)
+  const previewPieces = designs.flatMap((design) => Array.from({ length: designQuantity(design) }, () => design))
   /**
    * The chosen size is the box the design may fill. The printed size is the
    * artwork fitted inside it, so nothing is ever stretched and the packer only
@@ -353,12 +380,14 @@ function HomeBuilder() {
     widthIn: getDesignWidth(design),
     heightIn: getDesignHeight(design),
     allowRotate: !design.keepUpright,
+    // Rides through the packer so the press sheet can say which sheet each design is on.
+    designId: design.id,
   }))
   /**
    * Pack onto as many 200 in sheets as the job needs. Every sheet is its own
    * print file, cut file, and cart line (200 + 200 + 100 for 500 in of art).
    */
-  const pagination = paginateGangSheet(pieceInputs, { cutOut })
+  const pagination = paginateGangSheet(pieceInputs, { cutOut: cutOutActive })
   const pages = pagination.pages
   const sheetCount = pagination.sheetCount
   const activePage = pages[Math.min(previewPage, Math.max(0, pages.length - 1))]
@@ -384,12 +413,12 @@ function HomeBuilder() {
       ? `Turned ${rotatedCount} design${rotatedCount === 1 ? '' : 's'} a quarter turn to fit more across — saves ${filmSavedIn.toFixed(1)} in of film.`
       : null
   const layoutKey = designs.map((design) => [
-    design.id, design.quantity, design.size, design.placement, design.keepUpright,
+    design.id, designQuantity(design), design.size, design.placement, design.keepUpright,
     design.customWidth, design.customHeight, design.previewUrl,
     design.pixelWidth, design.pixelHeight,
-  ].join(':')).join('|') + `|cut:${cutOut ? '1' : '0'}`
+  ].join(':')).join('|') + `|cut:${cutOutActive ? '1' : '0'}`
   const designFingerprint = designs.map((design) => [
-    design.id, design.quantity, design.size, design.placement,
+    design.id, designQuantity(design), design.size, design.placement,
     design.customWidth, design.customHeight, design.previewUrl,
     design.pixelWidth, design.pixelHeight,
   ].join(':')).join('|')
@@ -415,10 +444,11 @@ function HomeBuilder() {
   const sheetName = customerName.trim() || 'Gang Sheet'
   const cutRate = cuttingFeeEach(totalTransfers)
   const offeredCutFee = totalTransfers > 0 ? cutRate * totalTransfers : 0
-  const cutFee = cutOut && totalTransfers > 0 ? offeredCutFee : 0
+  // With Print & Press the cut is included — the labor line pays for it.
+  const cutFee = cutOutActive && !ppEnabled && totalTransfers > 0 ? offeredCutFee : 0
   // Self-serve builder: no layout/build fee. That fee is only for the done-for-you
   // "I Don't Know How to Build a Gangsheet" path (/send).
-  const subtotal = sheet.price + cutFee
+  const subtotal = sheet.price + cutFee + ppLabor
   const total = subtotal.toFixed(2)
   const currentGuideStep = !customerName.trim() ? 1 : designs.length === 0 ? 2 : !previewing && !built ? 4 : 5
   const updateDesign = (id: number, patch: Partial<Design>) => setDesigns((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item))
@@ -535,8 +565,8 @@ function HomeBuilder() {
       pxPerIn,
       label,
       mapCmyk,
-      marks: cutOut ? page.marks : [],
-      startArrow: cutOut ? page.startArrow : [],
+      marks: cutOutActive ? page.marks : [],
+      startArrow: cutOutActive ? page.startArrow : [],
     })
   }
 
@@ -597,9 +627,15 @@ function HomeBuilder() {
       if (tooLargeCount > 0) {
         throw new Error(`${tooLargeCount} design${tooLargeCount === 1 ? ' is' : 's are'} too large for a ${SHEET_WIDTH_IN} × 200 in sheet. Shrink it to continue.`)
       }
+      if (ppProblem) throw new Error(ppProblem)
       const stamp = jobStamp || sheetStamp()
       const who = customerName.trim()
       const cartSlug = slugify(who)
+      const designInfo = (id: number) => {
+        const design = designs.find((item) => item.id === id)
+        return design ? { number: design.designNumber, name: design.name } : undefined
+      }
+      const ppSummary = ppEnabled ? printPressCartSummary(ppLines, ppNamesOn, designInfo) : undefined
 
       // One print PNG per sheet, each labelled "N of M" on the film and in its
       // file name, so a 500 in job is three sheets (200 + 200 + 100), not one.
@@ -616,7 +652,7 @@ function HomeBuilder() {
         const png = await composeSheetPage(page, sheetPxPerIn(page, 14000, 150), pageJobName(page, stamp), true)
         let plt: string | undefined
         let cutName: string | undefined
-        if (cutOut) {
+        if (cutOutActive) {
           plt = cutPlt(page.layout.pieces, page.printHeight)
           if (!plt) throw new Error(`Could not build the cutter PLT for sheet ${partLabel(page.index, sheetCount)}.`)
           cutName = sheetCutFileName(who, page.billedLength, stamp, part)
@@ -658,7 +694,7 @@ function HomeBuilder() {
           size: design.size,
           customWidth: design.customWidth,
           customHeight: design.customHeight,
-          quantity: design.quantity,
+          quantity: designQuantity(design),
           keepUpright: design.keepUpright,
           pixelWidth: design.pixelWidth,
           pixelHeight: design.pixelHeight,
@@ -667,6 +703,52 @@ function HomeBuilder() {
       })
       const artPlan = await prepareDesignArtUploads(artInputs)
 
+      // Print & Press: the press sheet PDF goes up in the same batch as the sheets
+      // and cut files, so the crew's paperwork is in the job folder before checkout.
+      const pressSheetSheets: PressSheetSheet[] = sheetFiles.map((file) => {
+        const counts = new Map<number, number>()
+        for (const piece of file.page.layout.pieces as Array<{ designId?: number }>) {
+          if (piece.designId === undefined) continue
+          counts.set(piece.designId, (counts.get(piece.designId) ?? 0) + 1)
+        }
+        return {
+          label: partLabel(file.page.index, sheetCount),
+          billedLengthIn: file.page.billedLength,
+          transfers: file.page.transfers,
+          printFileName: file.printName,
+          cutFileName: file.cutName,
+          pieces: [...counts.entries()]
+            .map(([designId, qty]) => {
+              const design = designs.find((item) => item.id === designId)
+              return { designNumber: design?.designNumber ?? 0, name: design?.name ?? 'Design', qty }
+            })
+            .sort((a, b) => a.designNumber - b.designNumber),
+        }
+      })
+      let pressSheetUpload: { name: string; mimeType: string; blob: Blob } | undefined
+      if (ppSummary) {
+        const pressDesigns = []
+        for (const design of designs) {
+          const size = getDesignSize(design)
+          pressDesigns.push({
+            number: design.designNumber,
+            name: design.name,
+            widthIn: Math.round(size.widthIn * 100) / 100,
+            heightIn: Math.round(size.heightIn * 100) / 100,
+            thumb: await pressSheetThumbFromUrl(design.previewUrl),
+          })
+        }
+        const pdf = await generatePressSheetPdf({
+          customerName: who,
+          stamp,
+          summary: ppSummary,
+          designs: pressDesigns,
+          sheets: pressSheetSheets,
+          gangSheetPrice: sheet.price,
+        })
+        pressSheetUpload = { name: pressSheetFileName(who, stamp), mimeType: 'application/pdf', blob: pdf }
+      }
+
       // Print PNGs stay first, in sheet order — sheet 1's id is the cart's Drive link.
       const drive = await uploadJobToGoogleDrive({
         customerName: who,
@@ -674,6 +756,7 @@ function HomeBuilder() {
         files: [
           ...sheetFiles.map((file) => ({ name: file.printName, mimeType: 'image/png', blob: file.png })),
           ...extraCutUploads,
+          ...(pressSheetUpload ? [pressSheetUpload] : []),
           ...artPlan.uploads,
         ],
         cutterFile,
@@ -682,6 +765,14 @@ function HomeBuilder() {
       setDriveFolderUrl(drive.folderUrl)
 
       const uploadedByName = new Map(drive.files.map((file) => [file.name, file]))
+      if (ppSummary && pressSheetUpload) {
+        const uploaded = uploadedByName.get(pressSheetUpload.name)
+        if (uploaded) {
+          ppSummary.pressSheetUrl = uploaded.webViewLink
+          ppSummary.pressSheetFileId = uploaded.id
+          ppSummary.pressSheetFileName = pressSheetUpload.name
+        }
+      }
       const cartSheets: GangSheetCartSheet[] = sheetFiles.map((file) => {
         const uploaded = uploadedByName.get(file.printName)
         if (!uploaded) {
@@ -689,7 +780,8 @@ function HomeBuilder() {
         }
         const cut = file.cutName ? uploadedByName.get(file.cutName) : undefined
         // Pre-cut is billed per transfer, so each sheet carries the fee for its own pieces.
-        const sheetPrecut = cutOut ? Math.round(cutRate * file.page.transfers * 100) / 100 : 0
+        // Print & Press jobs are cut too, but the labor line covers it — no fee here.
+        const sheetPrecut = cutOutActive && !ppEnabled ? Math.round(cutRate * file.page.transfers * 100) / 100 : 0
         return {
           sheetHeightIn: Math.round(file.page.printedHeightIn * 100) / 100,
           billableHeightIn: file.page.billedLength,
@@ -725,8 +817,9 @@ function HomeBuilder() {
               cutFileName: item.cutFileName,
               transfers: item.transfers,
             })),
+            ...(ppSummary ? { printPress: ppSummary } : {}),
           },
-          cut: { enabled: cutOut },
+          cut: { enabled: cutOutActive },
           fromUpload: true,
           images: imagesFromUploadedArt(artInputs, artPlan, drive.files),
         })
@@ -746,7 +839,7 @@ function HomeBuilder() {
         quantity: 1,
         designs: designs.length,
         transfers: first.transfers,
-        precut: cutOut,
+        precut: cutOutActive,
         precutTotal: first.precutTotal,
         buildFee: 0,
         fileName: first.fileName,
@@ -757,6 +850,7 @@ function HomeBuilder() {
         jobStamp: stamp,
         printFileName: first.printFileName,
         sheets: cartSheets,
+        ...(ppSummary ? { printPress: ppSummary } : {}),
       }
       const result = await addToCart(payload)
       if (!result.ok) throw new Error(result.error)
@@ -776,7 +870,13 @@ function HomeBuilder() {
 
   function requestAddToCart() {
     if (!customerName.trim() || designs.length === 0 || saving || cartStatus === 'sending' || pendingCartAfterCut) return
-    if (!cutOut && offeredCutFee > 0 && precutOfferDeclinedFor !== designFingerprint) {
+    if (ppProblem) {
+      setSaveError(ppProblem)
+      setSheetPreviewOpen(false)
+      return
+    }
+    // Print & Press is already pre-cut (included), so there is nothing to offer.
+    if (!cutOutActive && offeredCutFee > 0 && precutOfferDeclinedFor !== designFingerprint) {
       setPrecutOfferOpen(true)
       return
     }
@@ -918,8 +1018,29 @@ function HomeBuilder() {
           <h2 className="design-count">Your designs ({designs.length})</h2>
         </div>
         {designs.length === 0 && <div className="empty-designs"><FileImage size={24} /><span>Your uploaded designs will appear here.</span></div>}
-        <div className="design-list" ref={designListRef}>{designs.map((design) => <div className="design-row" key={design.id}><div className="drag-handle">⋮<br />⋮</div><button type="button" className={`thumb ${design.previewUrl ? 'has-art' : design.color}`} disabled={!design.previewUrl} onClick={() => design.previewUrl && setInspectId(design.id)} aria-label={`Inspect ${design.name}`}>{design.previewUrl ? <img src={design.previewUrl} alt="" /> : <><ImageIcon size={24} /><small>ARTWORK</small></>}<span className="thumb-status">Click to inspect</span></button><div className="design-name"><strong>{design.name}</strong>{(() => { const dpi = printDpi(design.pixelWidth, getDesignWidth(design)); const quality = qualityFromDpi(dpi); return <span className={quality.tone === 'good' ? 'quality' : quality.tone === 'poor' ? 'quality-warn' : 'transparent'}>{quality.tone === 'good' ? <Check size={13} /> : null}{dpi ? `${dpi} DPI · ${quality.label}` : 'Click art to check quality'}</span> })()}{design.enhanced && <span className="quality">Upscaled</span>}<button type="button" className="compare-link" disabled={!design.previewUrl} onClick={() => setInspectId(design.id)}>View large · Upscale</button></div><label className="object-type">What are you printing?<select aria-label={`What are you printing for ${design.name}`} value={design.placement} onChange={(e) => { const nextPlacement = e.target.value; updateDesign(design.id, { placement: nextPlacement, size: nextPlacement === 'Custom' ? '0 × 0 in' : (sizeOptions[nextPlacement as keyof typeof sizeOptions] ?? sizeOptions.default)[0], customWidth: nextPlacement === 'Custom' ? '' : design.customWidth, customHeight: nextPlacement === 'Custom' ? '' : design.customHeight }) }}>{placements.map((option) => <option key={option}>{option}</option>)}</select></label>{design.placement === 'Custom' ? <div className="custom-dimensions"><span>Custom image size (max {SHEET_WIDTH_IN} in wide × 199 in high)</span><div><label>Width (in)<input aria-label={`Custom width for ${design.name}`} type="number" min="0.25" max={SHEET_WIDTH_IN} step="0.25" placeholder="Width" value={design.customWidth} onChange={(e) => { const width = Math.min(SHEET_WIDTH_IN, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(width); updateDesign(design.id, { customWidth: value, size: `${value || '0'} × ${design.customHeight || '0'} in` }) }} /></label><label>Height (in)<input aria-label={`Custom height for ${design.name}`} type="number" min="0.25" max="199" step="0.25" placeholder="Height" value={design.customHeight} onChange={(e) => { const height = Math.min(199, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(height); updateDesign(design.id, { customHeight: value, size: `${design.customWidth || '0'} × ${value || '0'} in` }) }} /></label></div></div> : <label>Size<select aria-label={`Print size for ${design.name}`} value={design.size} onChange={(e) => updateDesign(design.id, { size: e.target.value })}>{(sizeOptions[design.placement as keyof typeof sizeOptions] ?? sizeOptions.default).map((option) => <option key={option}>{option}</option>)}</select></label>}<label>Quantity<div className="number-input"><button aria-label="Decrease design quantity" onClick={() => updateDesign(design.id, { quantity: Math.max(1, design.quantity - 1) })}><Minus size={13} /></button><input aria-label={`Quantity for ${design.name}`} type="number" min="1" step="1" value={design.quantity} onChange={(event) => updateDesign(design.id, { quantity: Math.max(1, Math.floor(Number(event.target.value) || 1)) })} /><button aria-label="Increase design quantity" onClick={() => updateDesign(design.id, { quantity: design.quantity + 1 })}><Plus size={13} /></button></div></label><div className="design-actions-stack"><button type="button" className="row-action" title="Replace artwork" aria-label={`Replace artwork for ${design.name}`} onClick={() => startReplace(design.id)}><Replace size={15} /></button><button type="button" className="row-action" title="Duplicate this design" aria-label={`Duplicate ${design.name}`} onClick={() => setDuplicateTargetId(design.id)}><Copy size={15} /></button><button type="button" className={`row-action${design.keepUpright ? " upright" : ""}`} aria-pressed={design.keepUpright} title={design.keepUpright ? "Keep this design upright" : "Allow turning to fit more across"} aria-label={design.keepUpright ? `Keep ${design.name} upright` : `Allow turning ${design.name}`} onClick={() => updateDesign(design.id, { keepUpright: !design.keepUpright })}><RotateCw size={15} /></button><button type="button" className="row-action danger" title="Remove design" aria-label={`Remove ${design.name}`} onClick={() => removeDesign(design.id)}><Trash2 size={15} /></button></div></div>)}</div>
+        <div className="design-list" ref={designListRef}>{designs.map((design) => <div className="design-row" key={design.id}><div className="drag-handle">⋮<br />⋮</div><button type="button" className={`thumb ${design.previewUrl ? 'has-art' : design.color}`} disabled={!design.previewUrl} onClick={() => design.previewUrl && setInspectId(design.id)} aria-label={`Inspect ${design.name}`}>{design.previewUrl ? <img src={design.previewUrl} alt="" /> : <><ImageIcon size={24} /><small>ARTWORK</small></>}<span className="thumb-status">Click to inspect</span></button><div className="design-name"><strong>{design.name}</strong>{(() => { const dpi = printDpi(design.pixelWidth, getDesignWidth(design)); const quality = qualityFromDpi(dpi); return <span className={quality.tone === 'good' ? 'quality' : quality.tone === 'poor' ? 'quality-warn' : 'transparent'}>{quality.tone === 'good' ? <Check size={13} /> : null}{dpi ? `${dpi} DPI · ${quality.label}` : 'Click art to check quality'}</span> })()}{design.enhanced && <span className="quality">Upscaled</span>}<button type="button" className="compare-link" disabled={!design.previewUrl} onClick={() => setInspectId(design.id)}>View large · Upscale</button></div><label className="object-type">What are you printing?<select aria-label={`What are you printing for ${design.name}`} value={design.placement} onChange={(e) => { const nextPlacement = e.target.value; updateDesign(design.id, { placement: nextPlacement, size: nextPlacement === 'Custom' ? '0 × 0 in' : (sizeOptions[nextPlacement as keyof typeof sizeOptions] ?? sizeOptions.default)[0], customWidth: nextPlacement === 'Custom' ? '' : design.customWidth, customHeight: nextPlacement === 'Custom' ? '' : design.customHeight }) }}>{placements.map((option) => <option key={option}>{option}</option>)}</select></label>{design.placement === 'Custom' ? <div className="custom-dimensions"><span>Custom image size (max {SHEET_WIDTH_IN} in wide × 199 in high)</span><div><label>Width (in)<input aria-label={`Custom width for ${design.name}`} type="number" min="0.25" max={SHEET_WIDTH_IN} step="0.25" placeholder="Width" value={design.customWidth} onChange={(e) => { const width = Math.min(SHEET_WIDTH_IN, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(width); updateDesign(design.id, { customWidth: value, size: `${value || '0'} × ${design.customHeight || '0'} in` }) }} /></label><label>Height (in)<input aria-label={`Custom height for ${design.name}`} type="number" min="0.25" max="199" step="0.25" placeholder="Height" value={design.customHeight} onChange={(e) => { const height = Math.min(199, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(height); updateDesign(design.id, { customHeight: value, size: `${design.customWidth || '0'} × ${value || '0'} in` }) }} /></label></div></div> : <label>Size<select aria-label={`Print size for ${design.name}`} value={design.size} onChange={(e) => updateDesign(design.id, { size: e.target.value })}>{(sizeOptions[design.placement as keyof typeof sizeOptions] ?? sizeOptions.default).map((option) => <option key={option}>{option}</option>)}</select></label>}{ppEnabled && (ppDemand.get(design.id) ?? 0) > 0 ? <label>Quantity<div className="number-input"><input aria-label={`Quantity for ${design.name} (set by Print & Press)`} type="number" value={designQuantity(design)} readOnly disabled /></div><span className="pp-locked">Set by Print &amp; Press garments</span></label> : <label>Quantity<div className="number-input"><button aria-label="Decrease design quantity" onClick={() => updateDesign(design.id, { quantity: Math.max(1, design.quantity - 1) })}><Minus size={13} /></button><input aria-label={`Quantity for ${design.name}`} type="number" min="1" step="1" value={design.quantity} onChange={(event) => updateDesign(design.id, { quantity: Math.max(1, Math.floor(Number(event.target.value) || 1)) })} /><button aria-label="Increase design quantity" onClick={() => updateDesign(design.id, { quantity: design.quantity + 1 })}><Plus size={13} /></button></div></label>}<div className="design-actions-stack"><button type="button" className="row-action" title="Replace artwork" aria-label={`Replace artwork for ${design.name}`} onClick={() => startReplace(design.id)}><Replace size={15} /></button><button type="button" className="row-action" title="Duplicate this design" aria-label={`Duplicate ${design.name}`} onClick={() => setDuplicateTargetId(design.id)}><Copy size={15} /></button><button type="button" className={`row-action${design.keepUpright ? " upright" : ""}`} aria-pressed={design.keepUpright} title={design.keepUpright ? "Keep this design upright" : "Allow turning to fit more across"} aria-label={design.keepUpright ? `Keep ${design.name} upright` : `Allow turning ${design.name}`} onClick={() => updateDesign(design.id, { keepUpright: !design.keepUpright })}><RotateCw size={15} /></button><button type="button" className="row-action danger" title="Remove design" aria-label={`Remove ${design.name}`} onClick={() => removeDesign(design.id)}><Trash2 size={15} /></button></div></div>)}</div>
         <div className="design-footer-actions"><button className="add-design" disabled={!customerName.trim()} onClick={() => { if (customerName.trim()) inputRef.current?.click() }}><Plus size={20} /> Add Another Design</button><button className="duplicate-design" disabled={designs.length === 0} onClick={duplicateLatestDesign}><Copy size={18} /> Duplicate Design</button></div>
+        <PrintPressPanel
+          enabled={ppEnabled}
+          onToggle={(next) => { setPpEnabled(next); setSaveError(null) }}
+          namesOn={ppNamesOn}
+          onNamesChange={setPpNamesOn}
+          lines={ppLines}
+          onLinesChange={(update) => setPpLines((lines) => update(lines))}
+          designs={designs.map((design): PrintPressDesignOption => {
+            const size = getDesignSize(design)
+            return {
+              id: design.id,
+              number: design.designNumber,
+              name: design.name,
+              previewUrl: design.previewUrl,
+              sizeLabel: `${Math.round(size.widthIn * 100) / 100} × ${Math.round(size.heightIn * 100) / 100} in`,
+            }
+          })}
+          totals={ppTotals}
+          demand={ppDemand}
+          problem={ppProblem}
+        />
         {duplicateTargetId !== null && <div className="duplicate-picker"><div><strong>What are you printing?</strong><span>Choose the garment or placement for this copy.</span></div><div className="duplicate-picker-options">{placements.map((item) => <button key={item} type="button" onClick={() => duplicateDesign(duplicateTargetId, item)}><PlacementIcon placement={item} /><span>{item}</span></button>)}</div><button className="cancel-duplicate" type="button" onClick={() => setDuplicateTargetId(null)}>Cancel</button></div>}
         {sizeGuidePlacement && <div className="size-popup-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSizeGuidePlacement(null) }}><section className="size-popup" role="dialog" aria-modal="true" aria-labelledby="size-popup-title"><div className="size-popup-header"><div><span className="eyebrow">Recommended sizes</span><h2 id="size-popup-title">{sizeGuidePlacement}</h2><p>These are the max print sizes for this placement. Choose the matching size in the size menu.</p></div><button className="size-popup-close" aria-label="Close recommended sizes" onClick={() => setSizeGuidePlacement(null)}>×</button></div><div className="size-recommendations">{(sizeOptions[sizeGuidePlacement as keyof typeof sizeOptions] ?? sizeOptions.default).map((option) => <div key={option} className="size-recommendation"><strong>{option.split(' · ')[0]}</strong><span>{option.includes(' · ') ? option.split(' · ')[1] : option}</span></div>)}</div><button className="size-popup-done" onClick={() => setSizeGuidePlacement(null)}>Continue</button></section></div>}
         {inspectDesign && <DesignInspector design={inspectDesign} onClose={() => setInspectId(null)} onApply={(previewUrl) => applyInspectedDesign(inspectDesign.id, previewUrl)} />}
@@ -935,7 +1056,7 @@ function HomeBuilder() {
             cutBoxes={cutBoxes}
             cutMarks={cutMarks}
             printHeightIn={printHeight}
-            cutOut={cutOut}
+            cutOut={cutOutActive}
             audience="customer"
             layoutPieces={layoutPieces}
             pageIndex={activePage?.index ?? 0}
@@ -966,18 +1087,23 @@ function HomeBuilder() {
         </div>
         <button
           type="button"
-          className={`precut-button ${cutOut ? 'selected' : ''}`}
-          aria-pressed={cutOut}
+          className={`precut-button ${cutOutActive ? 'selected' : ''}`}
+          aria-pressed={cutOutActive}
+          disabled={ppEnabled}
           onClick={() => setCutOut((value) => !value)}
         >
           <span className="precut-button-title">
             <Scissors size={18} />
             Pre-cut DTFs
-            {cutOut ? <em>On</em> : null}
+            {ppEnabled ? <em>Included</em> : cutOut ? <em>On</em> : null}
           </span>
-          <small>Optional: we cut each transfer out for you. Rate drops as quantity goes up.</small>
+          <small>
+            {ppEnabled
+              ? 'Included with Print & Press — every transfer is cut out at no extra charge.'
+              : 'Optional: we cut each transfer out for you. Rate drops as quantity goes up.'}
+          </small>
         </button>
-        {cutOut && (
+        {cutOut && !ppEnabled && (
           <div className="precut-rates">
             <table>
               <thead>
@@ -1013,8 +1139,18 @@ function HomeBuilder() {
           <div className="price-breakdown">
             <strong>{sheetName} · {sheetCount === 1 ? '1 of 1' : `${sheetCount} sheets`}</strong>
             <span>{sheet.breakdown}{sheetCount > 1 ? ` = $${sheet.price.toFixed(2)}` : ''}</span>
-            {cutOut && totalTransfers > 0 && (
+            {cutOut && !ppEnabled && totalTransfers > 0 && (
               <span>Pre-cut: {totalTransfers} × ${cutRate.toFixed(2)} = ${cutFee.toFixed(2)}</span>
+            )}
+            {ppEnabled && (
+              <>
+                <span className="pp-breakdown-included">Pre-cut: included with Print &amp; Press</span>
+                <span>
+                  Print &amp; Press: {ppTotals.garments} garments × ${ppTotals.tier.firstSide.toFixed(2)}
+                  {ppTotals.doublePress > 0 ? ` + ${ppTotals.doublePress} × $${ppTotals.tier.secondSide.toFixed(2)}` : ''}
+                  {ppTotals.personalized > 0 ? ` + ${ppTotals.personalized} names × $0.50` : ''} = ${ppLabor.toFixed(2)}
+                </span>
+              </>
             )}
             {sheetCount > 1 && (
               <div className="sheet-line-prices">
@@ -1056,7 +1192,7 @@ function HomeBuilder() {
             <button type="button" className="sheet-final-preview-button" onClick={() => setSheetPreviewOpen(true)}>
               <span className="sheet-final-preview-wrap">
                 <img className="sheet-final-preview" src={sheetPreviewUrl} alt="Gang sheet preview" />
-                {cutOut && (
+                {cutOutActive && (
                   <CutBoxOverlay
                     boxes={cutBoxes}
                     marks={cutMarks}
@@ -1102,7 +1238,7 @@ function HomeBuilder() {
           <div className="built-card">
             <div className="built-title"><span><Check size={21} /></span><strong>Added to your cart.</strong></div>
             <p>
-              {sheet.label} · {totalTransfers} transfers · We will print{cutOut ? ' and cut' : ''} your
+              {sheet.label} · {totalTransfers} transfers · We will print{cutOutActive ? ' and cut' : ''}{ppEnabled ? ' and press' : ''} your
               {sheetCount > 1 ? ` ${sheetCount} sheets.` : ' sheet.'}
             </p>
             {driveFolderUrl && (
