@@ -76,7 +76,7 @@ export async function uploadJobToGoogleDrive(options: {
     folderName?: string
     folderUrl?: string
     uploads?: Array<{ name: string; uploadUrl: string }>
-    cutter?: { id?: string; name?: string } | null
+    cutter?: { id?: string; name?: string; webViewLink?: string } | null
   }
 
   if (!sessionRes.ok) {
@@ -125,6 +125,17 @@ export async function uploadJobToGoogleDrive(options: {
   }
   const webViewLink =
     printFile?.webViewLink || `https://drive.google.com/file/d/${fileId}/view`
+
+  // The sheet-1 cutter PLT is uploaded by our API, not the browser. List it with the
+  // other files (last, so positional callers are unaffected) so the cart and project
+  // JSON can link it by name like every other cut file.
+  if (options.cutterFile && sessionJson.cutter?.id) {
+    uploadedFiles.push({
+      name: options.cutterFile.name,
+      id: sessionJson.cutter.id,
+      webViewLink: sessionJson.cutter.webViewLink || `https://drive.google.com/file/d/${sessionJson.cutter.id}/view`,
+    })
+  }
 
   return {
     folderId: sessionJson.folderId,
