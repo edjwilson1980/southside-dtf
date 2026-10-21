@@ -10,6 +10,7 @@ These are **separate products** that share print/packing libraries. Do not mix t
 - When **Pre-cut DTFs** is on and they add to cart: creates a customer folder in Google Drive and uploads the print PNG + cutter PLT
   - PLT is uploaded by the server (not a customer browser download)
   - PNG is proxied through our API when small enough; larger PNGs use a Drive session started with the page Origin (required for browser CORS)
+- Every job (pre-cut or not) also gets an **Image list PDF** in the Drive folder: one row per design with its number, picture, print size (W × H in), quantity, sheet, preset, DPI and art file name — the reprint reference. Sample: [`docs/samples/image-list-sample.pdf`](docs/samples/image-list-sample.pdf)
 - Drive uses shop Gmail OAuth (personal Gmail has no Shared drives). Staff connect once at `/shop/connect-drive`
 - WordPress: install `wordpress/southside-gangsheet-1.28.zip`, shortcode `[southside_gangsheet]` — embeds `/embed` and supports **Add to Cart** via postMessage
   - `[southside_gangsheet mode="upload"]` → `/embed/upload`; `[southside_gangsheet mode="stickers"]` → `/embed/stickers` (UV DTF sticker maker with Add to Cart)
@@ -21,6 +22,7 @@ These are **separate products** that share print/packing libraries. Do not mix t
 - Internal production app for staff
 - Full builder plus PLT cut files, registration-mark guidance, and cutter tests
 - Pre-cut builds also save PNG + PLT to Google Drive (and still download both locally for the cutter PC)
+- Confirm & Build also downloads and uploads the **Image list PDF** (design number, picture, print size, quantity per design)
 - May link to the customer builder
 - Advanced features belong here, not on `/`
 
@@ -53,7 +55,7 @@ Shared code lives under `lib/` (compose, cut layout, sheet size, image tools).
   (`Customer Name.ssp.json`) and embeds design art so Reopen shows the images.
 - **Automatic project JSON** — Drive uploads create/update the project `.ssp.json` in the job folder.
 - **Add to Cart progress card** — blocking status card with steps, elapsed time and Drive upload % from the click until the store cart opens.
-- **Version footer** — current version (v2.7.1) shown at the bottom of every builder page.
+- **Version footer** — current version (v2.8.0) shown at the bottom of every builder page.
 - Spec: [`docs/GANGSHEET_ADDON_SPEC.md`](docs/GANGSHEET_ADDON_SPEC.md)
 
 ### Shop sticker routes (staff)
