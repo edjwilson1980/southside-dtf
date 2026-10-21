@@ -2,17 +2,20 @@
 
 import { Plus, Shirt, Trash2 } from 'lucide-react'
 import {
+  LEFT_CHEST_MAX_WIDTH_IN,
   PRINT_PRESS_COLORS,
   PRINT_PRESS_GARMENTS,
   PRINT_PRESS_LOCATIONS,
   PRINT_PRESS_NAME_FEE,
   PRINT_PRESS_SIZES,
   PRINT_PRESS_TIERS,
+  lineFrontIsChest,
   lineGarments,
   lineNeedsBack,
   lineNeedsFront,
   money,
   newPrintPressLine,
+  printPressFrontLabel,
   printPressGarmentLabel,
   printPressLocationLabel,
   rosterNames,
@@ -29,6 +32,8 @@ export type PrintPressDesignOption = {
   name: string
   previewUrl: string
   sizeLabel: string
+  /** Printed width, used to nudge oversized art out of the left chest slot. */
+  widthIn?: number
 }
 
 type Props = {
@@ -47,18 +52,22 @@ type Props = {
 
 function DesignSlot({
   side,
+  chest = false,
   designs,
   value,
   onChange,
 }: {
-  side: 'Front' | 'Back'
+  side: 'Front' | 'Left chest' | 'Back'
+  /** Left chest logo slot: small art expected, big art gets a hint. */
+  chest?: boolean
   designs: PrintPressDesignOption[]
   value: number | null
   onChange: (id: number | null) => void
 }) {
   const design = designs.find((item) => item.id === value)
+  const tooWide = chest && design?.widthIn != null && design.widthIn > LEFT_CHEST_MAX_WIDTH_IN
   return (
-    <div className={`pp-slot${design ? '' : ' missing'}`}>
+    <div className={`pp-slot${design ? '' : ' missing'}${chest ? ' chest' : ''}`}>
       <span className={`pp-slot-thumb${design ? ' has-art' : ''}`}>
         {design ? <img src={design.previewUrl} alt="" /> : <span>none</span>}
         {design && <i className="pp-cut-line" aria-hidden="true" />}
@@ -78,6 +87,12 @@ function DesignSlot({
           ))}
         </select>
         {!design && <small>Required — which design goes on the {side.toLowerCase()}?</small>}
+        {design && chest && !tooWide && <small>Logo prints on the left chest, about 3–4 in wide.</small>}
+        {tooWide && (
+          <small className="pp-slot-warn">
+            This design is {design.sizeLabel} — wide for a left chest logo. Set it to a Left Chest size in step 2 (3–4.5 in) or choose another design.
+          </small>
+        )}
       </label>
     </div>
   )
@@ -257,7 +272,13 @@ export function PrintPressPanel({ enabled, onToggle, namesOn, onNamesChange, lin
 
                   <div className="pp-line-body">
                     {lineNeedsFront(line) && (
-                      <DesignSlot side="Front" designs={designs} value={line.frontDesign} onChange={(id) => updateLine(line.id, { frontDesign: id })} />
+                      <DesignSlot
+                        side={printPressFrontLabel(line.location)}
+                        chest={lineFrontIsChest(line)}
+                        designs={designs}
+                        value={line.frontDesign}
+                        onChange={(id) => updateLine(line.id, { frontDesign: id })}
+                      />
                     )}
                     {lineNeedsBack(line) && (
                       <DesignSlot side="Back" designs={designs} value={line.backDesign} onChange={(id) => updateLine(line.id, { backDesign: id })} />
@@ -333,7 +354,7 @@ export function PrintPressPanel({ enabled, onToggle, namesOn, onNamesChange, lin
 
           <p className="pp-fine">
             Print &amp; Press is available exclusively with transfers purchased from South Side DTF. Customer supplies garments.
-            Specialty print locations are not available. Personalized name placement is +{money(PRINT_PRESS_NAME_FEE)} per garment.
+            Front, left chest logo and back only — sleeves, hats and other specialty locations are not available. A left chest logo counts as the front print. Personalized name placement is +{money(PRINT_PRESS_NAME_FEE)} per garment.
             Every transfer is pre-cut.
           </p>
         </>

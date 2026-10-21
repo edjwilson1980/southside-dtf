@@ -2095,7 +2095,9 @@ html, body {
 .pp-cut-line { position: absolute; inset: 8%; border: 1.5px solid var(--chicago-red); border-radius: 3px; pointer-events: none; }
 .pp-slot label { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; }
 .pp-slot select { box-sizing: border-box; width: 100%; height: 34px; min-width: 0; padding: 0 8px; border: 1px solid var(--input); border-radius: 6px; background: #fff; color: var(--ink); font-size: 13px; font-weight: 600; outline: none; }
-.pp-slot small { color: var(--chicago-red); font-size: 11px; }
+.pp-slot small { color: var(--muted); font-size: 11px; font-weight: 600; }
+.pp-slot.missing small, .pp-slot small.pp-slot-warn { color: var(--chicago-red); }
+.pp-slot.chest .pp-slot-thumb img { width: 46%; height: 46%; }
 .pp-roster { flex: 1 1 200px; display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 12px; font-weight: 700; }
 .pp-roster textarea { box-sizing: border-box; width: 100%; padding: 8px; border: 1px solid var(--input); border-radius: 6px; background: #fff; color: var(--ink); font: 600 12px ui-monospace, Menlo, Consolas, monospace; resize: vertical; outline: none; }
 .pp-roster small { color: var(--muted); font-size: 11px; font-weight: 500; }

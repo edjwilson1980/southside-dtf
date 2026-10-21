@@ -1086,6 +1086,7 @@ function HomeBuilder() {
               name: design.name,
               previewUrl: design.previewUrl,
               sizeLabel: `${Math.round(size.widthIn * 100) / 100} × ${Math.round(size.heightIn * 100) / 100} in`,
+              widthIn: size.widthIn,
             }
           })}
           totals={ppTotals}
