@@ -17,19 +17,26 @@ import {
   type PrintPressCartSummary,
 } from '@/lib/print-press'
 import { SHEET_WIDTH_IN } from '@/lib/sheet-size'
+import {
+  CONTENT_W,
+  INK,
+  MARGIN,
+  MUTED,
+  PAGE_H,
+  RED,
+  RIGHT,
+  RULE,
+  checkbox,
+  drawThumb,
+  fitText,
+  pdfThumbFromUrl,
+  setFill,
+  setStroke,
+  text,
+  type PdfThumb,
+} from '@/lib/pdf-draw'
 
-const PAGE_W = 8.5
-const PAGE_H = 11
-const MARGIN = 0.55
-const CONTENT_W = PAGE_W - MARGIN * 2
-const RIGHT = PAGE_W - MARGIN
-const INK: [number, number, number] = [23, 32, 51]
-const MUTED: [number, number, number] = [93, 104, 120]
-const RULE: [number, number, number] = [220, 225, 232]
-const RED: [number, number, number] = [207, 32, 45]
-const THUMB_PX = 260
-
-export type PressSheetThumb = { dataUrl: string; format: 'JPEG' | 'PNG' }
+export type PressSheetThumb = PdfThumb
 
 export type PressSheetDesign = {
   /** 1-based design number, as printed on the gang sheet label. */
@@ -59,74 +66,12 @@ export type PressSheetInput = {
   gangSheetPrice: number
 }
 
-/** Shrink a design preview to a JPEG data URL jsPDF can embed. */
-export async function pressSheetThumbFromUrl(url: string | null | undefined): Promise<PressSheetThumb | null> {
-  if (!url) return null
-  try {
-    const res = await fetch(url)
-    if (!res.ok) return null
-    const blob = await res.blob()
-    const bitmap = await createImageBitmap(blob)
-    const scale = Math.min(1, THUMB_PX / Math.max(bitmap.width, bitmap.height))
-    const width = Math.max(1, Math.round(bitmap.width * scale))
-    const height = Math.max(1, Math.round(bitmap.height * scale))
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const ctx = canvas.getContext('2d')
-    if (!ctx) {
-      bitmap.close()
-      return null
-    }
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, width, height)
-    ctx.drawImage(bitmap, 0, 0, width, height)
-    bitmap.close()
-    return { dataUrl: canvas.toDataURL('image/jpeg', 0.85), format: 'JPEG' }
-  } catch {
-    return null
-  }
+/** Shrink a design preview to a JPEG data URL jsPDF can embed (white backing). */
+export function pressSheetThumbFromUrl(url: string | null | undefined): Promise<PressSheetThumb | null> {
+  return pdfThumbFromUrl(url)
 }
 
 type State = { doc: jsPDF; y: number }
-
-function setFill(doc: jsPDF, rgb: [number, number, number]) {
-  doc.setFillColor(rgb[0], rgb[1], rgb[2])
-}
-function setStroke(doc: jsPDF, rgb: [number, number, number]) {
-  doc.setDrawColor(rgb[0], rgb[1], rgb[2])
-}
-function setText(doc: jsPDF, rgb: [number, number, number]) {
-  doc.setTextColor(rgb[0], rgb[1], rgb[2])
-}
-
-function text(doc: jsPDF, value: string, x: number, y: number, opts: { size?: number; bold?: boolean; color?: [number, number, number]; align?: 'left' | 'right' | 'center'; font?: 'helvetica' | 'courier' } = {}) {
-  doc.setFont(opts.font ?? 'helvetica', opts.bold ? 'bold' : 'normal')
-  doc.setFontSize(opts.size ?? 9)
-  setText(doc, opts.color ?? INK)
-  doc.text(value, x, y, opts.align ? { align: opts.align } : undefined)
-}
-
-/** Like text(), but steps the font size down until the string fits in maxW. */
-function fitText(doc: jsPDF, value: string, x: number, y: number, maxW: number, opts: { size: number; bold?: boolean; color?: [number, number, number]; font?: 'helvetica' | 'courier' }) {
-  doc.setFont(opts.font ?? 'helvetica', opts.bold ? 'bold' : 'normal')
-  let size = opts.size
-  doc.setFontSize(size)
-  const width = doc.getTextWidth(value)
-  if (width > maxW) size = Math.max(4.5, (size * maxW) / width)
-  text(doc, value, x, y, { ...opts, size })
-}
-
-/** Draws an empty tick box and its label; returns the x where the next item can start. */
-function checkbox(doc: jsPDF, x: number, y: number, label: string, size = 8, box = 0.1) {
-  setStroke(doc, INK)
-  doc.setLineWidth(0.008)
-  doc.rect(x, y - box * 0.85, box, box)
-  text(doc, label, x + box + 0.04, y, { size, color: MUTED, bold: true })
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(size)
-  return x + box + 0.04 + doc.getTextWidth(label) + 0.16
-}
 
 function rule(state: State) {
   setStroke(state.doc, RULE)
@@ -229,32 +174,8 @@ function drawSizeTotals(state: State, input: PressSheetInput) {
 }
 
 function drawImage(doc: jsPDF, thumb: PressSheetThumb | null | undefined, x: number, y: number, w: number, h: number) {
-  setStroke(doc, RULE)
-  doc.setLineWidth(0.01)
-  doc.roundedRect(x, y, w, h, 0.05, 0.05)
-  if (!thumb?.dataUrl) {
-    text(doc, 'no art', x + w / 2, y + h / 2 + 0.04, { size: 8, color: MUTED, bold: true, align: 'center' })
-    return
-  }
-  try {
-    const props = doc.getImageProperties(thumb.dataUrl)
-    const aspect = props.width / Math.max(1, props.height)
-    let drawW = w - 0.16
-    let drawH = drawW / aspect
-    if (drawH > h - 0.16) {
-      drawH = h - 0.16
-      drawW = drawH * aspect
-    }
-    const dx = x + (w - drawW) / 2
-    const dy = y + (h - drawH) / 2
-    doc.addImage(thumb.dataUrl, thumb.format, dx, dy, drawW, drawH)
-    // The red outline is the knife path — same cue the builder preview uses.
-    setStroke(doc, RED)
-    doc.setLineWidth(0.012)
-    doc.rect(dx - 0.03, dy - 0.03, drawW + 0.06, drawH + 0.06)
-  } catch {
-    // Empty box is fine.
-  }
+  // The red outline is the knife path — same cue the builder preview uses.
+  drawThumb(doc, thumb, x, y, w, h, { outline: true })
 }
 
 function sheetsForDesign(input: PressSheetInput, designNumber: number | null) {

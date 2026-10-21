@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.8.0] — 2026-10-21
+
+### Added
+- **Image list PDF in every export.** Every job now gets a third file next to the sheet PNGs
+  and cut PLTs: `{Customer} {stamp}     Image list.pdf`. One row per design — its number (the
+  same number printed on the gang sheet), a picture with the printed width and height called
+  out, the **print size** in big type (for example `10.5 × 12 in`), the **quantity** of
+  transfers, which sheet it is on (split counts for multi-sheet jobs), the garment/size preset
+  the customer picked, the art's pixel size and DPI at that size, and the art file name in the
+  Drive folder — plus a Reprint / qty / reason tick line for the crew. The sheet file box at
+  the top names the PNG and PLT to reprint from. Customer builder: uploaded to the Drive job
+  folder in the same batch as the sheets (before the cart redirect) and recorded as
+  `product.imageList` in the project JSON. Shop builder: downloaded with the PNG/PLT and
+  uploaded to Drive too. Samples: [`docs/samples/image-list-sample.pdf`](docs/samples/image-list-sample.pdf)
+  (real builder output, 3 designs) and [`docs/samples/image-list-two-sheets.pdf`](docs/samples/image-list-two-sheets.pdf)
+  (5 designs across 2 sheets, one with missing art).
+- The Add to Cart progress card's paperwork step now reads "Writing the image list" (or
+  "… image list + press sheet" for Print & Press) and shows for every job.
+
+### Changed
+- Press sheet and image list share one drawing module (`lib/pdf-draw.ts`); press sheet output is unchanged.
+
 ## [2.7.1] — 2026-10-21
 
 ### Fixed
