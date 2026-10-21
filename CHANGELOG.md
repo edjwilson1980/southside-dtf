@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.6.3] — 2026-10-21
+
+### Changed
+- **Print & Press ladder is five tiers.** The $3.00 / +$1.25 price applies to **21–50**
+  garments; **51–99** goes back to **$2.00 / +$1.00**. Full ladder: 1–10 $10 / +$2,
+  11–20 $5 / +$1.50, 21–50 $3 / +$1.25, 51–99 $2 / +$1, 100+ $1.50 / +$0.75; names $0.50.
+
+### WooCommerce plugin 1.27
+- Same five-tier ladder in the server-side labor recompute. Install 1.27 with builder 2.6.3.
+
 ## [2.6.2] — 2026-10-21
 
 ### Changed

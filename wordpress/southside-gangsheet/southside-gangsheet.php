@@ -2,7 +2,7 @@
 /**
  * Plugin Name: South Side Gang Sheet Builder
  * Description: Embed the South Side DTF customer gang sheet builder and UV DTF sticker maker, and add finished sheets (with optional Print & Press labor) to the WooCommerce cart.
- * Version: 1.26
+ * Version: 1.27
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.26');
+define('SSGS_PLUGIN_VERSION', '1.27');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 /** WooCommerce attribute + term that marks a product as UV DTF (spec A9). */
 define('SSGS_UV_DTF_ATTRIBUTE', 'pa_print_type');
@@ -558,8 +558,11 @@ function ssgs_print_press_tier($garments) {
   if ($garments >= 100) {
     return array('label' => '100+', 'first' => 1.5, 'second' => 0.75);
   }
+  if ($garments >= 51) {
+    return array('label' => '51-99', 'first' => 2.0, 'second' => 1.0);
+  }
   if ($garments >= 21) {
-    return array('label' => '21-99', 'first' => 3.0, 'second' => 1.25);
+    return array('label' => '21-50', 'first' => 3.0, 'second' => 1.25);
   }
   if ($garments >= 11) {
     return array('label' => '11-20', 'first' => 5.0, 'second' => 1.5);
