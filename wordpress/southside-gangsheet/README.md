@@ -6,13 +6,13 @@ Embed the customer builder and **Add to Cart** into WooCommerce on southsidedtf.
 
 Use the ready zip in this repo:
 
-- [`wordpress/southside-gangsheet-1.25.zip`](./southside-gangsheet-1.25.zip)
+- [`wordpress/southside-gangsheet-1.26.zip`](./southside-gangsheet-1.26.zip)
 
 Or zip the `southside-gangsheet/` folder yourself.
 
 ## Install on WordPress
 
-1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet-1.25.zip` → Activate
+1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet-1.26.zip` → Activate
 2. **Settings → Gang Sheet Builder**
    - Builder URL: `https://southside-dtf.vercel.app`
    - WooCommerce product ID: **4365** (or leave `0` for slug `custom-gang-sheet-builder`)
@@ -32,10 +32,10 @@ Or zip the `southside-gangsheet/` folder yourself.
 
 4. Keep `NEXT_PUBLIC_STORE_ORIGIN=https://southsidedtf.com` on Vercel.
 
-## Print & Press (v1.25+)
+## Print & Press (v1.25+, prices updated in 1.26)
 
 - The customer builder can add **Print & Press** (customer supplies the garments, we press the transfers). The payload carries `printPress` with the garment lines (garment, color, front / back / both, S–3XL counts, names roster, which design goes on each side), the counts, the tier and the Drive link to the **press sheet PDF** that was uploaded with the sheet PNGs/PLTs.
-- The plugin **recomputes labor server-side** from the counts — it never trusts the browser total. Ladder per garment: 1–10 **$10.00**, 11–20 **$5.00**, 21–99 **$2.00**, 100+ **$1.50**; second side **+$2.00 / +$1.50 / +$1.00 / +$0.75**; **+$0.50** per personalized garment.
+- The plugin **recomputes labor server-side** from the counts — it never trusts the browser total. Ladder per garment: 1–10 **$10.00**, 11–20 **$5.00**, 21–99 **$3.00**, 100+ **$1.50**; second side **+$2.00 / +$1.50 / +$1.25 / +$0.75**; **+$0.50** per personalized garment. The browser and the plugin must agree — when the ladder changes, both the builder and the plugin ship together.
 - Labor is added as **one cart fee** per job: `Print & Press labor (N garments)` (hook `woocommerce_cart_calculate_fees`, charged once on sheet 1, not × quantity). No new product or setting is needed.
 - Every Print & Press transfer is pre-cut, and the pre-cut charge is waived: the sheet lines carry `ssgs_precut = yes` (so the cut files are expected) with `ssgs_precut_total = 0`, and **no pre-cut companion line** is added. Cart rows show `Pre-cut fee: Included with Print & Press`.
 - Cart and order line meta: `ssgs_pp` (summary), `ssgs_pp_labor`, `ssgs_pp_garments`, `ssgs_pp_double`, `ssgs_pp_names`, `ssgs_pp_tier`, `ssgs_pp_line_N` (one readable row per garment line), `ssgs_press_sheet_url` / `ssgs_press_sheet_name` (**Press sheet** link), plus hidden `_ssp_print_press` and `_ssgs_pp_lines` (JSON) for production. An order note repeats the breakdown with the press sheet link.

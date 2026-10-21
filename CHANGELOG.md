@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.6.2] — 2026-10-21
+
+### Changed
+- **Print & Press 21–99 tier** is now **$3.00** first side and **+$1.25** second side
+  (front + back $4.25). Other tiers unchanged: 1–10 $10 / +$2, 11–20 $5 / +$1.50,
+  100+ $1.50 / +$0.75; names still $0.50.
+
+### WooCommerce plugin 1.26
+- Same ladder change in the server-side labor recompute. Install 1.26 with builder 2.6.2 —
+  an older plugin would charge the old $2 / +$1 prices for 21–99 garment jobs.
+
 ## [2.6.1] — 2026-10-20
 
 ### Fixed

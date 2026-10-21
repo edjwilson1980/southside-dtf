@@ -18,7 +18,7 @@ export type PrintPressTier = {
 export const PRINT_PRESS_TIERS: PrintPressTier[] = [
   { label: '1–10', min: 1, max: 10, firstSide: 10, secondSide: 2 },
   { label: '11–20', min: 11, max: 20, firstSide: 5, secondSide: 1.5 },
-  { label: '21–99', min: 21, max: 99, firstSide: 2, secondSide: 1 },
+  { label: '21–99', min: 21, max: 99, firstSide: 3, secondSide: 1.25 },
   { label: '100+', min: 100, max: Infinity, firstSide: 1.5, secondSide: 0.75 },
 ]
 
