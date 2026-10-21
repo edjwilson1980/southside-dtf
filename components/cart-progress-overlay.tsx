@@ -5,9 +5,10 @@ import { AlertTriangle, Check, Loader2 } from 'lucide-react'
 
 /**
  * Every stage between "Add to Cart" and the store's cart page, in order. The
- * press-sheet stage only appears for Print & Press jobs.
+ * paperwork stage writes the image list for every job and the press sheet too
+ * for Print & Press jobs.
  */
-export type CartStep = 'compose' | 'art' | 'press' | 'upload' | 'record' | 'cart' | 'done' | 'error'
+export type CartStep = 'compose' | 'art' | 'paperwork' | 'upload' | 'record' | 'cart' | 'done' | 'error'
 
 export type CartProgress = {
   step: CartStep
@@ -24,7 +25,7 @@ function stepsFor(options: { sheetCount: number; cutOut: boolean; pressSheet: bo
   return [
     { key: 'compose', label: options.cutOut ? `Building print + cut files for ${sheets}` : `Building the print file for ${sheets}`, weight: 25 },
     { key: 'art', label: 'Packing your artwork', weight: 8 },
-    ...(options.pressSheet ? [{ key: 'press' as const, label: 'Writing the press sheet', weight: 5 }] : []),
+    { key: 'paperwork', label: options.pressSheet ? 'Writing the image list + press sheet' : 'Writing the image list', weight: 5 },
     { key: 'upload', label: 'Uploading to Google Drive', weight: 45 },
     { key: 'record', label: 'Saving your project', weight: 5 },
     { key: 'cart', label: 'Adding to your cart', weight: 12 },

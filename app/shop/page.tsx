@@ -17,6 +17,8 @@ import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
+import { generateImageListPdf, imageListFileName, imageListThumbFromUrl, type ImageListImage, type ImageListSheet } from '@/lib/image-list-pdf'
+import { designArtFileName } from '@/lib/project/images'
 import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/accepted-uploads'
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
 import { ShopTopBar } from '@/components/shop-top-bar'
@@ -312,6 +314,8 @@ export default function Home() {
     widthIn: getDesignWidth(design),
     heightIn: getDesignHeight(design),
     allowRotate: !design.keepUpright,
+    // Rides through the packer so the image list can say which sheet each design is on.
+    designId: design.id,
   }))
   /**
    * Pack onto as many 200 in sheets as the job needs. Every sheet is its own
@@ -570,6 +574,8 @@ export default function Home() {
     folderId?: string
     fromUpload: boolean
     heightIn: number
+    /** The job's image-list PDF, once it is in the Drive folder. */
+    imageList?: { fileName: string; url?: string; fileId?: string }
   }): Promise<boolean> {
     const name = customerName.trim()
     try {
@@ -593,6 +599,7 @@ export default function Home() {
             billedLengthIn: page.billedLength,
             transfers: page.transfers,
           })),
+          ...(options.imageList ? { imageList: options.imageList } : {}),
         },
         cut: { enabled: cutOut },
         designs: designArtInputs(),
@@ -651,6 +658,7 @@ export default function Home() {
       // its file name so the press and the cutter PC stay matched.
       const printFiles: Array<{ name: string; mimeType: string; blob: Blob }> = []
       const pltFiles: Array<{ name: string; content: string }> = []
+      const listSheets: ImageListSheet[] = []
       for (const page of pages) {
         const part = { index: page.index, count: sheetCount }
         const fileName = sheetFileName(who, page.billedLength, stamp, part)
@@ -659,16 +667,60 @@ export default function Home() {
         downloadBlob(png, fileName)
         printFiles.push({ name: fileName, mimeType: 'image/png', blob: png })
 
+        let cutName: string | undefined
         if (cutOut) {
           const plt = cutPlt(page.layout.pieces, page.printHeight)
           if (!plt) throw new Error(`Could not build the cutter PLT for sheet ${partLabel(page.index, sheetCount)}.`)
-          const cutName = sheetCutFileName(who, page.billedLength, stamp, part)
+          cutName = sheetCutFileName(who, page.billedLength, stamp, part)
           // Shop still downloads PLT locally for the cutter PC.
           await wait(200)
           downloadBlob(new Blob([plt], { type: 'text/plain' }), cutName)
           pltFiles.push({ name: cutName, content: plt })
         }
+
+        const counts = new Map<number, number>()
+        for (const piece of page.layout.pieces as Array<{ designId?: number }>) {
+          if (piece.designId === undefined) continue
+          counts.set(piece.designId, (counts.get(piece.designId) ?? 0) + 1)
+        }
+        listSheets.push({
+          label: partLabel(page.index, sheetCount),
+          billedLengthIn: page.billedLength,
+          transfers: page.transfers,
+          printFileName: fileName,
+          cutFileName: cutName,
+          pieces: [...counts.entries()]
+            .map(([designId, qty]) => {
+              const design = designs.find((item) => item.id === designId)
+              return { designNumber: design?.designNumber ?? 0, name: design?.name ?? 'Design', qty }
+            })
+            .sort((a, b) => a.designNumber - b.designNumber),
+        })
       }
+
+      // Image list: every design's number, picture, printed size and quantity —
+      // downloaded with the sheets and saved to the Drive folder for reprints.
+      const listImages: ImageListImage[] = []
+      for (const [index, design] of designs.entries()) {
+        const size = getDesignSize(design)
+        listImages.push({
+          number: design.designNumber,
+          name: design.name,
+          widthIn: Math.round(size.widthIn * 100) / 100,
+          heightIn: Math.round(size.heightIn * 100) / 100,
+          quantity: design.quantity,
+          placement: design.placement,
+          sizeLabel: design.placement === 'Custom' ? undefined : design.size,
+          pixelWidth: design.pixelWidth,
+          pixelHeight: design.pixelHeight,
+          artFileName: design.previewUrl || design.originalUrl ? designArtFileName(design.name, index) : undefined,
+          thumb: await imageListThumbFromUrl(design.previewUrl),
+        })
+      }
+      const imageListName = imageListFileName(who, stamp)
+      const imageListPdf = await generateImageListPdf({ customerName: who, stamp, images: listImages, sheets: listSheets, cutOut })
+      await wait(200)
+      downloadBlob(imageListPdf, imageListName)
 
       /** SPEC E2: every shop project gets a Drive folder + project.ssp.json. */
       const [firstPlt, ...otherPlts] = pltFiles
@@ -682,13 +734,22 @@ export default function Home() {
             mimeType: 'text/plain',
             blob: new Blob([file.content], { type: 'text/plain' }),
           })),
+          { name: imageListName, mimeType: 'application/pdf', blob: imageListPdf },
         ],
         cutterFile: firstPlt ? { name: firstPlt.name, content: firstPlt.content, mimeType: 'text/plain' } : undefined,
       })
       setDriveFolderUrl(drive.folderUrl)
       setDriveFolderId(drive.folderId)
 
-      await saveProjectJsonToDrive({ folderId: drive.folderId, fromUpload: true, heightIn: billedLength })
+      const imageListFile = drive.files.find((file) => file.name === imageListName)
+      await saveProjectJsonToDrive({
+        folderId: drive.folderId,
+        fromUpload: true,
+        heightIn: billedLength,
+        imageList: imageListFile
+          ? { fileName: imageListName, url: imageListFile.webViewLink, fileId: imageListFile.id }
+          : { fileName: imageListName },
+      })
 
       setBuilt(true)
       setSheetPreviewOpen(false)

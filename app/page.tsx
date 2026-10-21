@@ -37,6 +37,7 @@ import {
   type PrintPressLine,
 } from '@/lib/print-press'
 import { generatePressSheetPdf, pressSheetThumbFromUrl, type PressSheetSheet } from '@/lib/press-sheet-pdf'
+import { generateImageListPdf, imageListFileName, imageListThumbFromUrl, type ImageListImage } from '@/lib/image-list-pdf'
 
 type Design = {
   id: number
@@ -763,9 +764,43 @@ function HomeBuilder() {
             .sort((a, b) => a.designNumber - b.designNumber),
         }
       })
+      // Every job gets an image list: each design's number, picture, printed size
+      // and quantity, so a reprint never means reopening the project.
+      setCartProgress({ step: 'paperwork', detail: `${designs.length} image${designs.length === 1 ? '' : 's'}` })
+      const listImages: ImageListImage[] = []
+      for (const [index, design] of designs.entries()) {
+        const size = getDesignSize(design)
+        const uploadPos = artPlan.indexByUpload.indexOf(index)
+        listImages.push({
+          number: design.designNumber,
+          name: design.name,
+          widthIn: Math.round(size.widthIn * 100) / 100,
+          heightIn: Math.round(size.heightIn * 100) / 100,
+          quantity: designQuantity(design),
+          placement: design.placement,
+          sizeLabel: design.placement === 'Custom' ? undefined : design.size,
+          pixelWidth: design.pixelWidth,
+          pixelHeight: design.pixelHeight,
+          artFileName: uploadPos >= 0 ? artPlan.uploads[uploadPos]?.name : undefined,
+          thumb: await imageListThumbFromUrl(design.previewUrl),
+        })
+      }
+      const imageListUpload = {
+        name: imageListFileName(who, stamp),
+        mimeType: 'application/pdf',
+        blob: await generateImageListPdf({
+          customerName: who,
+          stamp,
+          images: listImages,
+          sheets: pressSheetSheets,
+          cutOut: cutOutActive,
+          printPress: Boolean(ppSummary),
+        }),
+      }
+
       let pressSheetUpload: { name: string; mimeType: string; blob: Blob } | undefined
       if (ppSummary) {
-        setCartProgress({ step: 'press', detail: `${ppSummary.garments} garments · ${ppSummary.lines.length} line${ppSummary.lines.length === 1 ? '' : 's'}` })
+        setCartProgress({ step: 'paperwork', detail: `Press sheet · ${ppSummary.garments} garments · ${ppSummary.lines.length} line${ppSummary.lines.length === 1 ? '' : 's'}` })
         const pressDesigns = []
         for (const design of designs) {
           const size = getDesignSize(design)
@@ -792,6 +827,7 @@ function HomeBuilder() {
       const driveFiles = [
         ...sheetFiles.map((file) => ({ name: file.printName, mimeType: 'image/png', blob: file.png })),
         ...extraCutUploads,
+        imageListUpload,
         ...(pressSheetUpload ? [pressSheetUpload] : []),
         ...artPlan.uploads,
       ]
@@ -812,6 +848,10 @@ function HomeBuilder() {
       setCartProgress({ step: 'record' })
 
       const uploadedByName = new Map(drive.files.map((file) => [file.name, file]))
+      const imageListFile = uploadedByName.get(imageListUpload.name)
+      const imageListRecord = imageListFile
+        ? { fileName: imageListUpload.name, url: imageListFile.webViewLink, fileId: imageListFile.id }
+        : { fileName: imageListUpload.name }
       if (ppSummary && pressSheetUpload) {
         const uploaded = uploadedByName.get(pressSheetUpload.name)
         if (uploaded) {
@@ -864,6 +904,7 @@ function HomeBuilder() {
               cutFileName: item.cutFileName,
               transfers: item.transfers,
             })),
+            imageList: imageListRecord,
             ...(ppSummary ? { printPress: ppSummary } : {}),
           },
           cut: { enabled: cutOutActive },

@@ -33,7 +33,8 @@ export type DesignArtInput = {
   sizeIn?: ProjectImageRef['sizeIn']
 }
 
-function safeArtFileName(name: string, index: number) {
+/** `art-N-<design>.png` — the name a design's art gets in the Drive job folder. */
+export function designArtFileName(name: string, index: number) {
   const base =
     name
       .replace(/\.[^.]+$/, '')
@@ -120,7 +121,7 @@ export async function prepareDesignArtUploads(
       (await blobFromDesignUrl(design.originalUrl || ''))
     if (!blob) continue
     uploads.push({
-      name: safeArtFileName(design.name, index),
+      name: designArtFileName(design.name, index),
       mimeType: blob.type || 'image/png',
       blob,
     })
