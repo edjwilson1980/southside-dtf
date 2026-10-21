@@ -1,17 +1,17 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Check, Loader2 } from 'lucide-react'
+import { AlertTriangle, Check, Loader2 } from 'lucide-react'
 
 /**
  * Every stage between "Add to Cart" and the store's cart page, in order. The
  * press-sheet stage only appears for Print & Press jobs.
  */
-export type CartStep = 'compose' | 'art' | 'press' | 'upload' | 'record' | 'cart' | 'done'
+export type CartStep = 'compose' | 'art' | 'press' | 'upload' | 'record' | 'cart' | 'done' | 'error'
 
 export type CartProgress = {
   step: CartStep
-  /** Short status under the step label, e.g. "Sheet 2 of 3". */
+  /** Short status under the step label, e.g. "Sheet 2 of 3"; the message when step is 'error'. */
   detail?: string
   /** 0–1 progress inside the current step when it can be measured. */
   fraction?: number | null
@@ -48,6 +48,8 @@ export function CartProgressOverlay(props: {
    *  where the customer clicked instead of the middle of a very tall frame. */
   framed: boolean
   anchorTop: number | null
+  /** Dismisses the failure card. */
+  onClose?: () => void
 }) {
   const { progress, startedAt, framed, anchorTop } = props
   const steps = stepsFor({ sheetCount: props.sheetCount, cutOut: props.cutOut, pressSheet: props.pressSheet })
@@ -79,6 +81,38 @@ export function CartProgressOverlay(props: {
   }, [framed, anchorTop, props.pressSheet])
 
   const slow = elapsed > 45_000
+
+  if (progress.step === 'error') {
+    return (
+      <div className={`cart-progress-backdrop${framed ? ' framed' : ''}`} role="presentation">
+        <div
+          ref={cardRef}
+          className="cart-progress-card failed"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="cart-progress-title"
+          style={framed && top != null ? { top } : undefined}
+        >
+          <div className="cart-progress-head">
+            <div>
+              <span className="eyebrow">Could not add to cart</span>
+              <h2 id="cart-progress-title">Something went wrong</h2>
+            </div>
+            <span className="cart-progress-fail-icon" aria-hidden="true">
+              <AlertTriangle size={20} />
+            </span>
+          </div>
+          <p className="cart-progress-error">{progress.detail || 'Could not add this sheet to the cart.'}</p>
+          <p className="cart-progress-note">
+            Nothing was added or charged. Your designs are still here — fix the issue above and click Add to Cart again. If it keeps failing, contact us and mention the time: {new Date().toLocaleTimeString()}.
+          </p>
+          <button type="button" className="cart-progress-close" onClick={props.onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={`cart-progress-backdrop${framed ? ' framed' : ''}`} role="presentation">
