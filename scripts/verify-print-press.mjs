@@ -14,7 +14,7 @@ const line = (patch) => pp.newPrintPressLine(patch.id ?? 1, patch)
   const lines = [line({ location: 'both', sizes: { ...pp.emptyPrintPressSizes(), M: '50' }, names: '50', frontDesign: 1, backDesign: 2 })]
   const t = pp.printPressTotals(lines, true)
   assert.equal(t.garments, 50)
-  assert.equal(t.tier.label, '21–99')
+  assert.equal(t.tier.label, '21–50')
   assert.equal(t.firstPress, 150)
   assert.equal(t.secondPress, 62.5)
   assert.equal(t.nameFee, 25)
@@ -29,8 +29,10 @@ for (const [garments, label, first, second] of [
   [10, '1–10', 10, 2],
   [11, '11–20', 5, 1.5],
   [20, '11–20', 5, 1.5],
-  [21, '21–99', 3, 1.25],
-  [99, '21–99', 3, 1.25],
+  [21, '21–50', 3, 1.25],
+  [50, '21–50', 3, 1.25],
+  [51, '51–99', 2, 1],
+  [99, '51–99', 2, 1],
   [100, '100+', 1.5, 0.75],
   [500, '100+', 1.5, 0.75],
 ]) {
@@ -40,7 +42,7 @@ for (const [garments, label, first, second] of [
   assert.equal(tier.secondSide, second)
 }
 
-// The whole job sets the tier: 50 tees + 12 hoodies = 62 garments at $3 / +$1.25.
+// The whole job sets the tier: 50 tees + 12 hoodies = 62 garments at $2 / +$1 (51–99).
 {
   const lines = [
     line({ id: 1, location: 'both', sizes: { ...pp.emptyPrintPressSizes(), S: '5', M: '15', L: '20', XL: '10' }, names: '50', frontDesign: 1, backDesign: 2 }),
@@ -50,7 +52,7 @@ for (const [garments, label, first, second] of [
   assert.equal(t.garments, 62)
   assert.equal(t.doublePress, 50)
   assert.equal(t.personalized, 50)
-  assert.equal(t.labor, 186 + 62.5 + 25)
+  assert.equal(t.labor, 124 + 50 + 25)
   // Transfers each design must supply.
   const demand = pp.printPressDesignDemand(lines)
   assert.equal(demand.get(1), 50)
@@ -61,12 +63,12 @@ for (const [garments, label, first, second] of [
   assert.match(pp.printPressProblem(lines, true, [1, 2]), /removed/)
   // Cart summary uses design numbers and keeps the math.
   const summary = pp.printPressCartSummary(lines, true, (id) => ({ number: id * 10, name: `D${id}` }))
-  assert.equal(summary.labor, 273.5)
+  assert.equal(summary.labor, 199)
   assert.equal(summary.lines[0].frontDesign, 10)
   assert.equal(summary.lines[0].backDesign, 20)
   assert.equal(summary.lines[1].backDesign, null)
   assert.equal(summary.lines[0].sizes.M, 15)
-  assert.equal(pp.printPressSummaryText(summary), '62 garments × $3.00 + 50 second side × $1.25 + 50 names × $0.50 = $273.50')
+  assert.equal(pp.printPressSummaryText(summary), '62 garments × $2.00 + 50 second side × $1.00 + 50 names × $0.50 = $199.00')
 }
 
 // Roster beats the typed count, capped at the garments on the line.
