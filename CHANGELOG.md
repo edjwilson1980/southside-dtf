@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.7.1] — 2026-10-21
+
+### Fixed
+- When Add to Cart fails (Drive not reachable, store rejected the line, …) the progress
+  card now turns into a **"Something went wrong"** card with the message and a Close button.
+  Before, the card just vanished and the error sat under the Add to Cart button behind the
+  still-open preview, so it looked like nothing happened.
+
 ## [2.7.0] — 2026-10-21
 
 ### Added
