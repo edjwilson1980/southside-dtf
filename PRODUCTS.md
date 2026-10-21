@@ -11,10 +11,10 @@ These are **separate products** that share print/packing libraries. Do not mix t
   - PLT is uploaded by the server (not a customer browser download)
   - PNG is proxied through our API when small enough; larger PNGs use a Drive session started with the page Origin (required for browser CORS)
 - Drive uses shop Gmail OAuth (personal Gmail has no Shared drives). Staff connect once at `/shop/connect-drive`
-- WordPress: install `wordpress/southside-gangsheet-1.25.zip`, shortcode `[southside_gangsheet]` — embeds `/embed` and supports **Add to Cart** via postMessage
+- WordPress: install `wordpress/southside-gangsheet-1.26.zip`, shortcode `[southside_gangsheet]` — embeds `/embed` and supports **Add to Cart** via postMessage
   - `[southside_gangsheet mode="upload"]` → `/embed/upload`; `[southside_gangsheet mode="stickers"]` → `/embed/stickers` (UV DTF sticker maker with Add to Cart)
   - UV DTF lines go to the **UV DTF product** (Settings → Gang Sheet Builder, or auto-detected via `pa_print_type = uv-dtf`) and carry `Print type` + `Cut: Square Cut 2.5 mm / No` meta
-- **Print & Press** add-on (customer supplies garments, we press): garment lines set the design quantities, every transfer is pre-cut (fee waived), a press sheet PDF goes to Drive with the PNGs/PLTs, and the plugin adds one **Print & Press labor** cart fee recomputed server-side (ladder $10 / $5 / $2 / $1.50 per garment, second side +$2 / +$1.50 / +$1 / +$0.75, +$0.50 per personalized garment)
+- **Print & Press** add-on (customer supplies garments, we press): garment lines set the design quantities, every transfer is pre-cut (fee waived), a press sheet PDF goes to Drive with the PNGs/PLTs, and the plugin adds one **Print & Press labor** cart fee recomputed server-side (ladder $10 / $5 / $3 / $1.50 per garment, second side +$2 / +$1.50 / +$1.25 / +$0.75, +$0.50 per personalized garment)
 
 ## Shop tools (`/shop`)
 
@@ -52,7 +52,7 @@ Shared code lives under `lib/` (compose, cut layout, sheet size, image tools).
   automatically as soon as the customer's files are created. File is named after the project
   (`Customer Name.ssp.json`) and embeds design art so Reopen shows the images.
 - **Automatic project JSON** — Drive uploads create/update the project `.ssp.json` in the job folder.
-- **Version footer** — current version (v2.6.1) shown at the bottom of every builder page.
+- **Version footer** — current version (v2.6.2) shown at the bottom of every builder page.
 - Spec: [`docs/GANGSHEET_ADDON_SPEC.md`](docs/GANGSHEET_ADDON_SPEC.md)
 
 ### Shop sticker routes (staff)

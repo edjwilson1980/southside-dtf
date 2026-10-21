@@ -1,6 +1,6 @@
 {
   "name": "dtf-pro",
-  "version": "2.6.1",
+  "version": "2.6.2",
   "private": true,
   "scripts": {
     "dev": "node --use-system-ca ./node_modules/next/dist/bin/next dev",
