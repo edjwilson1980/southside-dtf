@@ -2144,6 +2144,12 @@ html, body {
 .cart-progress-steps li.current .cart-progress-dot { border-color: var(--chicago-blue); color: var(--chicago-blue); }
 .cart-progress-steps li.done .cart-progress-dot { border-color: #087c40; background: #087c40; }
 .cart-progress-note { margin: 16px 0 0; padding: 10px 12px; border-radius: 8px; background: #f6f8fa; color: var(--muted); font-size: 12px; line-height: 1.45; }
+
+.cart-progress-card.failed { border-color: #e6a9ad; }
+.cart-progress-fail-icon { display: grid; flex-shrink: 0; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: #fff1f1; color: var(--chicago-red); }
+.cart-progress-error { margin: 14px 0 0; padding: 12px 14px; border: 1px solid #f0c3c6; border-left: 4px solid var(--chicago-red); border-radius: 8px; background: #fff6f6; color: #8a1c22; font-size: 14px; font-weight: 700; line-height: 1.4; }
+.cart-progress-close { width: 100%; margin-top: 14px; padding: 11px; border: 0; border-radius: 7px; background: var(--chicago-blue); color: #fff; font-weight: 800; cursor: pointer; }
+.cart-progress-close:hover { background: #078db8; }
 @keyframes cart-progress-spin { to { transform: rotate(360deg); } }
 @keyframes cart-progress-stripes { from { background-position: 0 0; } to { background-position: 22px 0; } }
 @media (prefers-reduced-motion: reduce) {

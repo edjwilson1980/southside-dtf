@@ -909,10 +909,13 @@ function HomeBuilder() {
       // Stays up while the store page moves to the cart (cleared by the timer above).
       setCartProgress({ step: 'done' })
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Could not add this sheet to the cart.')
+      const message = err instanceof Error ? err.message : 'Could not add this sheet to the cart.'
+      setSaveError(message)
       setPendingCartAfterCut(false)
       setPrecutOfferOpen(false)
-      setCartProgress(null)
+      // The failure shows on the card itself — the preview modal may still be
+      // covering the message under the Add to Cart button.
+      setCartProgress({ step: 'error', detail: message })
     } finally {
       setSaving(false)
       setUploadProgress(null)
@@ -1313,6 +1316,7 @@ function HomeBuilder() {
         pressSheet={ppEnabled}
         framed={embed}
         anchorTop={cartAnchorTop}
+        onClose={() => setCartProgress(null)}
       />
     )}
   </main>
