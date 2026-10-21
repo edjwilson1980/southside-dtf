@@ -8,6 +8,9 @@
 import { jsPDF } from 'jspdf'
 import {
   PRINT_PRESS_SIZES,
+  lineNeedsBack,
+  lineNeedsFront,
+  printPressFrontLabel,
   money,
   printPressGarmentLabel,
   printPressLocationLabel,
@@ -215,8 +218,8 @@ function drawSizeTotals(state: State, input: PressSheetInput) {
     text(doc, size, MARGIN + labelW + cellW * index + cellW / 2, y + 0.17, { size: 8, bold: true, color: MUTED, align: 'center' })
   })
   text(doc, 'Total', RIGHT - 0.1, y + 0.17, { size: 8, bold: true, color: MUTED, align: 'right' })
-  const front = input.summary.lines.filter((line) => line.location !== 'back').reduce((sum, line) => sum + line.quantity, 0)
-  const back = input.summary.lines.filter((line) => line.location !== 'front').reduce((sum, line) => sum + line.quantity, 0)
+  const front = input.summary.lines.filter(lineNeedsFront).reduce((sum, line) => sum + line.quantity, 0)
+  const back = input.summary.lines.filter(lineNeedsBack).reduce((sum, line) => sum + line.quantity, 0)
   text(doc, `${front} front · ${back} back transfers`, MARGIN + 0.1, y + h + 0.17, { size: 8, color: MUTED, bold: true })
   totals.forEach((count, index) => {
     text(doc, count ? String(count) : '–', MARGIN + labelW + cellW * index + cellW / 2, y + h + 0.17, { size: 9, bold: true, align: 'center' })
@@ -263,11 +266,11 @@ function sheetsForDesign(input: PressSheetInput, designNumber: number | null) {
 function drawLine(state: State, input: PressSheetInput, index: number) {
   const { doc } = state
   const line = input.summary.lines[index]
-  const front = line.location !== 'back' ? input.designs.find((design) => design.number === line.frontDesign) : undefined
-  const back = line.location !== 'front' ? input.designs.find((design) => design.number === line.backDesign) : undefined
+  const front = lineNeedsFront(line) ? input.designs.find((design) => design.number === line.frontDesign) : undefined
+  const back = lineNeedsBack(line) ? input.designs.find((design) => design.number === line.backDesign) : undefined
   const imageW = 1.45
   const imageH = 1.1
-  const imageCount = (front || line.location !== 'back' ? 1 : 0) + (back || line.location !== 'front' ? 1 : 0)
+  const imageCount = (lineNeedsFront(line) ? 1 : 0) + (lineNeedsBack(line) ? 1 : 0)
   const imagesW = imageCount * (imageW + 0.12)
   const rosterRows = line.roster.length > 0 ? Math.ceil(Math.min(line.roster.length, line.quantity) / 4) : 1
   const namesH = line.personalized > 0 ? 0.42 + rosterRows * 0.17 : 0
@@ -302,8 +305,8 @@ function drawLine(state: State, input: PressSheetInput, index: number) {
     text(doc, design ? `${design.widthIn} × ${design.heightIn} in · pre-cut · sheet ${sheetsForDesign(input, number)}` : '', ix, iy + imageH + 0.4, { size: 7, color: MUTED, bold: true })
     ix += imageW + 0.12
   }
-  if (line.location !== 'back') card(front, 'FRONT', line.frontDesign)
-  if (line.location !== 'front') card(back, 'BACK', line.backDesign)
+  if (lineNeedsFront(line)) card(front, printPressFrontLabel(line.location).toUpperCase(), line.frontDesign)
+  if (lineNeedsBack(line)) card(back, 'BACK', line.backDesign)
 
   // Size boxes.
   const gridX = MARGIN + 0.12 + imagesW + 0.08

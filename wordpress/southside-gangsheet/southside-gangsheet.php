@@ -2,7 +2,7 @@
 /**
  * Plugin Name: South Side Gang Sheet Builder
  * Description: Embed the South Side DTF customer gang sheet builder and UV DTF sticker maker, and add finished sheets (with optional Print & Press labor) to the WooCommerce cart.
- * Version: 1.27
+ * Version: 1.28
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.27');
+define('SSGS_PLUGIN_VERSION', '1.28');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 /** WooCommerce attribute + term that marks a product as UV DTF (spec A9). */
 define('SSGS_UV_DTF_ATTRIBUTE', 'pa_print_type');
@@ -662,11 +662,23 @@ function ssgs_print_press_location_label($location) {
   switch ($location) {
     case 'both':
       return __('Front + Back', 'southside-gangsheet');
+    case 'chest-back':
+      return __('Left chest logo + Back', 'southside-gangsheet');
+    case 'chest':
+      return __('Left chest logo', 'southside-gangsheet');
     case 'back':
       return __('Back', 'southside-gangsheet');
     default:
       return __('Front', 'southside-gangsheet');
   }
+}
+
+function ssgs_print_press_has_front($location) {
+  return $location !== 'back';
+}
+
+function ssgs_print_press_has_back($location) {
+  return in_array($location, array('back', 'both', 'chest-back'), true);
 }
 
 /** One readable line per garment row, for order notes and the admin screen. */
@@ -685,10 +697,12 @@ function ssgs_print_press_line_text($line) {
   if (!empty($sizes)) {
     $text .= ' (' . implode(', ', $sizes) . ')';
   }
-  if (($line['location'] ?? 'front') !== 'back' && !empty($line['frontDesign'])) {
-    $text .= sprintf(' - front: design #%d %s', intval($line['frontDesign']), $line['frontDesignName'] ?? '');
+  $location = $line['location'] ?? 'front';
+  if (ssgs_print_press_has_front($location) && !empty($line['frontDesign'])) {
+    $side = in_array($location, array('chest', 'chest-back'), true) ? 'left chest' : 'front';
+    $text .= sprintf(' - %s: design #%d %s', $side, intval($line['frontDesign']), $line['frontDesignName'] ?? '');
   }
-  if (($line['location'] ?? 'front') !== 'front' && !empty($line['backDesign'])) {
+  if (ssgs_print_press_has_back($location) && !empty($line['backDesign'])) {
     $text .= sprintf(' - back: design #%d %s', intval($line['backDesign']), $line['backDesignName'] ?? '');
   }
   if (!empty($line['personalized'])) {

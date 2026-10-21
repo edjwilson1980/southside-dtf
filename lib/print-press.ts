@@ -29,13 +29,22 @@ export const PRINT_PRESS_NAME_FEE = 0.5
 export const PRINT_PRESS_SIZES = ['S', 'M', 'L', 'XL', '2XL', '3XL'] as const
 export type PrintPressSize = (typeof PRINT_PRESS_SIZES)[number]
 
-export type PrintPressLocation = 'front' | 'back' | 'both'
+/**
+ * Where the transfers go. A left chest logo is a small front print (same labor as
+ * a full front); `chest-back` is the classic logo-front / full-back combo.
+ */
+export type PrintPressLocation = 'front' | 'chest' | 'back' | 'both' | 'chest-back'
 
 export const PRINT_PRESS_LOCATIONS: Array<{ value: PrintPressLocation; label: string }> = [
   { value: 'front', label: 'Front' },
+  { value: 'chest', label: 'Left chest logo' },
   { value: 'back', label: 'Back' },
   { value: 'both', label: 'Front + Back' },
+  { value: 'chest-back', label: 'Left chest logo + Back' },
 ]
+
+/** Widest a left chest logo normally runs; bigger art gets a hint, not a block. */
+export const LEFT_CHEST_MAX_WIDTH_IN = 4.5
 
 export const PRINT_PRESS_GARMENTS = [
   { value: 'tshirt', label: 'T-shirt' },
@@ -120,7 +129,22 @@ export function lineNeedsFront(line: Pick<PrintPressLine, 'location'>) {
 }
 
 export function lineNeedsBack(line: Pick<PrintPressLine, 'location'>) {
-  return line.location !== 'front'
+  return line.location === 'back' || line.location === 'both' || line.location === 'chest-back'
+}
+
+/** The front print is a left chest logo rather than a full front. */
+export function lineFrontIsChest(line: Pick<PrintPressLine, 'location'>) {
+  return line.location === 'chest' || line.location === 'chest-back'
+}
+
+/** Pressed on both sides — the second-side labor applies. */
+export function lineIsDoublePress(line: Pick<PrintPressLine, 'location'>) {
+  return line.location === 'both' || line.location === 'chest-back'
+}
+
+/** Label for the front image slot / press sheet card: "Front" or "Left chest". */
+export function printPressFrontLabel(location: PrintPressLocation) {
+  return lineFrontIsChest({ location }) ? 'Left chest' : 'Front'
 }
 
 /**
@@ -163,7 +187,7 @@ export type PrintPressTotals = {
 export function printPressTotals(lines: PrintPressLine[], namesOn: boolean): PrintPressTotals {
   const garments = lines.reduce((sum, line) => sum + lineGarments(line), 0)
   const tier = printPressTierFor(garments)
-  const doublePress = lines.filter((line) => line.location === 'both').reduce((sum, line) => sum + lineGarments(line), 0)
+  const doublePress = lines.filter(lineIsDoublePress).reduce((sum, line) => sum + lineGarments(line), 0)
   const frontTransfers = lines.filter(lineNeedsFront).reduce((sum, line) => sum + lineGarments(line), 0)
   const backTransfers = lines.filter(lineNeedsBack).reduce((sum, line) => sum + lineGarments(line), 0)
   const personalized = namesOn ? lines.reduce((sum, line) => sum + linePersonalized(line), 0) : 0
@@ -212,7 +236,7 @@ export function printPressProblem(lines: PrintPressLine[], namesOn: boolean, des
     return `${totals.emptyLines} Print & Press line${totals.emptyLines === 1 ? ' has' : 's have'} no garments — add sizes or remove the line.`
   }
   if (totals.missingDesigns > 0) {
-    return `${totals.missingDesigns} Front / Back image slot${totals.missingDesigns === 1 ? ' is' : 's are'} empty — choose a design for every side.`
+    return `${totals.missingDesigns} image slot${totals.missingDesigns === 1 ? ' is' : 's are'} empty — choose a design for every front, left chest and back.`
   }
   const known = new Set(designIds)
   for (const line of lines) {

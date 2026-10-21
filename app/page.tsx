@@ -26,6 +26,7 @@ import { autoSaveProjectJson } from '@/lib/project/auto-save'
 import { imagesFromUploadedArt, prepareDesignArtUploads, type DesignArtInput } from '@/lib/project/images'
 import { slugify, useStoreBridge, type GangSheetCartPayload, type GangSheetCartSheet } from '@/lib/ssgs-cart-bridge'
 import { PrintPressPanel, type PrintPressDesignOption } from '@/components/print-press-panel'
+import { CartProgressOverlay, type CartProgress } from '@/components/cart-progress-overlay'
 import {
   newPrintPressLine,
   pressSheetFileName,
@@ -195,6 +196,12 @@ function HomeBuilder() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  /** Stage of the Add to Cart run, shown in a blocking progress card so a long
+   *  build or upload never looks frozen. Null when nothing is in flight. */
+  const [cartProgress, setCartProgress] = useState<CartProgress | null>(null)
+  const [cartStartedAt, setCartStartedAt] = useState(0)
+  const [cartAnchorTop, setCartAnchorTop] = useState<number | null>(null)
+  const lastPointerY = useRef<number | null>(null)
   const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null)
   const [sheetPreviewUrls, setSheetPreviewUrls] = useState<string[]>([])
   const [previewPage, setPreviewPage] = useState(0)
@@ -213,6 +220,25 @@ function HomeBuilder() {
   const [pendingCartAfterCut, setPendingCartAfterCut] = useState(false)
   const previewGen = useRef(0)
   const precutCartKickoff = useRef(false)
+
+  // Where the customer last clicked, in document coordinates — the progress card is
+  // placed there because inside the store iframe "centre of the page" can be far
+  // below (or above) what they are looking at.
+  useEffect(() => {
+    const remember = (event: PointerEvent) => {
+      lastPointerY.current = event.clientY + window.scrollY
+    }
+    window.addEventListener('pointerdown', remember, { capture: true, passive: true })
+    return () => window.removeEventListener('pointerdown', remember, { capture: true })
+  }, [])
+
+  // The "Added — taking you to your cart" card stays up while the store page
+  // redirects; if that never happens, let the page back out from under it.
+  useEffect(() => {
+    if (cartProgress?.step !== 'done') return
+    const id = window.setTimeout(() => setCartProgress(null), 8000)
+    return () => window.clearTimeout(id)
+  }, [cartProgress?.step])
 
   useEffect(() => {
     if (!embed) return
@@ -622,6 +648,11 @@ function HomeBuilder() {
     setSaveError(null)
     setUploadProgress(0)
     setDriveFolderUrl(null)
+    setCartStartedAt(Date.now())
+    setCartAnchorTop(lastPointerY.current)
+    setCartProgress({ step: 'compose', fraction: 0 })
+    // Let the card paint before the first (heavy, synchronous) canvas compose.
+    await new Promise((resolve) => window.setTimeout(resolve, 30))
     try {
       if (pages.length === 0) throw new Error('Add a design before adding the gang sheet to your cart.')
       if (tooLargeCount > 0) {
@@ -649,6 +680,12 @@ function HomeBuilder() {
       for (const page of pages) {
         const part = { index: page.index, count: sheetCount }
         const printName = sheetFileName(who, page.billedLength, stamp, part)
+        setCartProgress({
+          step: 'compose',
+          detail: sheetCount > 1 ? `Sheet ${page.index + 1} of ${sheetCount} · ${page.billedLength} in` : `${SHEET_WIDTH_IN} × ${page.billedLength} in · ${page.transfers} transfers`,
+          fraction: page.index / sheetCount,
+        })
+        await new Promise((resolve) => window.setTimeout(resolve, 0))
         const png = await composeSheetPage(page, sheetPxPerIn(page, 14000, 150), pageJobName(page, stamp), true)
         let plt: string | undefined
         let cutName: string | undefined
@@ -701,6 +738,7 @@ function HomeBuilder() {
           sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
         }
       })
+      setCartProgress({ step: 'art', detail: `${designs.length} design${designs.length === 1 ? '' : 's'}` })
       const artPlan = await prepareDesignArtUploads(artInputs)
 
       // Print & Press: the press sheet PDF goes up in the same batch as the sheets
@@ -727,6 +765,7 @@ function HomeBuilder() {
       })
       let pressSheetUpload: { name: string; mimeType: string; blob: Blob } | undefined
       if (ppSummary) {
+        setCartProgress({ step: 'press', detail: `${ppSummary.garments} garments · ${ppSummary.lines.length} line${ppSummary.lines.length === 1 ? '' : 's'}` })
         const pressDesigns = []
         for (const design of designs) {
           const size = getDesignSize(design)
@@ -750,19 +789,27 @@ function HomeBuilder() {
       }
 
       // Print PNGs stay first, in sheet order — sheet 1's id is the cart's Drive link.
+      const driveFiles = [
+        ...sheetFiles.map((file) => ({ name: file.printName, mimeType: 'image/png', blob: file.png })),
+        ...extraCutUploads,
+        ...(pressSheetUpload ? [pressSheetUpload] : []),
+        ...artPlan.uploads,
+      ]
+      const uploadBytes = driveFiles.reduce((sum, file) => sum + file.blob.size, 0)
+      const uploadLabel = `${driveFiles.length + (cutterFile ? 1 : 0)} files · ${(uploadBytes / (1024 * 1024)).toFixed(1)} MB`
+      setCartProgress({ step: 'upload', detail: `${uploadLabel} · creating your job folder`, fraction: 0 })
       const drive = await uploadJobToGoogleDrive({
         customerName: who,
         stamp,
-        files: [
-          ...sheetFiles.map((file) => ({ name: file.printName, mimeType: 'image/png', blob: file.png })),
-          ...extraCutUploads,
-          ...(pressSheetUpload ? [pressSheetUpload] : []),
-          ...artPlan.uploads,
-        ],
+        files: driveFiles,
         cutterFile,
-        onProgress: setUploadProgress,
+        onProgress: (fraction) => {
+          setUploadProgress(fraction)
+          setCartProgress({ step: 'upload', detail: uploadLabel, fraction })
+        },
       })
       setDriveFolderUrl(drive.folderUrl)
+      setCartProgress({ step: 'record' })
 
       const uploadedByName = new Map(drive.files.map((file) => [file.name, file]))
       if (ppSummary && pressSheetUpload) {
@@ -852,16 +899,20 @@ function HomeBuilder() {
         sheets: cartSheets,
         ...(ppSummary ? { printPress: ppSummary } : {}),
       }
+      setCartProgress({ step: 'cart', detail: sheetCount > 1 ? `${sheetCount} sheet lines${ppSummary ? ' + Print & Press labor' : ''}` : ppSummary ? 'Sheet + Print & Press labor' : undefined })
       const result = await addToCart(payload)
       if (!result.ok) throw new Error(result.error)
 
       setBuilt(true)
       setSheetPreviewOpen(false)
       setPrecutOfferOpen(false)
+      // Stays up while the store page moves to the cart (cleared by the timer above).
+      setCartProgress({ step: 'done' })
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not add this sheet to the cart.')
       setPendingCartAfterCut(false)
       setPrecutOfferOpen(false)
+      setCartProgress(null)
     } finally {
       setSaving(false)
       setUploadProgress(null)
@@ -1035,6 +1086,7 @@ function HomeBuilder() {
               name: design.name,
               previewUrl: design.previewUrl,
               sizeLabel: `${Math.round(size.widthIn * 100) / 100} × ${Math.round(size.heightIn * 100) / 100} in`,
+              widthIn: size.widthIn,
             }
           })}
           totals={ppTotals}
@@ -1252,7 +1304,17 @@ function HomeBuilder() {
         <p className="builder-version">Builder v{BUILDER_VERSION}</p>
       </aside>
     </div>
-
+    {cartProgress && (
+      <CartProgressOverlay
+        progress={cartProgress}
+        startedAt={cartStartedAt}
+        sheetCount={sheetCount}
+        cutOut={cutOutActive}
+        pressSheet={ppEnabled}
+        framed={embed}
+        anchorTop={cartAnchorTop}
+      />
+    )}
   </main>
 }
 

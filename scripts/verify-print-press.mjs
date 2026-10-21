@@ -71,6 +71,31 @@ for (const [garments, label, first, second] of [
   assert.equal(pp.printPressSummaryText(summary), '62 garments × $2.00 + 50 second side × $1.00 + 50 names × $0.50 = $199.00')
 }
 
+// Left chest logo is a front print: same first-side labor; chest + back is a double press.
+{
+  const chest = line({ id: 1, location: 'chest', sizes: { ...pp.emptyPrintPressSizes(), M: '10' }, frontDesign: 1 })
+  const chestBack = line({ id: 2, location: 'chest-back', sizes: { ...pp.emptyPrintPressSizes(), L: '5' }, frontDesign: 1, backDesign: 2 })
+  assert.equal(pp.lineNeedsFront(chest), true)
+  assert.equal(pp.lineNeedsBack(chest), false)
+  assert.equal(pp.lineFrontIsChest(chest), true)
+  assert.equal(pp.lineIsDoublePress(chest), false)
+  assert.equal(pp.lineNeedsBack(chestBack), true)
+  assert.equal(pp.lineIsDoublePress(chestBack), true)
+  assert.equal(pp.printPressFrontLabel('chest-back'), 'Left chest')
+  assert.equal(pp.printPressFrontLabel('both'), 'Front')
+  assert.equal(pp.printPressLocationLabel('chest-back'), 'Left chest logo + Back')
+  const t = pp.printPressTotals([chest, chestBack], false)
+  assert.equal(t.garments, 15)
+  assert.equal(t.doublePress, 5)
+  assert.equal(t.labor, 15 * 5 + 5 * 1.5)
+  const demand = pp.printPressDesignDemand([chest, chestBack])
+  assert.equal(demand.get(1), 15)
+  assert.equal(demand.get(2), 5)
+  // A chest line with no front image is flagged; a chest-only line never asks for a back.
+  assert.match(pp.printPressProblem([line({ location: 'chest', sizes: { ...pp.emptyPrintPressSizes(), M: '2' } })], false, [1]), /image slot/)
+  assert.equal(pp.printPressProblem([chest], false, [1]), null)
+}
+
 // Roster beats the typed count, capped at the garments on the line.
 {
   const l = line({ location: 'front', sizes: { ...pp.emptyPrintPressSizes(), L: '3' }, names: '99', roster: 'JONES\nSMITH\n\nGARCIA\nLEE', frontDesign: 1 })

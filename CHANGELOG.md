@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.7.0] — 2026-10-21
+
+### Added
+- **Add to Cart progress card.** Clicking Add to Cart now opens a blocking status card
+  that follows the whole run — building the print (+ cut) files sheet by sheet, packing
+  the artwork, writing the press sheet (Print & Press), uploading to Google Drive with a
+  real percentage, saving the project, adding to the cart, then "Added — taking you to your
+  cart…" until the store page moves. It shows an elapsed-time counter, an overall bar with
+  moving stripes while a step has no measurable progress, and a "nothing has timed out"
+  note after 45 s. Inside the store iframe the card is placed next to where the customer
+  clicked, not the middle of the (very tall) frame. Errors close the card and show the
+  message under the button as before.
+- **Print & Press: left chest logo.** The print location now offers **Left chest logo** and
+  **Left chest logo + Back** alongside Front / Back / Front + Back. A left chest logo is
+  billed as the front print (same first-side labor; chest + back is a double press). The
+  front image slot is labelled "Left chest image", hints that logos run about 3–4 in wide,
+  and warns when the chosen design is wider than 4.5 in. The press sheet shows a
+  **LEFT CHEST** card and the cart/order line text reads "Left chest logo (+ Back)".
+
+### WooCommerce plugin 1.28
+- Location labels for `chest` / `chest-back` on cart rows, order meta and the order note.
+  Pricing is unchanged, so 1.27 still charges correctly; it would only label chest lines as
+  "Front".
+
 ## [2.6.3] — 2026-10-21
 
 ### Changed
