@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
   Baby, Check, Copy, Eye, FileImage, Image as ImageIcon, Maximize2,
-  Minus, Plus, Replace, RotateCw, Ruler, Scissors, Shirt, Sparkles, Trash2, Upload,
+  Minus, Plus, Replace, RotateCw, Ruler, Scissors, Shirt, Sparkles, Sticker, Trash2, Upload,
 } from 'lucide-react'
 import { DesignInspector } from '@/components/design-inspector'
 import { PrecutOfferModal } from '@/components/precut-offer-modal'
@@ -60,37 +60,6 @@ type Design = {
   keepUpright: boolean
 }
 const logoUrl = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/SSP%20Logo%20%28Black%20Outline%29-A5PrDBPZRDhydxNxRumbsTUFufpLv9.png'
-const sizeGuideUrl = 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/DTF%20size%20chart%20%20front2-SIpj1XrVDRyRDtQhaACxzNHj5geNxv.png'
-const placements = ['Left Chest', 'Toddler Shirt', 'Youth Shirt', 'Adult Shirt', 'Hoodie Front', 'Hoodie Back', 'Hat', 'Sleeve', 'Custom']
-const sizeOptions = {
-  'Left Chest': ['Youth Left Chest · 3 × 3 in', 'Standard Left Chest · 3.75 × 3.75 in', 'Oversized Left Chest · 4.5 × 4.5 in'],
-  'Toddler Shirt': ['2T · 5.5 × 6 in', '3T · 6 × 6.5 in', '4T · 6.5 × 7 in', '5T · 6.5 × 7 in'],
-  'Youth Shirt': ['XS · 7.5 × 8 in', 'Small · 8.5 × 9 in', 'Medium · 9.25 × 10 in', 'Large · 9.75 × 11 in'],
-  'Adult Shirt': ['Small · 10 × 12 in', 'Medium · 10.5 × 12 in', 'Large · 10.5 × 12 in', 'XL · 10.5 × 12 in', '2XL · 12.5 × 13 in', '3XL · 13.5 × 14 in'],
-  'Hoodie Front': [
-    'Small · 10.5 × 10 in',
-    'Medium · 10.5 × 11 in',
-    'Large · 10.5 × 12 in',
-    'XL · 10.5 × 12 in',
-    '2XL · 12 × 13 in',
-    '3XL · 13 × 15 in',
-    '4XL · 14 × 15 in',
-  ],
-  'Hoodie Back': [
-    'Small · 10.5 × 12 in',
-    'Medium · 10.5 × 12 in',
-    'Large · 10.5 × 12 in',
-    'XL · 10.5 × 12 in',
-    '2XL · 12 × 14 in',
-    '3XL · 13 × 15 in',
-    '4XL · 14 × 16 in',
-  ],
-  Hat: ['Small · 3 in', 'Medium · 4 in', 'Large · 5 in'],
-  Sleeve: ['3 in', '3.5 in', '4 in', '4.5 in', '5 in'],
-  Custom: ['3 in', '4 in', '5 in', '6 in', '8 in', '10 in', '12 in', '14 in'],
-  default: ['3 in', '4 in', '5 in', '6 in', '10.5 in', '12 in'],
-}
-
 function PlacementIcon({ placement }: { placement: string }) {
   if (placement === 'Left Chest') return <span className="pocket-icon" aria-hidden="true"><span /></span>
   if (placement === 'Hoodie Front' || placement === 'Hoodie Back') return <span className={`hoodie-icon ${placement === 'Hoodie Back' ? 'back' : ''}`} aria-hidden="true"><span className="hood" /><span className="hoodie-body" /><span className="hoodie-pocket" /></span>
@@ -98,24 +67,15 @@ function PlacementIcon({ placement }: { placement: string }) {
   if (placement === 'Hat') return <span className="baseball-hat-icon" aria-hidden="true"><span className="hat-crown" /><span className="hat-brim" /></span>
   if (placement === 'Sleeve') return <Ruler size={32} strokeWidth={1.4} />
   if (placement === 'Custom') return <Sparkles size={32} strokeWidth={1.4} />
+  if (placement === 'UV DTF Decal') return <Sticker size={32} strokeWidth={1.4} />
   return <Shirt size={34} strokeWidth={1.4} />
-}
-
-function recommendedSize(type: string) {
-  if (type === 'Left Chest') return 'Standard Left Chest · 3.75 × 3.75 in'
-  if (type === 'Youth Shirt') return 'Small · 8.5 × 9 in'
-  if (type === 'Toddler Shirt') return '4T · 6.5 × 7 in'
-  if (type === 'Adult Shirt') return 'Medium · 10.5 × 12 in'
-  if (type === 'Hoodie Front') return 'Medium · 10.5 × 11 in'
-  if (type === 'Hoodie Back') return 'Medium · 10.5 × 12 in'
-  if (type === 'Hat') return 'Medium · 4 in'
-  return '10.5 in'
 }
 
 const howToSteps = [
   { id: 'step-1', number: 1, title: 'Your name', detail: 'Enter your name so we can label your sheet.' },
   { id: 'step-2', number: 2, title: 'Upload your design', detail: 'Drop or click to add artwork.' },
-  { id: 'step-3', number: 3, title: 'What are you printing?', detail: 'Pick the shirt, hoodie, hat, or custom size.' },
+  // Detail comes from the product's size chart (chart.pickDetail).
+  { id: 'step-3', number: 3, title: 'What are you printing?', detail: '' },
   { id: 'step-4', number: 4, title: 'Set sizes and edit', detail: 'Choose the print size, quantity, and fix the art if needed.' },
   { id: 'step-5', number: 5, title: 'Review & order', detail: 'Check the layout, then add it to your cart.' },
 ]
@@ -162,7 +122,11 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
   /** Confirmation shown at the dropzone so an upload is never silent. */
   const [addNotice, setAddNotice] = useState<{ count: number; names: string[] } | null>(null)
   const [addError, setAddError] = useState<string | null>(null)
-  const [placement, setPlacement] = useState('Adult Shirt')
+  const chart = product.sizeChart
+  const placements = chart.placements
+  const sizeOptions = chart.sizes
+  const recommendedSize = (type: string) => chart.recommended[type] ?? chart.fallbackSize
+  const [placement, setPlacement] = useState(chart.defaultPlacement)
   const [dragging, setDragging] = useState(false)
   const [built, setBuilt] = useState(false)
   const [duplicateTargetId, setDuplicateTargetId] = useState<number | null>(null)
@@ -1020,7 +984,7 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
           >
             <b>{step.number}</b>
             <strong>{step.title}</strong>
-            <span>{step.detail}</span>
+            <span>{step.number === 3 ? chart.pickDetail : step.detail}</span>
           </a>
         </li>
       ))}
@@ -1029,11 +993,11 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
     <div className="builder-grid">
       <section className="workspace panel">
         <div className="inline-guide">
-          <img src={sizeGuideUrl} alt="DTF design size guide for toddler, youth, and adult shirts" />
+          <img src={chart.guideImageUrl} alt={chart.guideImageAlt} />
           <div className="inline-guide-copy">
             <span className="eyebrow">Live size chart</span>
             <h2>{placement} max sizes</h2>
-            <p>Pick a garment below to update this chart. Hoodie Front uses the new max width × height sizes.</p>
+            <p>{chart.guideNote}</p>
             <div className="guide-quick-picks">
               {placements.filter((item) => item !== 'Custom').map((item) => (
                 <button
@@ -1093,9 +1057,9 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
         )}
         <div className="divider" />
         <div id="step-3" className="guide-block">
-          <GuideHeading number={3} title="What are you printing?" hint="Tap the garment or placement that matches this design." />
+          <GuideHeading number={3} title="What are you printing?" hint={chart.pickHint} />
         </div>
-        <div className="placement-grid">{placements.map((item) => <button key={item} className={`placement-card ${placement === item ? 'selected' : ''}`} onClick={() => setPlacement(item)}><span className="icon-guide-trigger" role="button" tabIndex={0} aria-label={`Show recommended sizes for ${item}`} onClick={(event) => { event.stopPropagation(); setSizeGuidePlacement(item) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); setSizeGuidePlacement(item) } }}><PlacementIcon placement={item} /></span><span>{item}</span>{item === 'Adult Shirt' && <em>POPULAR</em>}</button>)}</div>
+        <div className="placement-grid">{placements.map((item) => <button key={item} className={`placement-card ${placement === item ? 'selected' : ''}`} onClick={() => setPlacement(item)}><span className="icon-guide-trigger" role="button" tabIndex={0} aria-label={`Show recommended sizes for ${item}`} onClick={(event) => { event.stopPropagation(); setSizeGuidePlacement(item) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); setSizeGuidePlacement(item) } }}><PlacementIcon placement={item} /></span><span>{item}</span>{item === chart.popular && <em>POPULAR</em>}</button>)}</div>
         <div id="step-4" className="guide-block design-heading">
           <GuideHeading number={4} title="Set sizes and edit" hint="Pick the print size and quantity. Click the picture if you need to crop, clean, or check quality." />
           <h2 className="design-count">Your designs ({designs.length})</h2>
