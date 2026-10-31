@@ -1,5 +1,37 @@
 # Changelog
 
+## [2.13.0] — 2026-10-31
+
+### Added
+- **Manual DTF builder at `/manual`** ("Arrange My Own Gangsheet", store embed `/embed/manual`).
+  Same name, upload and size steps as `/`. The customer then drags every transfer from a tray onto
+  a to-scale 22.3 in sheet: ⅛ in snap, arrow-key nudge, Rotate 90°, Remove, Auto-arrange the rest
+  (the packer, below what is placed), and Clear. Live checks flag overlaps, designs too close
+  (cut lines touching with Pre-cut on, ⅛ in without), art in the label strip, cut-mark columns or
+  past the working length, and designs too tall for one cutter pass. Add to Cart is blocked until
+  every transfer is placed and nothing is flagged. Pre-cut works at the same rates. One sheet,
+  billed like `/` by how far down the art reaches. No Print & Press in manual mode.
+- `/` shows a **Switch to manual mode** link under the name field once a name is typed. The name
+  carries over (`/manual?name=`). Manual mode links back.
+- Manual sheet editor:
+  - Light gray checkerboard film, showing only the printable stretch (label strips hidden).
+  - A solid black edge that is a hard stop: drags, nudges, rotates and resizes are pulled back
+    inside it, and it flashes red when hit. With Pre-cut on, the cut-mark columns are hatched
+    outside the frame.
+  - Length ruler down the left side (6 in or 12 in labels) and an "N in sheet" line at the working length.
+- Manual resize and rotate: the selected design gets 8 handles (corners and sides, proportions
+  locked, ⅛ in steps, ½ in minimum) with a live size and DPI badge, plus a drag-to-rotate handle
+  that snaps upright or sideways. A size box takes an exact width or height. Resizing applies to
+  that copy only (`ManualPlacement.scale`). The image list gets one row per printed size, and
+  step 4 notes "Sizes vary on sheet".
+- "Your uploads" list in manual mode: one row per design with thumbnail, size and "N of M left" /
+  "All placed". The box is fixed height (300 px) and scrolls inside itself, with a "Scroll for more"
+  hint.
+- Gang sheet name: a manual-mode name bar (editable) with "Switch back to automatic mode". The name
+  is shown over the sheet in both modes, and `/` now reads `?name=` so switching back keeps it.
+- `lib/manual-layout.ts` (area, rules, auto-arrange, `manualSheetPage`) feeds the existing compose,
+  PLT, Drive and cart code unchanged. Checks: `scripts/verify-manual-layout.mjs`.
+
 ## [2.12.0] — 2026-10-31
 
 ### Changed
