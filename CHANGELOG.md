@@ -11,7 +11,7 @@
   Cart lines go to the UV DTF product with `printType: 'uv-dtf'`.
 - The customer builder is now one component (`components/gang-sheet-builder.tsx`) driven by a
   product setting (`lib/gang-sheet-product.ts`). `/` is unchanged: DTF, 22.3 in, the same prices.
-- WordPress plugin **1.29**: `mode="uv-dtf"` (and the old `stickers` / `uv` modes) embeds the UV
+- WordPress plugin **1.31**: `mode="uv-dtf"` (and the old `stickers` / `uv` modes) embeds the UV
   DTF builder. UV DTF sheets get the pre-cut companion line. Cart rows read "Print type: UV DTF"
   and "Transfers". The fallback link no longer points at the staff sticker page.
 

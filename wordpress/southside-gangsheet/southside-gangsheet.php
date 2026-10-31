@@ -2,7 +2,7 @@
 /**
  * Plugin Name: South Side Gang Sheet Builder
  * Description: Embed the South Side DTF customer gang sheet builder and UV DTF gang sheet builder, and add finished sheets (with optional Print & Press labor) to the WooCommerce cart.
- * Version: 1.29
+ * Version: 1.31
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.29');
+define('SSGS_PLUGIN_VERSION', '1.31');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 /** WooCommerce attribute + term that marks a product as UV DTF (spec A9). */
 define('SSGS_UV_DTF_ATTRIBUTE', 'pa_print_type');
