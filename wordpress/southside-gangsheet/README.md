@@ -6,19 +6,19 @@ Embed the customer builder and **Add to Cart** into WooCommerce on southsidedtf.
 
 Use the ready zip in this repo:
 
-- [`wordpress/southside-gangsheet-1.28.zip`](./southside-gangsheet-1.28.zip)
+- [`wordpress/southside-gangsheet-1.29.zip`](./southside-gangsheet-1.29.zip)
 
 Or zip the `southside-gangsheet/` folder yourself.
 
 ## Install on WordPress
 
-1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet-1.28.zip` → Activate
+1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet-1.29.zip` → Activate
 2. **Settings → Gang Sheet Builder**
    - Builder URL: `https://southside-dtf.vercel.app`
    - WooCommerce product ID: **4365** (or leave `0` for slug `custom-gang-sheet-builder`)
    - Pre-cut product ID: must be the **pre-cut** product — never the “I Don’t Know How to Build a Gangsheet” service product
    - Upload product ID: customer-uploaded sheets (leave `0` to reuse main product)
-   - UV DTF product ID: the UV DTF sticker sheet product (22 in wide, variations by length such as `22in x 12in`). Leave `0` to auto-detect slug `uv-dtf-stickers` / `uv-dtf`, or the first product with attribute `pa_print_type = uv-dtf`. The settings page shows which product is in use.
+   - UV DTF product ID: the UV DTF gang sheet product (22 in wide, variations by length such as `22in x 12in`). Leave `0` to auto-detect slug `uv-dtf-stickers` / `uv-dtf`, or the first product with attribute `pa_print_type = uv-dtf`. The settings page shows which product is in use.
    - Drive finalize URL: `https://southside-dtf.vercel.app/api/drive/finalize`
    - Drive commit secret: must match `SSGS_COMMIT_SECRET` on Vercel (used only to rename Drive files with the order number after payment)
 3. Shortcodes:
@@ -26,7 +26,7 @@ Or zip the `southside-gangsheet/` folder yourself.
 ```
 [southside_gangsheet]
 [southside_gangsheet mode="upload"]
-[southside_gangsheet mode="stickers"]
+[southside_gangsheet mode="uv-dtf"]
 [southside_artwork_intake]
 ```
 
@@ -49,16 +49,14 @@ Or zip the `southside-gangsheet/` folder yourself.
 - Single-length payloads that are longer than the largest variation (done-for-you intake, older builders) are split server-side into `n of N` lines on the ladder; the build fee and pre-cut total are charged once, on sheet 1.
 - The plugin no longer silently falls back to the largest variation when nothing fits — it reports the length instead.
 
-## UV DTF stickers (v1.23+)
+## UV DTF gang sheets (v1.29+)
 
-- `[southside_gangsheet mode="stickers"]` embeds `/embed/stickers` — the UV DTF Sticker Maker in store mode (no staff bars, no local downloads). **Add to Cart** uploads the sheet PNG (+ cutter PLT when Cut is on) to Google Drive, then sends the line to WooCommerce.
-- The payload carries `printType: "uv-dtf"`, `cutEnabled`, and the Drive link. The plugin routes it to the **UV DTF product**, picks the smallest variation whose length fits, and stores:
-  - `ssgs_print_type` = `uv-dtf` (cart row **Print type: UV DTF stickers**)
-  - `ssgs_cut` = `yes` / `no` (cart row **Cut: Square Cut 2.5 mm** or **Cut: No**), `ssgs_cut_mm` = `2.5`
-  - hidden order-line meta `_ssp_cut_enabled` + `_ssp_print_type` for production (spec A7)
-- The cut offset is fixed at 2.5 mm on the server, whatever the browser sends. UV DTF lines never get the DTF pre-cut companion line or the intake build fee.
+- `[southside_gangsheet mode="uv-dtf"]` embeds `/embed/uv-dtf`: the UV DTF gang sheet builder, the same flow as the DTF builder, with 22 in media and the UV DTF price ladder. `mode="stickers"` / `mode="uv"` still work and load the same builder. The old sticker maker URLs redirect there.
+- The payload carries `printType: "uv-dtf"`, `cutEnabled`, `sheets[]` and the Drive links. The plugin routes every sheet to the **UV DTF product**, and each sheet picks the smallest length variation that fits. UV DTF variations needed: **12, 24, 36, 48, 60, 72, 120 and 240 in**. Anything longer than 240 in is split into more sheets.
+- **Pre-cut** works like DTF: each sheet gets the same per-transfer pre-cut companion line ($0.50 / $0.25 / $0.20 / $0.15 / $0.10). The cart row shows **Cut: Square Cut 2.5 mm** or **Cut: No**, and `ssgs_cut` / `ssgs_cut_mm` plus hidden `_ssp_cut_enabled` / `_ssp_print_type` are stored for production (spec A7).
+- No Print & Press and no intake build fee on UV DTF.
 - Standard DTF payloads (no `printType`, or `printType: "dtf"`) behave exactly as before.
-- 1.22 could not activate (PHP parse error in the checkout hook). 1.23 fixes that and also saves `ssgs_build_fee` on intake order lines.
+- History: 1.23–1.28 embedded the UV DTF Sticker Maker for `mode="stickers"`, and UV DTF lines never got a pre-cut line. 1.22 could not activate (PHP parse error in the checkout hook), and 1.23 fixed that.
 
 ## Build fee (v1.22+)
 

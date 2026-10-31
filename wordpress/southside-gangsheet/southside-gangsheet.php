@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: South Side Gang Sheet Builder
- * Description: Embed the South Side DTF customer gang sheet builder and UV DTF sticker maker, and add finished sheets (with optional Print & Press labor) to the WooCommerce cart.
- * Version: 1.28
+ * Description: Embed the South Side DTF customer gang sheet builder and UV DTF gang sheet builder, and add finished sheets (with optional Print & Press labor) to the WooCommerce cart.
+ * Version: 1.29
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.28');
+define('SSGS_PLUGIN_VERSION', '1.29');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 /** WooCommerce attribute + term that marks a product as UV DTF (spec A9). */
 define('SSGS_UV_DTF_ATTRIBUTE', 'pa_print_type');
@@ -88,7 +88,7 @@ function ssgs_render_settings_page() {
     <p><?php esc_html_e('Embed the customer builder on any page or WooCommerce product with the shortcode below.', 'southside-gangsheet'); ?></p>
     <p><code>[southside_gangsheet]</code></p>
     <p><code>[southside_gangsheet mode="upload"]</code> <?php esc_html_e('for the upload-your-own-sheet flow.', 'southside-gangsheet'); ?></p>
-    <p><code>[southside_gangsheet mode="stickers"]</code> <?php esc_html_e('for the UV DTF sticker maker (22 in wide, Cut / No Cut).', 'southside-gangsheet'); ?></p>
+    <p><code>[southside_gangsheet mode="uv-dtf"]</code> <?php esc_html_e('for the UV DTF gang sheet builder (22 in wide, optional pre-cut).', 'southside-gangsheet'); ?></p>
     <p><code>[southside_artwork_intake]</code> <?php esc_html_e('for the customer send-us-your-artwork flow.', 'southside-gangsheet'); ?></p>
     <form method="post" action="options.php">
       <?php settings_fields('ssgs_options_group'); ?>
@@ -234,12 +234,13 @@ function ssgs_render_shortcode($atts) {
 
   $base = untrailingslashit($atts['url'] ?: $opts['builder_url']);
   $mode = strtolower(trim((string) $atts['mode']));
-  if (in_array($mode, array('stickers', 'sticker', 'uv-dtf', 'uv_dtf', 'uvdtf', 'uv'), true)) {
-    $mode = 'stickers';
+  // UV DTF is the UV DTF gang sheet builder (it replaced the sticker maker; old modes still work).
+  if (in_array($mode, array('uv-dtf', 'uv_dtf', 'uvdtf', 'uv', 'stickers', 'sticker'), true)) {
+    $mode = 'uv-dtf';
   }
   $paths = array(
     'upload' => '/embed/upload',
-    'stickers' => '/embed/stickers',
+    'uv-dtf' => '/embed/uv-dtf',
   );
   $src = $base . ($paths[$mode] ?? '/embed');
   $height = max(intval($opts['min_height']), intval($atts['height']));
@@ -247,11 +248,11 @@ function ssgs_render_shortcode($atts) {
   if ($mode === 'upload' && $atts['title'] === $default_title) {
     $atts['title'] = __('Upload a Gang Sheet', 'southside-gangsheet');
   }
-  if ($mode === 'stickers' && $atts['title'] === $default_title) {
-    $atts['title'] = __('Make UV DTF Stickers', 'southside-gangsheet');
+  if ($mode === 'uv-dtf' && $atts['title'] === $default_title) {
+    $atts['title'] = __('Build a UV DTF Gang Sheet', 'southside-gangsheet');
   }
-  $fallback = $mode === 'stickers'
-    ? __('Open the UV DTF sticker maker in a new tab', 'southside-gangsheet')
+  $fallback = $mode === 'uv-dtf'
+    ? __('Open the UV DTF gang sheet builder in a new tab', 'southside-gangsheet')
     : __('Open the gang sheet builder in a new tab', 'southside-gangsheet');
 
   return ssgs_render_embed_iframe(
@@ -260,7 +261,7 @@ function ssgs_render_shortcode($atts) {
     $atts['title'],
     $height,
     $fallback,
-    $mode === 'stickers' ? $base . '/shop/sticker-maker' : ''
+    $mode === 'uv-dtf' ? $base . '/uv-dtf' : ''
   );
 }
 
@@ -539,7 +540,7 @@ function ssgs_normalize_print_type($value) {
 
 function ssgs_print_type_label($print_type) {
   return $print_type === 'uv-dtf'
-    ? __('UV DTF stickers', 'southside-gangsheet')
+    ? __('UV DTF', 'southside-gangsheet')
     : __('DTF transfer', 'southside-gangsheet');
 }
 
@@ -828,9 +829,9 @@ function ssgs_handle_add_to_cart() {
       'ssgs_sheet_index' => sanitize_text_field($line['sheetIndex'] ?? ''),
       'ssgs_designs' => intval($line['designs'] ?? 0),
       'ssgs_transfers' => intval($line['transfers'] ?? 0),
-      // DTF pre-cut (kiss-cut companion line). UV DTF uses its own Square Cut below.
-      'ssgs_precut' => (!$is_uv_dtf && (!empty($line['precut']) || $print_press)) ? 'yes' : 'no',
-      'ssgs_precut_total' => ($is_uv_dtf || $print_press) ? 0 : floatval($line['precutTotal'] ?? 0),
+      // Pre-cut companion line — DTF and UV DTF builder sheets both use it.
+      'ssgs_precut' => (!empty($line['precut']) || $print_press) ? 'yes' : 'no',
+      'ssgs_precut_total' => $print_press ? 0 : floatval($line['precutTotal'] ?? 0),
       // Build fee only for done-for-you intake — never self-serve builder or upload.
       'ssgs_build_fee' => ($sheet_type === 'intake') ? floatval($line['buildFee'] ?? 0) : 0,
       'ssgs_printed_height' => $printed_height,
@@ -901,8 +902,8 @@ function ssgs_handle_add_to_cart() {
     $added_keys[] = $added;
 
     // Upload flow never sells pre-cut (precut is always false). Builder still uses Fix 2.
-    // UV DTF never gets the DTF pre-cut line — its Square Cut is part of the sticker product.
-    if ($entry['precut'] && !$is_upload && !$is_uv_dtf && $entry['precut_total'] > 0 && $precut_id > 0) {
+    // UV DTF builder sheets get the same per-transfer pre-cut line as DTF.
+    if ($entry['precut'] && !$is_upload && $entry['precut_total'] > 0 && $precut_id > 0) {
       $companion = WC()->cart->add_to_cart($precut_id, $entry['quantity'], 0, array(), array(
         'ssgs_precut_amount' => $entry['precut_total'],
         'ssgs_precut_for' => $entry['cart_item_data']['unique_key'],
@@ -1031,7 +1032,7 @@ add_filter('woocommerce_get_item_data', function ($item_data, $cart_item) {
     'ssgs_customer_name' => __('Customer', 'southside-gangsheet'),
     'ssgs_sheet_index' => __('Sheet', 'southside-gangsheet'),
     'ssgs_designs' => __('Designs', 'southside-gangsheet'),
-    'ssgs_transfers' => $is_uv_dtf ? __('Stickers', 'southside-gangsheet') : __('Transfers', 'southside-gangsheet'),
+    'ssgs_transfers' => __('Transfers', 'southside-gangsheet'),
     'ssgs_precut' => __('Pre-cut', 'southside-gangsheet'),
     'ssgs_sheet_type' => __('Sheet type', 'southside-gangsheet'),
     'ssgs_source_size' => __('Source size', 'southside-gangsheet'),
@@ -1040,7 +1041,7 @@ add_filter('woocommerce_get_item_data', function ($item_data, $cart_item) {
     'ssgs_dpi_source' => __('DPI source', 'southside-gangsheet'),
   );
   if ($is_uv_dtf) {
-    // Stickers have no DTF pre-cut; their cut shows as its own row below.
+    // UV DTF shows its cut as the "Cut" row below instead of a Pre-cut row.
     unset($map['ssgs_precut']);
   }
   foreach ($map as $key => $label) {

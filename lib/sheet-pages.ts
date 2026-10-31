@@ -19,7 +19,7 @@ import {
   registrationMarkRects,
   startMarkArrowPoints,
 } from '@/lib/cut-layout'
-import { sheetLabel, sheetOptions } from '@/lib/sheet-pricing'
+import { sheetLabel, sheetOptions, type SheetOption } from '@/lib/sheet-pricing'
 
 /** Longest gang sheet we print and bill as one piece. Anything longer becomes more sheets. */
 export const MAX_SHEET_LENGTH_IN = 200
@@ -70,12 +70,10 @@ export type SheetPagination<T extends PackItem> = {
 }
 
 /** Snap one sheet's art length to its ladder tier (never above the max sheet). */
-export function sheetTierForArtLength(artLengthIn: number) {
+export function sheetTierForArtLength(artLengthIn: number, ladder: SheetOption[] = sheetOptions) {
   const chargeable = Math.max(0, artLengthIn - PRINT_MARGIN_IN)
-  const safeLength = Math.max(sheetOptions[0].length, Math.ceil(chargeable - 1e-9))
-  return (
-    sheetOptions.find((option) => safeLength <= option.length) ?? sheetOptions[sheetOptions.length - 1]
-  )
+  const safeLength = Math.max(ladder[0].length, Math.ceil(chargeable - 1e-9))
+  return ladder.find((option) => safeLength <= option.length) ?? ladder[ladder.length - 1]
 }
 
 /** Return a placed piece to its upright dimensions so it can be re-packed. */
@@ -95,15 +93,26 @@ export function partLabel(index: number, count: number) {
 }
 
 /**
- * Pack a job onto as many 200 in sheets as it needs. Each sheet is its own
- * print file, its own cut file, and its own billed line — 500 in of art is
- * three sheets (200 + 200 + 100), not one 200 in sheet.
+ * Pack a job onto as many max-length sheets (DTF 200 in, UV DTF 240 in) as it
+ * needs. Each sheet is its own print file, its own cut file, and its own billed
+ * line — 500 in of DTF art is three sheets (200 + 200 + 100), not one 200 in sheet.
  */
 export function paginateGangSheet<T extends PackItem>(
   items: T[],
-  options: { cutOut: boolean; sheetWidthIn?: number },
+  options: {
+    cutOut: boolean
+    /** Printed width (narrower than the media when cut marks need margin). */
+    sheetWidthIn?: number
+    /** Price ladder; its last tier is the longest single sheet. Defaults to DTF. */
+    ladder?: SheetOption[]
+    /** Width named on sheet labels (the media sold), when it differs from sheetWidthIn. */
+    labelWidthIn?: number
+  },
 ): SheetPagination<T> {
   const sheetWidthIn = options.sheetWidthIn ?? SHEET_WIDTH_IN
+  const ladder = options.ladder ?? sheetOptions
+  const maxSheetIn = ladder[ladder.length - 1].length
+  const labelFor = (length: number) => sheetLabel(length, options.labelWidthIn)
   const cutOut = options.cutOut
   const billableOpts = { packWidthIn: sheetWidthIn, startYIn: ART_INSET_IN }
   const printOpts = cutOut
@@ -117,7 +126,7 @@ export function paginateGangSheet<T extends PackItem>(
   const startY = cutOut ? CUT_ART_START_IN : ART_INSET_IN
   // Billing allows PRINT_MARGIN_IN of grace before snapping, so a sheet can hold
   // that much more art than the tier and still bill as 200.
-  const pageHeightIn = startY + MAX_SHEET_LENGTH_IN + PRINT_MARGIN_IN
+  const pageHeightIn = startY + maxSheetIn + PRINT_MARGIN_IN
 
   const { pages: layouts, tooLarge } = packSheetIntoPages(items, { ...printOpts, pageHeightIn })
 
@@ -131,7 +140,7 @@ export function paginateGangSheet<T extends PackItem>(
     const printHeight = cutOut
       ? layout.contentEndY + CUT_ART_START_IN
       : layout.contentEndY + ART_INSET_IN
-    const tier = sheetTierForArtLength(billableHeightIn)
+    const tier = sheetTierForArtLength(billableHeightIn, ladder)
     // Cut helpers only read geometry; server-side items carry no preview URL.
     const geometry: PlacedSheetPiece[] = layout.pieces.map((piece) => ({ previewUrl: '', ...piece }))
     const marks = cutOut ? registrationMarkRects(printHeight, sheetWidthIn, geometry) : []
@@ -145,7 +154,7 @@ export function paginateGangSheet<T extends PackItem>(
       printHeight,
       billedLength: tier.length,
       price: tier.price,
-      label: sheetLabel(tier.length),
+      label: labelFor(tier.length),
       transfers: layout.pieces.length,
       marks,
       markBounds,
@@ -161,15 +170,15 @@ export function paginateGangSheet<T extends PackItem>(
   const price = pages.reduce((sum, page) => sum + page.price, 0)
   const partLabels = pages.map((page) => partLabel(page.index, pages.length))
 
-  const fullSheets = pages.filter((page) => page.billedLength === MAX_SHEET_LENGTH_IN).length
-  const partials = pages.filter((page) => page.billedLength !== MAX_SHEET_LENGTH_IN)
+  const fullSheets = pages.filter((page) => page.billedLength === maxSheetIn).length
+  const partials = pages.filter((page) => page.billedLength !== maxSheetIn)
   const breakdown =
     pages.length === 0
-      ? sheetLabel(sheetOptions[0].length)
+      ? labelFor(ladder[0].length)
       : pages.length === 1
         ? pages[0].label
         : [
-            fullSheets > 0 ? `${fullSheets} × ${MAX_SHEET_LENGTH_IN} in` : '',
+            fullSheets > 0 ? `${fullSheets} × ${maxSheetIn} in` : '',
             ...partials.map((page) => `${page.billedLength} in`),
           ]
             .filter(Boolean)

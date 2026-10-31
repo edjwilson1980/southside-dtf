@@ -6,7 +6,7 @@ import { loadLib } from './load-lib.mjs'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const layout = readFileSync(join(root, 'lib/cut-layout.ts'), 'utf8')
 const names = readFileSync(join(root, 'lib/sheet-name.ts'), 'utf8')
-const page = readFileSync(join(root, 'app/page.tsx'), 'utf8')
+const page = readFileSync(join(root, 'components/gang-sheet-builder.tsx'), 'utf8')
 const pages = readFileSync(join(root, 'lib/sheet-pages.ts'), 'utf8')
 
 const cut = await loadLib('lib/cut-layout.ts')

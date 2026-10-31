@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 
-/** WordPress embed URL for UV DTF stickers → customer sticker maker (never the shop page). */
+/** Older WordPress embeds (`mode="stickers"`) → UV DTF gang sheet builder in store mode. */
 export default function EmbedStickersPage() {
-  redirect('/stickers')
+  redirect('/uv-dtf?embed=1')
 }

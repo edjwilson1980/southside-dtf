@@ -1,16 +1,25 @@
 # Changelog
 
-## [2.9.0] — 2026-10-31
+## [2.10.0] — 2026-10-31
 
 ### Added
-- **Customer UV DTF sticker maker at `/stickers`.** Always store mode — no Reopen Job, Save to
-  Photoshop, Connect Drive, Save Job, top menu or `/shop` links, and it never opens saved jobs
-  from the URL. `/embed/stickers` (WordPress shortcode `mode="stickers"`) now loads `/stickers`
-  instead of `/shop/sticker-maker?embed=1`. Staff keep `/shop/sticker-maker`.
+- **UV DTF gang sheet builder at `/uv-dtf`** (store embed `/embed/uv-dtf`, WordPress
+  `[southside_gangsheet mode="uv-dtf"]`). Same customer flow as the DTF builder at `/`, on 22 in
+  media with the UV DTF ladder: 12 in $15 · 24 $26 · 36 $37 · 48 $49 · 60 $60 · 72 $72 ·
+  120 $140 · 240 $260. Jobs longer than 240 in split into more sheets. Pre-cut uses the DTF
+  per-transfer rates and prints at **21.75 in** so the cut marks stay on the paper. No Print & Press.
+  Cart lines go to the UV DTF product with `printType: 'uv-dtf'`.
+- The customer builder is now one component (`components/gang-sheet-builder.tsx`) driven by a
+  product setting (`lib/gang-sheet-product.ts`). `/` is unchanged: DTF, 22.3 in, the same prices.
+- WordPress plugin **1.29**: `mode="uv-dtf"` (and the old `stickers` / `uv` modes) embeds the UV
+  DTF builder. UV DTF sheets get the pre-cut companion line. Cart rows read "Print type: UV DTF"
+  and "Transfers". The fallback link no longer points at the staff sticker page.
 
 ### Changed
-- UV DTF with **Cut** on prints at **21.75 in** wide (stickers and registration marks), leaving
-  margin on the 22 in paper. No Cut stays 22 in.
+- `/stickers` and `/embed/stickers` redirect to the UV DTF builder. Staff keep `/shop/sticker-maker`,
+  which prints at **21.75 in** with Cut on.
+- `paginateGangSheet` takes a price ladder (its last tier is the longest sheet) and a label width.
+  The image list PDF takes the media width. DTF defaults are unchanged.
 
 ### Fixed
 - Registration marks follow the sheet width. On UV DTF they used the 22.3 in DTF spacing and

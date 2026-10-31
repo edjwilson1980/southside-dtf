@@ -67,6 +67,8 @@ export type ImageListInput = {
   sheets: ImageListSheet[]
   cutOut: boolean
   printPress?: boolean
+  /** Media width named on the PDF. Defaults to the DTF roll (22.3 in). */
+  sheetWidthIn?: number
 }
 
 /** Light gray backing so white art is visible on the page. */
@@ -124,7 +126,7 @@ function drawHeader(state: State, input: ImageListInput, continued = false) {
   text(doc, tags.join(' · '), MARGIN, y + 0.6, { size: 8.5, color: MUTED, bold: true })
   text(doc, 'TRANSFERS', RIGHT, y + 0.12, { size: 7.5, bold: true, color: MUTED, align: 'right' })
   text(doc, String(transfers), RIGHT, y + 0.42, { size: 16, bold: true, align: 'right' })
-  text(doc, `${plural(input.sheets.length, 'sheet')} · ${SHEET_WIDTH_IN} × ${inches(billed)} in`, RIGHT, y + 0.6, { size: 8, color: MUTED, bold: true, align: 'right' })
+  text(doc, `${plural(input.sheets.length, 'sheet')} · ${input.sheetWidthIn ?? SHEET_WIDTH_IN} × ${inches(billed)} in`, RIGHT, y + 0.6, { size: 8, color: MUTED, bold: true, align: 'right' })
   setStroke(doc, INK)
   doc.setLineWidth(0.02)
   doc.line(MARGIN, y + 0.72, RIGHT, y + 0.72)
@@ -149,7 +151,7 @@ function drawFiles(state: State, input: ImageListInput) {
     setStroke(doc, RULE)
     doc.setLineWidth(0.01)
     doc.roundedRect(x, y, boxW, boxH, 0.06, 0.06)
-    fitText(doc, `SHEET ${sheet.label.toUpperCase()} · ${SHEET_WIDTH_IN} × ${inches(sheet.billedLengthIn)} IN · ${sheet.transfers} TRANSFERS`, x + 0.1, y + 0.17, boxW - 0.2, { size: 7.5, bold: true })
+    fitText(doc, `SHEET ${sheet.label.toUpperCase()} · ${input.sheetWidthIn ?? SHEET_WIDTH_IN} × ${inches(sheet.billedLengthIn)} IN · ${sheet.transfers} TRANSFERS`, x + 0.1, y + 0.17, boxW - 0.2, { size: 7.5, bold: true })
     fitText(doc, `PNG  ${sheet.printFileName}`, x + 0.1, y + 0.33, boxW - 0.2, { size: 7, font: 'courier' })
     if (sheet.cutFileName) {
       fitText(doc, `PLT  ${sheet.cutFileName}`, x + 0.1, y + 0.48, boxW - 0.2, { size: 7, font: 'courier', color: RED })

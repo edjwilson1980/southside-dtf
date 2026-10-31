@@ -8,9 +8,23 @@ export type SheetOption = {
   label: string
 }
 
-export function sheetLabel(length: number) {
-  return `22.3 × ${length} in`
+export function sheetLabel(length: number, widthIn = SAFETY_WIDTH_IN) {
+  return `${widthIn} × ${length} in`
 }
+
+/** UV DTF sheets are 22 in wide; the last tier is the longest single sheet. */
+export const UV_DTF_WIDTH_IN = 22
+
+export const uvDtfSheetOptions: SheetOption[] = [
+  { length: 12, price: 15 },
+  { length: 24, price: 26 },
+  { length: 36, price: 37 },
+  { length: 48, price: 49 },
+  { length: 60, price: 60 },
+  { length: 72, price: 72 },
+  { length: 120, price: 140 },
+  { length: 240, price: 260 },
+].map((option) => ({ ...option, label: sheetLabel(option.length, UV_DTF_WIDTH_IN) }))
 
 export const sheetOptions: SheetOption[] = [
   { length: 12, price: 8 },
