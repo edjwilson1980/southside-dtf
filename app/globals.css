@@ -2155,3 +2155,20 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .cart-progress-spin, .cart-progress-track.busy .cart-progress-fill { animation: none; }
 }
+
+/* UV DTF step 3: numbered items for the chosen category (numbers match the size guide). */
+.item-picker { display: grid; gap: 10px; margin-top: 22px; padding: 14px; border: 1.5px solid var(--chicago-blue); border-radius: 10px; background: var(--pale-blue); }
+.item-picker-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.item-picker-head strong { font-size: 15px; }
+.item-picker-head span { color: var(--muted); font-size: 12px; }
+.item-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 8px; }
+.item-picker-item { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 2px 8px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.item-picker-item:hover { border-color: var(--chicago-blue); }
+.item-picker-item:focus-visible { outline: 2px solid var(--chicago-blue); outline-offset: 2px; }
+.item-picker-item.selected { border-color: #159849; box-shadow: inset 0 0 0 1px #159849; background: #f4fcf6; }
+.item-picker-item b { grid-row: span 2; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--chicago-red); color: #fff; font-size: 11px; }
+.item-picker-item span { min-width: 0; font-size: 13px; font-weight: 700; line-height: 1.2; }
+.item-picker-item em { color: #006e99; font-size: 12px; font-style: normal; font-weight: 800; font-variant-numeric: tabular-nums; }
+.item-picker-note { margin: 12px 0 0; color: #0f6b36; font-size: 13px; font-weight: 600; }
+.item-picker .item-picker-note { margin: 0; }
+@media (max-width: 700px) { .item-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .item-picker { padding: 11px; } }

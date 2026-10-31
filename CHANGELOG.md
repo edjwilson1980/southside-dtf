@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.12.0] — 2026-10-31
+
+### Changed
+- **UV DTF step 3 is now by item category:** Drinkware (POPULAR), Tech + Accessories, Signs + Auto,
+  Storage + Packaging, and Custom. Picking a category lists its items, numbered 1–30 to match the
+  UV DTF Size Guide (for example 1 · 20 oz Skinny Tumbler · 3 × 3 in). Tapping an item sets the size
+  new uploads start at.
+- UV DTF design rows: "What are you printing?" offers the categories. The size menu lists that
+  category's items, then the 9 standard decal sizes. The DTF builder is unchanged.
+
 ## [2.11.0] — 2026-10-31
 
 ### Changed
