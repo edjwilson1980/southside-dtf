@@ -21,6 +21,13 @@ export type SizeChart = {
   /** Step 3 copy. */
   pickDetail: string
   pickHint: string
+  /**
+   * Step 3 lists the chosen card's items as numbered buttons (numbers run across
+   * the cards in order, matching the size guide picture).
+   */
+  itemPicker?: boolean
+  /** Extra size menu group after each card's own sizes (not on Custom). */
+  standardSizes?: string[]
 }
 
 const CUSTOM_SIZES = ['3 in', '4 in', '5 in', '6 in', '8 in', '10 in', '12 in', '14 in']
@@ -75,34 +82,78 @@ export const DTF_SIZE_CHART: SizeChart = {
 }
 
 /**
- * UV DTF decals: one standard size menu plus Custom. Window and Door Sign are the
- * car window and business door sign sizes from the UV DTF size guide.
+ * UV DTF decals by item, in the categories and order of the UV DTF size guide
+ * (items 1–30), plus Custom. Every menu also offers the standard decal sizes.
  */
 export const UV_DTF_SIZE_CHART: SizeChart = {
-  placements: ['UV DTF Decal', 'Custom'],
+  placements: ['Drinkware', 'Tech + Accessories', 'Signs + Auto', 'Storage + Packaging', 'Custom'],
   sizes: {
-    'UV DTF Decal': [
-      'Small · 1.5 × 1.5 in',
-      'Small+ · 2 × 2 in',
-      'Medium · 3 × 3 in',
-      'Medium Tall · 3 × 4 in',
-      'Large · 4 × 4 in',
-      'Large Wide · 5 × 3 in',
-      'XL · 6 × 4 in',
-      'Window · 5 × 5 in',
-      'Door Sign · 8 × 5 in',
+    Drinkware: [
+      '20 oz Skinny Tumbler · 3 × 3 in',
+      '30 oz Tumbler · 3.5 × 4 in',
+      '40 oz Tumbler · 3.5 × 4.5 in',
+      '16 oz Glass Can · 3 × 3.5 in',
+      '12 oz Coffee Mug · 3 × 3 in',
+      '15 oz Coffee Mug · 3.5 × 3.5 in',
+      'Travel Coffee Mug · 3 × 3 in',
+      'Water Bottle · 3 × 4 in',
+      'Sports Bottle · 3 × 3.5 in',
+      'Wine Glass · 2 × 2 in',
+      'Stemless Wine Glass · 2.5 × 2.5 in',
+      'Champagne Flute · 1.5 × 2.5 in',
+      'Shot Glass · 1.25 × 1.25 in',
+      'Mason Jar · 2.5 × 3 in',
+      'Beer / Pint Glass · 3 × 3 in',
+    ],
+    'Tech + Accessories': [
+      'Acrylic Cup · 3 × 3 in',
+      'Plastic Stadium Cup · 3 × 3 in',
+      'Phone Case · 2 × 3 in',
+      'Laptop · 5 × 3 in',
+      'Tablet / iPad Case · 4 × 3 in',
+      'Notebook / Journal · 4 × 4 in',
+    ],
+    'Signs + Auto': [
+      'Acrylic Keychain · 1.5 × 1.5 in',
+      'Acrylic Sign · 6 × 4 in',
+      'Business Door Sign · 8 × 5 in',
+      'Car Window Decal · 5 × 5 in',
+      'Car Dashboard / Interior Badge · 2 × 1 in',
+    ],
+    'Storage + Packaging': [
+      'Hard-Shell Lunch Box · 4 × 3 in',
+      'Storage Container / Bin · 4 × 2 in',
+      'Cosmetic / Makeup Container · 2 × 1.5 in',
+      'Product Packaging / Rigid Box · 3 × 2 in',
     ],
     Custom: CUSTOM_SIZES,
     default: ['Medium · 3 × 3 in'],
   },
-  // Most popular everyday size on the guide.
-  recommended: { 'UV DTF Decal': 'Medium · 3 × 3 in' },
+  // Each card starts on its first item; Drinkware's is the popular 3 × 3.
+  recommended: {
+    Drinkware: '20 oz Skinny Tumbler · 3 × 3 in',
+    'Tech + Accessories': 'Acrylic Cup · 3 × 3 in',
+    'Signs + Auto': 'Acrylic Keychain · 1.5 × 1.5 in',
+    'Storage + Packaging': 'Hard-Shell Lunch Box · 4 × 3 in',
+  },
   fallbackSize: '3 in',
-  defaultPlacement: 'UV DTF Decal',
-  popular: 'UV DTF Decal',
+  defaultPlacement: 'Drinkware',
+  popular: 'Drinkware',
   guideImageUrl: '/uv-dtf-size-guide.webp',
   guideImageAlt: 'UV DTF size guide: recommended decal sizes for drinkware, tech, signs, auto, and packaging',
-  guideNote: 'Find your item on the guide, then pick that size. Use Custom to type any width × height.',
-  pickDetail: 'Pick a standard decal size, or Custom.',
-  pickHint: 'Tap UV DTF Decal for the standard sizes, or Custom to set your own width × height.',
+  guideNote: 'Pick a category below to list its items and sizes. Use Custom to type any width × height.',
+  pickDetail: 'Pick the kind of item, then tap yours.',
+  pickHint: 'Pick the kind of item, then tap yours to see its decal size. New uploads start at that size, and you can change any design in step 4.',
+  itemPicker: true,
+  standardSizes: [
+    'Small · 1.5 × 1.5 in',
+    'Small+ · 2 × 2 in',
+    'Medium · 3 × 3 in',
+    'Medium Tall · 3 × 4 in',
+    'Large · 4 × 4 in',
+    'Large Wide · 5 × 3 in',
+    'XL · 6 × 4 in',
+    'Window · 5 × 5 in',
+    'Door Sign · 8 × 5 in',
+  ],
 }

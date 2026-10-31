@@ -20,7 +20,7 @@ These are **separate products** that share print/packing libraries. Do not mix t
 ## Customer UV DTF builder (`/uv-dtf`)
 
 - Same builder as `/` (`components/gang-sheet-builder.tsx`, product `UV_DTF_PRODUCT` in `lib/gang-sheet-product.ts`): 22 in media, title "Build My UV DTF Gangsheet"
-- Own size chart (`UV_DTF_SIZE_CHART` in `lib/size-charts.ts`): UV DTF Decal (1.5 × 1.5 to 8 × 5 in, starts on 3 × 3) + Custom, with the UV DTF Size Guide picture
+- Own size chart (`UV_DTF_SIZE_CHART` in `lib/size-charts.ts`): step 3 categories Drinkware · Tech + Accessories · Signs + Auto · Storage + Packaging · Custom, each listing its numbered items (1–30, as on the UV DTF Size Guide picture) with decal sizes. Size menus add the 9 standard decal sizes (1.5 × 1.5 to 8 × 5 in)
 - Ladder (`uvDtfSheetOptions` in `lib/sheet-pricing.ts`): 12 in $15 · 24 $26 · 36 $37 · 48 $49 · 60 $60 · 72 $72 · 120 $140 · 240 $260; longer jobs split at 240 in. The WooCommerce UV DTF product needs a variation for every one of these lengths
 - **Pre-cut UV DTFs**: same per-transfer rates as DTF; prints at 21.75 in so the registration marks stay on the 22 in paper
 - No Print & Press
@@ -64,7 +64,7 @@ Shared code lives under `lib/` (compose, cut layout, sheet size, image tools).
   (`Customer Name.ssp.json`) and embeds design art so Reopen shows the images.
 - **Automatic project JSON** — Drive uploads create/update the project `.ssp.json` in the job folder.
 - **Add to Cart progress card** — blocking status card with steps, elapsed time and Drive upload % from the click until the store cart opens.
-- **Version footer** — current version (v2.11.0) shown at the bottom of every builder page.
+- **Version footer** — current version (v2.12.0) shown at the bottom of every builder page.
 - Spec: [`docs/GANGSHEET_ADDON_SPEC.md`](docs/GANGSHEET_ADDON_SPEC.md)
 
 ### Shop sticker routes (staff)

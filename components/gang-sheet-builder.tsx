@@ -5,8 +5,8 @@ import { prepareEditableUpload } from '@/lib/rasterize-upload'
 import { useEffect, useRef, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
-  Baby, Check, Copy, Eye, FileImage, Image as ImageIcon, Maximize2,
-  Minus, Plus, Replace, RotateCw, Ruler, Scissors, Shirt, Sparkles, Sticker, Trash2, Upload,
+  Baby, Car, Check, Copy, CupSoda, Eye, FileImage, Image as ImageIcon, Laptop, Maximize2,
+  Minus, Package, Plus, Replace, RotateCw, Ruler, Scissors, Shirt, Sparkles, Trash2, Upload,
 } from 'lucide-react'
 import { DesignInspector } from '@/components/design-inspector'
 import { PrecutOfferModal } from '@/components/precut-offer-modal'
@@ -67,7 +67,10 @@ function PlacementIcon({ placement }: { placement: string }) {
   if (placement === 'Hat') return <span className="baseball-hat-icon" aria-hidden="true"><span className="hat-crown" /><span className="hat-brim" /></span>
   if (placement === 'Sleeve') return <Ruler size={32} strokeWidth={1.4} />
   if (placement === 'Custom') return <Sparkles size={32} strokeWidth={1.4} />
-  if (placement === 'UV DTF Decal') return <Sticker size={32} strokeWidth={1.4} />
+  if (placement === 'Drinkware') return <CupSoda size={32} strokeWidth={1.4} />
+  if (placement === 'Tech + Accessories') return <Laptop size={32} strokeWidth={1.4} />
+  if (placement === 'Signs + Auto') return <Car size={32} strokeWidth={1.4} />
+  if (placement === 'Storage + Packaging') return <Package size={32} strokeWidth={1.4} />
   return <Shirt size={34} strokeWidth={1.4} />
 }
 
@@ -127,6 +130,27 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
   const sizeOptions = chart.sizes
   const recommendedSize = (type: string) => chart.recommended[type] ?? chart.fallbackSize
   const [placement, setPlacement] = useState(chart.defaultPlacement)
+  /** Item tapped in the step 3 item picker; new uploads start at its size. */
+  const [pickedSize, setPickedSize] = useState<string | null>(null)
+  const startSize = pickedSize ?? recommendedSize(placement)
+  const choosePlacement = (next: string) => {
+    setPlacement(next)
+    setPickedSize(null)
+  }
+  /** First guide number of a card: items are numbered across the cards in order. */
+  const guideNumberStart = (place: string) =>
+    1 + placements.slice(0, placements.indexOf(place)).reduce((sum, item) => sum + (item === 'Custom' ? 0 : (sizeOptions[item]?.length ?? 0)), 0)
+  /** Size menu for a design row: the card's own sizes, then the standard sizes when the chart has them. */
+  const sizeMenu = (place: string) => {
+    const own = (sizeOptions[place] ?? sizeOptions.default).map((option) => <option key={option}>{option}</option>)
+    if (!chart.standardSizes || place === 'Custom') return own
+    return (
+      <>
+        <optgroup label={place}>{own}</optgroup>
+        <optgroup label="Standard decal sizes">{chart.standardSizes.map((option) => <option key={`standard-${option}`}>{option}</option>)}</optgroup>
+      </>
+    )
+  }
   const [dragging, setDragging] = useState(false)
   const [built, setBuilt] = useState(false)
   const [duplicateTargetId, setDuplicateTargetId] = useState<number | null>(null)
@@ -254,7 +278,7 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
         designNumber: 0,
         name: item.sourceFile.name,
         placement,
-        size: recommendedSize(placement),
+        size: startSize,
         customWidth: '',
         customHeight: '',
         quantity: 1,
@@ -1004,7 +1028,7 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
                   key={item}
                   type="button"
                   className={placement === item ? 'active' : undefined}
-                  onClick={() => setPlacement(item)}
+                  onClick={() => choosePlacement(item)}
                 >
                   {item}
                 </button>
@@ -1059,13 +1083,43 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
         <div id="step-3" className="guide-block">
           <GuideHeading number={3} title="What are you printing?" hint={chart.pickHint} />
         </div>
-        <div className="placement-grid">{placements.map((item) => <button key={item} className={`placement-card ${placement === item ? 'selected' : ''}`} onClick={() => setPlacement(item)}><span className="icon-guide-trigger" role="button" tabIndex={0} aria-label={`Show recommended sizes for ${item}`} onClick={(event) => { event.stopPropagation(); setSizeGuidePlacement(item) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); setSizeGuidePlacement(item) } }}><PlacementIcon placement={item} /></span><span>{item}</span>{item === chart.popular && <em>POPULAR</em>}</button>)}</div>
+        <div className="placement-grid">{placements.map((item) => <button key={item} className={`placement-card ${placement === item ? 'selected' : ''}`} onClick={() => choosePlacement(item)}><span className="icon-guide-trigger" role="button" tabIndex={0} aria-label={`Show recommended sizes for ${item}`} onClick={(event) => { event.stopPropagation(); setSizeGuidePlacement(item) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); setSizeGuidePlacement(item) } }}><PlacementIcon placement={item} /></span><span>{item}</span>{item === chart.popular && <em>POPULAR</em>}</button>)}</div>
+        {chart.itemPicker && placement !== 'Custom' && (
+          <div className="item-picker" aria-live="polite">
+            <div className="item-picker-head">
+              <strong>{placement}: recommended decal sizes</strong>
+              <span>Numbers match the size guide at the top.</span>
+            </div>
+            <div className="item-picker-grid">
+              {(sizeOptions[placement] ?? []).map((option, index) => {
+                const [name, measure] = option.includes(' · ') ? option.split(' · ') : [option, '']
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`item-picker-item${startSize === option ? ' selected' : ''}`}
+                    aria-pressed={startSize === option}
+                    onClick={() => setPickedSize(option)}
+                  >
+                    <b>{guideNumberStart(placement) + index}</b>
+                    <span>{name}</span>
+                    <em>{measure}</em>
+                  </button>
+                )
+              })}
+            </div>
+            <p className="item-picker-note">New uploads start at <strong>{startSize}</strong>. Change any design&apos;s item or size in step 4.</p>
+          </div>
+        )}
+        {chart.itemPicker && placement === 'Custom' && (
+          <p className="item-picker-note">Custom: set the exact width and height on each design in step 4.</p>
+        )}
         <div id="step-4" className="guide-block design-heading">
           <GuideHeading number={4} title="Set sizes and edit" hint="Pick the print size and quantity. Click the picture if you need to crop, clean, or check quality." />
           <h2 className="design-count">Your designs ({designs.length})</h2>
         </div>
         {designs.length === 0 && <div className="empty-designs"><FileImage size={24} /><span>Your uploaded designs will appear here.</span></div>}
-        <div className="design-list" ref={designListRef}>{designs.map((design) => <div className="design-row" key={design.id}><div className="drag-handle">⋮<br />⋮</div><button type="button" className={`thumb ${design.previewUrl ? 'has-art' : design.color}`} disabled={!design.previewUrl} onClick={() => design.previewUrl && setInspectId(design.id)} aria-label={`Inspect ${design.name}`}>{design.previewUrl ? <img src={design.previewUrl} alt="" /> : <><ImageIcon size={24} /><small>ARTWORK</small></>}<span className="thumb-status">Click to inspect</span></button><div className="design-name"><strong>{design.name}</strong>{(() => { const dpi = printDpi(design.pixelWidth, getDesignWidth(design)); const quality = qualityFromDpi(dpi); return <span className={quality.tone === 'good' ? 'quality' : quality.tone === 'poor' ? 'quality-warn' : 'transparent'}>{quality.tone === 'good' ? <Check size={13} /> : null}{dpi ? `${dpi} DPI · ${quality.label}` : 'Click art to check quality'}</span> })()}{design.enhanced && <span className="quality">Upscaled</span>}<button type="button" className="compare-link" disabled={!design.previewUrl} onClick={() => setInspectId(design.id)}>View large · Upscale</button></div><label className="object-type">What are you printing?<select aria-label={`What are you printing for ${design.name}`} value={design.placement} onChange={(e) => { const nextPlacement = e.target.value; updateDesign(design.id, { placement: nextPlacement, size: nextPlacement === 'Custom' ? '0 × 0 in' : (sizeOptions[nextPlacement as keyof typeof sizeOptions] ?? sizeOptions.default)[0], customWidth: nextPlacement === 'Custom' ? '' : design.customWidth, customHeight: nextPlacement === 'Custom' ? '' : design.customHeight }) }}>{placements.map((option) => <option key={option}>{option}</option>)}</select></label>{design.placement === 'Custom' ? <div className="custom-dimensions"><span>Custom image size (max {product.widthIn} in wide × 199 in high)</span><div><label>Width (in)<input aria-label={`Custom width for ${design.name}`} type="number" min="0.25" max={product.widthIn} step="0.25" placeholder="Width" value={design.customWidth} onChange={(e) => { const width = Math.min(product.widthIn, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(width); updateDesign(design.id, { customWidth: value, size: `${value || '0'} × ${design.customHeight || '0'} in` }) }} /></label><label>Height (in)<input aria-label={`Custom height for ${design.name}`} type="number" min="0.25" max="199" step="0.25" placeholder="Height" value={design.customHeight} onChange={(e) => { const height = Math.min(199, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(height); updateDesign(design.id, { customHeight: value, size: `${design.customWidth || '0'} × ${value || '0'} in` }) }} /></label></div></div> : <label>Size<select aria-label={`Print size for ${design.name}`} value={design.size} onChange={(e) => updateDesign(design.id, { size: e.target.value })}>{(sizeOptions[design.placement as keyof typeof sizeOptions] ?? sizeOptions.default).map((option) => <option key={option}>{option}</option>)}</select></label>}{ppEnabled && (ppDemand.get(design.id) ?? 0) > 0 ? <label>Quantity<div className="number-input"><input aria-label={`Quantity for ${design.name} (set by Print & Press)`} type="number" value={designQuantity(design)} readOnly disabled /></div><span className="pp-locked">Set by Print &amp; Press garments</span></label> : <label>Quantity<div className="number-input"><button aria-label="Decrease design quantity" onClick={() => updateDesign(design.id, { quantity: Math.max(1, design.quantity - 1) })}><Minus size={13} /></button><input aria-label={`Quantity for ${design.name}`} type="number" min="1" step="1" value={design.quantity} onChange={(event) => updateDesign(design.id, { quantity: Math.max(1, Math.floor(Number(event.target.value) || 1)) })} /><button aria-label="Increase design quantity" onClick={() => updateDesign(design.id, { quantity: design.quantity + 1 })}><Plus size={13} /></button></div></label>}<div className="design-actions-stack"><button type="button" className="row-action" title="Replace artwork" aria-label={`Replace artwork for ${design.name}`} onClick={() => startReplace(design.id)}><Replace size={15} /></button><button type="button" className="row-action" title="Duplicate this design" aria-label={`Duplicate ${design.name}`} onClick={() => setDuplicateTargetId(design.id)}><Copy size={15} /></button><button type="button" className={`row-action${design.keepUpright ? " upright" : ""}`} aria-pressed={design.keepUpright} title={design.keepUpright ? "Keep this design upright" : "Allow turning to fit more across"} aria-label={design.keepUpright ? `Keep ${design.name} upright` : `Allow turning ${design.name}`} onClick={() => updateDesign(design.id, { keepUpright: !design.keepUpright })}><RotateCw size={15} /></button><button type="button" className="row-action danger" title="Remove design" aria-label={`Remove ${design.name}`} onClick={() => removeDesign(design.id)}><Trash2 size={15} /></button></div></div>)}</div>
+        <div className="design-list" ref={designListRef}>{designs.map((design) => <div className="design-row" key={design.id}><div className="drag-handle">⋮<br />⋮</div><button type="button" className={`thumb ${design.previewUrl ? 'has-art' : design.color}`} disabled={!design.previewUrl} onClick={() => design.previewUrl && setInspectId(design.id)} aria-label={`Inspect ${design.name}`}>{design.previewUrl ? <img src={design.previewUrl} alt="" /> : <><ImageIcon size={24} /><small>ARTWORK</small></>}<span className="thumb-status">Click to inspect</span></button><div className="design-name"><strong>{design.name}</strong>{(() => { const dpi = printDpi(design.pixelWidth, getDesignWidth(design)); const quality = qualityFromDpi(dpi); return <span className={quality.tone === 'good' ? 'quality' : quality.tone === 'poor' ? 'quality-warn' : 'transparent'}>{quality.tone === 'good' ? <Check size={13} /> : null}{dpi ? `${dpi} DPI · ${quality.label}` : 'Click art to check quality'}</span> })()}{design.enhanced && <span className="quality">Upscaled</span>}<button type="button" className="compare-link" disabled={!design.previewUrl} onClick={() => setInspectId(design.id)}>View large · Upscale</button></div><label className="object-type">What are you printing?<select aria-label={`What are you printing for ${design.name}`} value={design.placement} onChange={(e) => { const nextPlacement = e.target.value; updateDesign(design.id, { placement: nextPlacement, size: nextPlacement === 'Custom' ? '0 × 0 in' : (sizeOptions[nextPlacement as keyof typeof sizeOptions] ?? sizeOptions.default)[0], customWidth: nextPlacement === 'Custom' ? '' : design.customWidth, customHeight: nextPlacement === 'Custom' ? '' : design.customHeight }) }}>{placements.map((option) => <option key={option}>{option}</option>)}</select></label>{design.placement === 'Custom' ? <div className="custom-dimensions"><span>Custom image size (max {product.widthIn} in wide × 199 in high)</span><div><label>Width (in)<input aria-label={`Custom width for ${design.name}`} type="number" min="0.25" max={product.widthIn} step="0.25" placeholder="Width" value={design.customWidth} onChange={(e) => { const width = Math.min(product.widthIn, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(width); updateDesign(design.id, { customWidth: value, size: `${value || '0'} × ${design.customHeight || '0'} in` }) }} /></label><label>Height (in)<input aria-label={`Custom height for ${design.name}`} type="number" min="0.25" max="199" step="0.25" placeholder="Height" value={design.customHeight} onChange={(e) => { const height = Math.min(199, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(height); updateDesign(design.id, { customHeight: value, size: `${design.customWidth || '0'} × ${value || '0'} in` }) }} /></label></div></div> : <label>Size<select aria-label={`Print size for ${design.name}`} value={design.size} onChange={(e) => updateDesign(design.id, { size: e.target.value })}>{sizeMenu(design.placement)}</select></label>}{ppEnabled && (ppDemand.get(design.id) ?? 0) > 0 ? <label>Quantity<div className="number-input"><input aria-label={`Quantity for ${design.name} (set by Print & Press)`} type="number" value={designQuantity(design)} readOnly disabled /></div><span className="pp-locked">Set by Print &amp; Press garments</span></label> : <label>Quantity<div className="number-input"><button aria-label="Decrease design quantity" onClick={() => updateDesign(design.id, { quantity: Math.max(1, design.quantity - 1) })}><Minus size={13} /></button><input aria-label={`Quantity for ${design.name}`} type="number" min="1" step="1" value={design.quantity} onChange={(event) => updateDesign(design.id, { quantity: Math.max(1, Math.floor(Number(event.target.value) || 1)) })} /><button aria-label="Increase design quantity" onClick={() => updateDesign(design.id, { quantity: design.quantity + 1 })}><Plus size={13} /></button></div></label>}<div className="design-actions-stack"><button type="button" className="row-action" title="Replace artwork" aria-label={`Replace artwork for ${design.name}`} onClick={() => startReplace(design.id)}><Replace size={15} /></button><button type="button" className="row-action" title="Duplicate this design" aria-label={`Duplicate ${design.name}`} onClick={() => setDuplicateTargetId(design.id)}><Copy size={15} /></button><button type="button" className={`row-action${design.keepUpright ? " upright" : ""}`} aria-pressed={design.keepUpright} title={design.keepUpright ? "Keep this design upright" : "Allow turning to fit more across"} aria-label={design.keepUpright ? `Keep ${design.name} upright` : `Allow turning ${design.name}`} onClick={() => updateDesign(design.id, { keepUpright: !design.keepUpright })}><RotateCw size={15} /></button><button type="button" className="row-action danger" title="Remove design" aria-label={`Remove ${design.name}`} onClick={() => removeDesign(design.id)}><Trash2 size={15} /></button></div></div>)}</div>
         <div className="design-footer-actions"><button className="add-design" disabled={!customerName.trim()} onClick={() => { if (customerName.trim()) inputRef.current?.click() }}><Plus size={20} /> Add Another Design</button><button className="duplicate-design" disabled={designs.length === 0} onClick={duplicateLatestDesign}><Copy size={18} /> Duplicate Design</button></div>
         {product.printPress && <PrintPressPanel
           enabled={ppEnabled}
