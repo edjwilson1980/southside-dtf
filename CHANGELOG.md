@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.9.0] — 2026-10-31
+
+### Added
+- **Customer UV DTF sticker maker at `/stickers`.** Always store mode — no Reopen Job, Save to
+  Photoshop, Connect Drive, Save Job, top menu or `/shop` links, and it never opens saved jobs
+  from the URL. `/embed/stickers` (WordPress shortcode `mode="stickers"`) now loads `/stickers`
+  instead of `/shop/sticker-maker?embed=1`. Staff keep `/shop/sticker-maker`.
+
+### Changed
+- UV DTF with **Cut** on prints at **21.75 in** wide (stickers and registration marks), leaving
+  margin on the 22 in paper. No Cut stays 22 in.
+
+### Fixed
+- Registration marks follow the sheet width. On UV DTF they used the 22.3 in DTF spacing and
+  printed out to ~22.29 in, past the 22 in paper. DTF gang sheets (22.3 in) are unchanged.
+
 ## [2.8.0] — 2026-10-21
 
 ### Added
