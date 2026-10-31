@@ -109,9 +109,14 @@ function markYs(sheetHeightIn: number) {
   return Array.from({ length: steps + 1 }, (_, index) => first + index * pitch)
 }
 
+/**
+ * Circles sit MARK_EDGE_IN in from both edges of the sheet actually printed, so
+ * narrower media (UV DTF 22 / 21.75 in) never puts a mark past its edge. At
+ * SHEET_WIDTH_IN this is exactly MARK_GAP_X_IN.
+ */
 function markXs(sheetWidthIn: number) {
-  const left = Math.max(0, (sheetWidthIn - MARK_GAP_X_IN - MARK_SIZE_IN) / 2)
-  const right = left + MARK_GAP_X_IN
+  const left = MARK_EDGE_IN
+  const right = left + (sheetWidthIn - MARK_SIZE_IN - MARK_EDGE_IN * 2)
   return { left, right }
 }
 

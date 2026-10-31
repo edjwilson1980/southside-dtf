@@ -55,11 +55,16 @@ Shared code lives under `lib/` (compose, cut layout, sheet size, image tools).
   (`Customer Name.ssp.json`) and embeds design art so Reopen shows the images.
 - **Automatic project JSON** — Drive uploads create/update the project `.ssp.json` in the job folder.
 - **Add to Cart progress card** — blocking status card with steps, elapsed time and Drive upload % from the click until the store cart opens.
-- **Version footer** — current version (v2.8.0) shown at the bottom of every builder page.
+- **Version footer** — current version (v2.9.0) shown at the bottom of every builder page.
 - Spec: [`docs/GANGSHEET_ADDON_SPEC.md`](docs/GANGSHEET_ADDON_SPEC.md)
 
 ### Shop sticker routes (staff)
 
-- `/shop/sticker-maker` — UV DTF sticker builder (22 × 12 in min); vinyl is not in this app
-- `/embed/stickers` — the same sticker maker in store mode (`?embed=1`): staff bars hidden, no
-  local downloads, **Add to Cart** sends `printType: 'uv-dtf'` + `cutEnabled` to WooCommerce
+- `/shop/sticker-maker` — staff UV DTF sticker builder (22 × 12 in min; 21.75 in wide with Cut on); vinyl is not in this app
+
+### Customer sticker routes
+
+- `/stickers` — customer UV DTF sticker maker, always store mode: no staff bars, no top menu or
+  `/shop` links, no local downloads, never opens saved jobs. **Add to Cart** (inside the store
+  iframe) sends `printType: 'uv-dtf'` + `cutEnabled` to WooCommerce
+- `/embed/stickers` — redirects to `/stickers` (WordPress shortcode `mode="stickers"`)
