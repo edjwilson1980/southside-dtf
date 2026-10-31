@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const compose = readFileSync(join(root, 'lib/compose-sheet.ts'), 'utf8')
-const page = readFileSync(join(root, 'app/page.tsx'), 'utf8')
+const page = readFileSync(join(root, 'components/gang-sheet-builder.tsx'), 'utf8')
 const pages = readFileSync(join(root, 'lib/sheet-pages.ts'), 'utf8')
 
 const SHEET_GUTTER_IN = 0.125

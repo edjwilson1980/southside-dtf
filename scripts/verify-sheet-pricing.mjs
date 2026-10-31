@@ -3,15 +3,17 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const page = readFileSync(join(root, 'app/page.tsx'), 'utf8')
+const page = readFileSync(join(root, 'components/gang-sheet-builder.tsx'), 'utf8')
+const pricing = readFileSync(join(root, 'lib/sheet-pricing.ts'), 'utf8')
 
 const width = readFileSync(join(root, 'lib/sheet-size.ts'), 'utf8')
 const SHEET_WIDTH_IN = Number(width.match(/SHEET_WIDTH_IN = ([\d.]+)/)?.[1])
 const FILM_WIDTH_IN = Number(width.match(/FILM_WIDTH_IN = ([\d.]+)/)?.[1])
 
-const block = page.match(/const sheetOptions = \[([\s\S]*?)\n\]\.map/)
-if (!block) {
-  console.error('could not find sheetOptions in app/page.tsx')
+const block = pricing.match(/export const sheetOptions: SheetOption\[\] = \[([\s\S]*?)\n\]\.map/)
+const uvBlock = pricing.match(/export const uvDtfSheetOptions: SheetOption\[\] = \[([\s\S]*?)\n\]\.map/)
+if (!block || !uvBlock) {
+  console.error('could not find sheetOptions / uvDtfSheetOptions in lib/sheet-pricing.ts')
   process.exit(1)
 }
 
@@ -19,7 +21,7 @@ const sheetOptions = [...block[1].matchAll(/\{ length: (\d+), price: (\d+) \}/g)
   ([, length, price]) => ({ length: Number(length), label: `${SHEET_WIDTH_IN} × ${length} in`, price: Number(price) }),
 )
 
-/** Mirrors billedSheetLength in app/page.tsx. */
+/** Mirrors billedSheetLength in lib/sheet-pricing.ts. */
 function billedSheetLength(artLength) {
   const chargeable = Math.max(0, artLength - 1.5)
   const safeLength = Math.max(12, Math.ceil(chargeable - 1e-9))
@@ -41,6 +43,9 @@ function priceFor(artLength) {
 const checks = []
 
 checks.push([sheetOptions.length > 0, `sheetOptions parsed (${sheetOptions.length} tiers)`])
+const uvLadder = [...uvBlock[1].matchAll(/\{ length: (\d+), price: (\d+) \}/g)].map(([, length, price]) => `${length}:${price}`).join(' ')
+checks.push([uvLadder === '12:15 24:26 36:37 48:49 60:60 72:72 120:140 240:260', `UV DTF ladder is ${uvLadder}`])
+checks.push([/UV_DTF_WIDTH_IN = 22\r?\n/.test(pricing), 'UV DTF media is 22 in wide'])
 checks.push([SHEET_WIDTH_IN === 22.3, `printable width is ${SHEET_WIDTH_IN} in`])
 checks.push([FILM_WIDTH_IN === 24, `physical film is ${FILM_WIDTH_IN} in`])
 checks.push([SHEET_WIDTH_IN < FILM_WIDTH_IN, 'printable width sits inside the physical film'])
