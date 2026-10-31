@@ -15,6 +15,8 @@ import { composeGangSheet, piecePrintSize, ART_INSET_IN, type PlacedSheetPiece }
 import { paginateGangSheet, partLabel, type SheetPage } from '@/lib/sheet-pages'
 import { cuttingFeeEach } from '@/lib/sheet-pricing'
 import { maxSheetLengthIn, type GangSheetProduct } from '@/lib/gang-sheet-product'
+import { manualArtArea, manualSheetPage, validateManualLayout } from '@/lib/manual-layout'
+import { ManualSheetEditor, placedSize, type ManualPlacements, type ManualTransfer } from '@/components/manual-sheet-editor'
 import { type LayoutPiece } from '@/components/sheet-layout-overlay'
 import { BUILDER_VERSION } from '@/lib/version'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
@@ -103,16 +105,22 @@ function revokeUnusedUrls(urls: Array<string | null>, remaining: Design[]) {
   }
 }
 
-/** Customer gang sheet builder. `product` picks DTF (`/`) or UV DTF (`/uv-dtf`). */
-export function GangSheetBuilder({ product }: { product: GangSheetProduct }) {
+type BuilderLayout = 'auto' | 'manual'
+
+/**
+ * Customer gang sheet builder. `product` picks DTF (`/`) or UV DTF (`/uv-dtf`);
+ * `layout="manual"` (`/manual`) lets the customer place every transfer themselves.
+ */
+export function GangSheetBuilder({ product, layout = 'auto' }: { product: GangSheetProduct; layout?: BuilderLayout }) {
   return (
     <Suspense fallback={<main className="builder-shell"><p className="sublead">Loading builder…</p></main>}>
-      <HomeBuilder product={product} />
+      <HomeBuilder product={product} layout={layout} />
     </Suspense>
   )
 }
 
-function HomeBuilder({ product }: { product: GangSheetProduct }) {
+function HomeBuilder({ product, layout }: { product: GangSheetProduct; layout: BuilderLayout }) {
+  const manual = layout === 'manual'
   const searchParams = useSearchParams()
   const embedParam = isEmbedSearchParam(searchParams.get('embed'))
   const { embedded, addToCart, status: cartStatus, error: cartError, reportHeight } = useStoreBridge()
@@ -156,7 +164,11 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
   const [duplicateTargetId, setDuplicateTargetId] = useState<number | null>(null)
   const [replaceTargetId, setReplaceTargetId] = useState<number | null>(null)
   const [sizeGuidePlacement, setSizeGuidePlacement] = useState<string | null>(null)
-  const [customerName, setCustomerName] = useState('')
+  // Manual mode keeps the name typed on the automatic builder (`/manual?name=`).
+  const [customerName, setCustomerName] = useState(() => (manual ? (searchParams.get('name') ?? '').slice(0, 80) : ''))
+  /** Manual mode: where each transfer sits, and how much sheet the customer is working on. */
+  const [manualPlacements, setManualPlacements] = useState<ManualPlacements>({})
+  const [workingLengthIn, setWorkingLengthIn] = useState(() => product.ladder.find((option) => option.length >= 24)?.length ?? product.ladder[0].length)
   const [inspectId, setInspectId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -381,12 +393,89 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
    * Pack onto as many max-length sheets as the job needs. Every sheet is its own
    * print file, cut file, and cart line (200 + 200 + 100 for 500 in of DTF art).
    */
-  const pagination = paginateGangSheet(pieceInputs, {
-    cutOut: cutOutActive,
-    sheetWidthIn,
-    ladder: product.ladder,
-    labelWidthIn: product.widthIn,
+  // Manual mode: one transfer per printed copy, placed by the customer on one sheet.
+  const manualTransfers: ManualTransfer[] = manual
+    ? designs.flatMap((design) => {
+        const size = getDesignSize(design)
+        return Array.from({ length: designQuantity(design) }, (_, copy) => ({
+          key: `${design.id}:${copy}`,
+          designId: design.id,
+          designNumber: design.designNumber,
+          name: design.name,
+          previewUrl: design.previewUrl,
+          widthIn: size.widthIn,
+          heightIn: size.heightIn,
+        }))
+      })
+    : []
+  const manualArea = manualArtArea({ workingLengthIn, cutOut: cutOutActive, sheetWidthIn })
+  const manualPlaced = manualTransfers.filter((transfer) => manualPlacements[transfer.key])
+  const manualPieces = manualPlaced.map((transfer) => {
+    const placement = manualPlacements[transfer.key]
+    return {
+      previewUrl: transfer.previewUrl,
+      ...placedSize(transfer, placement),
+      xIn: placement.xIn,
+      yIn: placement.yIn,
+      rotated: placement.rotated,
+      allowRotate: true,
+      designId: transfer.designId,
+    }
   })
+  const manualProblemList = manual ? validateManualLayout(manualPieces, manualArea, cutOutActive) : []
+  const manualProblems: Record<string, string> = {}
+  for (const problem of manualProblemList) {
+    const transfer = manualPlaced[problem.index]
+    const label = `#${transfer.designNumber} ${transfer.name}`
+    if (manualProblems[transfer.key]) continue
+    if (problem.kind === 'outside') manualProblems[transfer.key] = `${label} crosses the edge of the printable area.`
+    else if (problem.kind === 'too-tall') manualProblems[transfer.key] = `${label} is too tall to pre-cut in one pass (20 in max).`
+    else {
+      const other = manualPlaced[problem.other]
+      const otherLabel = `#${other.designNumber} ${other.name}`
+      manualProblems[transfer.key] = problem.kind === 'overlap'
+        ? `${label} overlaps ${otherLabel}.`
+        : cutOutActive
+          ? `${label} is too close to ${otherLabel}: their cut lines would touch.`
+          : `${label} is too close to ${otherLabel}: leave at least ⅛ in.`
+    }
+  }
+  const manualUnplacedCount = manualTransfers.length - manualPlaced.length
+  /** Why a manual sheet cannot go to the cart yet, or null when it can. */
+  const manualBlocker = !manual || manualTransfers.length === 0
+    ? null
+    : manualUnplacedCount > 0
+      ? `Place every transfer on the sheet first: ${manualUnplacedCount} still in the tray.`
+      : manualProblemList.length > 0
+        ? 'Fix the designs marked in red on your sheet first.'
+        : null
+  const manualPage = manual
+    ? manualSheetPage(manualPieces, {
+        workingLengthIn,
+        cutOut: cutOutActive,
+        sheetWidthIn,
+        ladder: product.ladder,
+        labelWidthIn: product.widthIn,
+      })
+    : null
+  const pagination = manualPage
+    ? {
+        pages: manualPieces.length ? [manualPage] : [],
+        tooLarge: [] as typeof pieceInputs,
+        sheetCount: 1,
+        billedLength: manualPage.billedLength,
+        price: manualPage.price,
+        breakdown: manualPage.label,
+        partLabels: ['1 of 1'],
+        rotatedCount: 0,
+        filmSavedIn: 0,
+      }
+    : paginateGangSheet(pieceInputs, {
+        cutOut: cutOutActive,
+        sheetWidthIn,
+        ladder: product.ladder,
+        labelWidthIn: product.widthIn,
+      })
   const pages = pagination.pages
   const sheetCount = pagination.sheetCount
   const activePage = pages[Math.min(previewPage, Math.max(0, pages.length - 1))]
@@ -415,7 +504,7 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
     design.id, designQuantity(design), design.size, design.placement, design.keepUpright,
     design.customWidth, design.customHeight, design.previewUrl,
     design.pixelWidth, design.pixelHeight,
-  ].join(':')).join('|') + `|cut:${cutOutActive ? '1' : '0'}`
+  ].join(':')).join('|') + `|cut:${cutOutActive ? '1' : '0'}` + (manual ? `|manual:${workingLengthIn}:${JSON.stringify(manualPlacements)}` : '')
   const designFingerprint = designs.map((design) => [
     design.id, designQuantity(design), design.size, design.placement,
     design.customWidth, design.customHeight, design.previewUrl,
@@ -633,6 +722,7 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
         throw new Error(`${tooLargeCount} design${tooLargeCount === 1 ? ' is' : 's are'} too large for a ${product.widthIn} × ${maxSheetIn} in sheet. Shrink it to continue.`)
       }
       if (ppProblem) throw new Error(ppProblem)
+      if (manualBlocker) throw new Error(manualBlocker)
       const stamp = jobStamp || sheetStamp()
       const who = customerName.trim()
       const cartSlug = slugify(who)
@@ -882,6 +972,7 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
             ...(ppSummary ? { printPress: ppSummary } : {}),
           },
           cut: { enabled: cutOutActive },
+          ...(manual ? { layout: 'manual' } : {}),
           fromUpload: true,
           images: imagesFromUploadedArt(artInputs, artPlan, drive.files),
         })
@@ -946,8 +1037,14 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
       setSheetPreviewOpen(false)
       return
     }
+    if (manualBlocker) {
+      setSaveError(manualBlocker)
+      setSheetPreviewOpen(false)
+      return
+    }
     // Print & Press is already pre-cut (included), so there is nothing to offer.
-    if (!cutOutActive && offeredCutFee > 0 && precutOfferDeclinedFor !== designFingerprint) {
+    // Manual sheets skip the offer: turning pre-cut on changes the spacing they arranged.
+    if (!manual && !cutOutActive && offeredCutFee > 0 && precutOfferDeclinedFor !== designFingerprint) {
       setPrecutOfferOpen(true)
       return
     }
@@ -987,13 +1084,13 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
   return <main ref={shellRef} className={`builder-shell${embed ? ' embed-mode' : ''}`}>
     {embed ? (
       <div className="embed-bar">
-        <strong>{product.embedTitle}</strong>
+        <strong>{manual ? 'Arrange your own gang sheet' : product.embedTitle}</strong>
       </div>
     ) : (
       <div className="builder-topbar">
         <img src={logoUrl} alt="South Side DTF" className="brand-logo" />
         <div className="title-block">
-          <h1>{product.title}</h1>
+          <h1>{manual ? 'Arrange My Own Gangsheet' : product.title}</h1>
           <p className="lead">No gang sheet experience needed.</p>
           <p className="sublead">Follow the numbered steps. We pack and size your designs for South Side DTF.</p>
         </div>
@@ -1058,6 +1155,19 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
         <div id="step-1" className="guide-block">
           <GuideHeading number={1} title="Your name" hint="Enter your name before you upload anything. We use it to label your sheet." />
           <label className="customer-name-field workspace-customer-name">Your name <span className="required-field">Required</span><input required type="text" maxLength={80} placeholder="Enter your name before uploading" value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></label>
+          {/* Switch between the automatic builder and manual mode, keeping the name (and store mode). */}
+          {!manual && customerName.trim() && product.printType === 'dtf' && (
+            <div className="layout-switch">
+              <span>Think you can lay out a better sheet? <small>Place every design yourself.</small></span>
+              <a href={`/manual?${embed ? 'embed=1&' : ''}name=${encodeURIComponent(customerName.trim())}`}>Switch to manual mode →</a>
+            </div>
+          )}
+          {manual && (
+            <div className="layout-switch">
+              <span>Manual mode: you place every transfer. <small>Rather have us arrange it?</small></span>
+              <a href={`/?${embed ? 'embed=1&' : ''}${customerName.trim() ? `name=${encodeURIComponent(customerName.trim())}` : ''}`}>← Back to automatic</a>
+            </div>
+          )}
         </div>
         <div id="step-2" className="guide-block">
           <GuideHeading number={2} title="Upload your design" hint="Drop a PNG, JPG, PDF, or SVG here, or click to choose a file from your computer." />
@@ -1121,7 +1231,33 @@ function HomeBuilder({ product }: { product: GangSheetProduct }) {
         {designs.length === 0 && <div className="empty-designs"><FileImage size={24} /><span>Your uploaded designs will appear here.</span></div>}
         <div className="design-list" ref={designListRef}>{designs.map((design) => <div className="design-row" key={design.id}><div className="drag-handle">⋮<br />⋮</div><button type="button" className={`thumb ${design.previewUrl ? 'has-art' : design.color}`} disabled={!design.previewUrl} onClick={() => design.previewUrl && setInspectId(design.id)} aria-label={`Inspect ${design.name}`}>{design.previewUrl ? <img src={design.previewUrl} alt="" /> : <><ImageIcon size={24} /><small>ARTWORK</small></>}<span className="thumb-status">Click to inspect</span></button><div className="design-name"><strong>{design.name}</strong>{(() => { const dpi = printDpi(design.pixelWidth, getDesignWidth(design)); const quality = qualityFromDpi(dpi); return <span className={quality.tone === 'good' ? 'quality' : quality.tone === 'poor' ? 'quality-warn' : 'transparent'}>{quality.tone === 'good' ? <Check size={13} /> : null}{dpi ? `${dpi} DPI · ${quality.label}` : 'Click art to check quality'}</span> })()}{design.enhanced && <span className="quality">Upscaled</span>}<button type="button" className="compare-link" disabled={!design.previewUrl} onClick={() => setInspectId(design.id)}>View large · Upscale</button></div><label className="object-type">What are you printing?<select aria-label={`What are you printing for ${design.name}`} value={design.placement} onChange={(e) => { const nextPlacement = e.target.value; updateDesign(design.id, { placement: nextPlacement, size: nextPlacement === 'Custom' ? '0 × 0 in' : (sizeOptions[nextPlacement as keyof typeof sizeOptions] ?? sizeOptions.default)[0], customWidth: nextPlacement === 'Custom' ? '' : design.customWidth, customHeight: nextPlacement === 'Custom' ? '' : design.customHeight }) }}>{placements.map((option) => <option key={option}>{option}</option>)}</select></label>{design.placement === 'Custom' ? <div className="custom-dimensions"><span>Custom image size (max {product.widthIn} in wide × 199 in high)</span><div><label>Width (in)<input aria-label={`Custom width for ${design.name}`} type="number" min="0.25" max={product.widthIn} step="0.25" placeholder="Width" value={design.customWidth} onChange={(e) => { const width = Math.min(product.widthIn, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(width); updateDesign(design.id, { customWidth: value, size: `${value || '0'} × ${design.customHeight || '0'} in` }) }} /></label><label>Height (in)<input aria-label={`Custom height for ${design.name}`} type="number" min="0.25" max="199" step="0.25" placeholder="Height" value={design.customHeight} onChange={(e) => { const height = Math.min(199, Math.max(0, Number(e.target.value) || 0)); const value = e.target.value === '' ? '' : String(height); updateDesign(design.id, { customHeight: value, size: `${design.customWidth || '0'} × ${value || '0'} in` }) }} /></label></div></div> : <label>Size<select aria-label={`Print size for ${design.name}`} value={design.size} onChange={(e) => updateDesign(design.id, { size: e.target.value })}>{sizeMenu(design.placement)}</select></label>}{ppEnabled && (ppDemand.get(design.id) ?? 0) > 0 ? <label>Quantity<div className="number-input"><input aria-label={`Quantity for ${design.name} (set by Print & Press)`} type="number" value={designQuantity(design)} readOnly disabled /></div><span className="pp-locked">Set by Print &amp; Press garments</span></label> : <label>Quantity<div className="number-input"><button aria-label="Decrease design quantity" onClick={() => updateDesign(design.id, { quantity: Math.max(1, design.quantity - 1) })}><Minus size={13} /></button><input aria-label={`Quantity for ${design.name}`} type="number" min="1" step="1" value={design.quantity} onChange={(event) => updateDesign(design.id, { quantity: Math.max(1, Math.floor(Number(event.target.value) || 1)) })} /><button aria-label="Increase design quantity" onClick={() => updateDesign(design.id, { quantity: design.quantity + 1 })}><Plus size={13} /></button></div></label>}<div className="design-actions-stack"><button type="button" className="row-action" title="Replace artwork" aria-label={`Replace artwork for ${design.name}`} onClick={() => startReplace(design.id)}><Replace size={15} /></button><button type="button" className="row-action" title="Duplicate this design" aria-label={`Duplicate ${design.name}`} onClick={() => setDuplicateTargetId(design.id)}><Copy size={15} /></button><button type="button" className={`row-action${design.keepUpright ? " upright" : ""}`} aria-pressed={design.keepUpright} title={design.keepUpright ? "Keep this design upright" : "Allow turning to fit more across"} aria-label={design.keepUpright ? `Keep ${design.name} upright` : `Allow turning ${design.name}`} onClick={() => updateDesign(design.id, { keepUpright: !design.keepUpright })}><RotateCw size={15} /></button><button type="button" className="row-action danger" title="Remove design" aria-label={`Remove ${design.name}`} onClick={() => removeDesign(design.id)}><Trash2 size={15} /></button></div></div>)}</div>
         <div className="design-footer-actions"><button className="add-design" disabled={!customerName.trim()} onClick={() => { if (customerName.trim()) inputRef.current?.click() }}><Plus size={20} /> Add Another Design</button><button className="duplicate-design" disabled={designs.length === 0} onClick={duplicateLatestDesign}><Copy size={18} /> Duplicate Design</button></div>
-        {product.printPress && <PrintPressPanel
+        {manual && (
+          <div id="arrange" className="guide-block manual-block">
+            <GuideHeading
+              number={4}
+              title="Arrange your sheet"
+              hint="Drag each transfer from the tray onto the sheet. Nothing can overlap or cross the grey no-print areas."
+            />
+            {manualTransfers.length === 0 ? (
+              <div className="empty-designs"><FileImage size={24} /><span>Upload a design and set its size and quantity. Its transfers will appear here to place.</span></div>
+            ) : (
+              <ManualSheetEditor
+                transfers={manualTransfers}
+                placements={manualPlacements}
+                onPlacementsChange={setManualPlacements}
+                area={manualArea}
+                sheetWidthIn={sheetWidthIn}
+                cutOut={cutOutActive}
+                problems={manualProblems}
+                ladder={product.ladder}
+                workingLengthIn={workingLengthIn}
+                onWorkingLengthChange={setWorkingLengthIn}
+                labelWidthIn={product.widthIn}
+              />
+            )}
+          </div>
+        )}
+        {product.printPress && !manual && <PrintPressPanel
           enabled={ppEnabled}
           onToggle={(next) => { setPpEnabled(next); setSaveError(null) }}
           namesOn={ppNamesOn}

@@ -2172,3 +2172,55 @@ html, body {
 .item-picker-note { margin: 12px 0 0; color: #0f6b36; font-size: 13px; font-weight: 600; }
 .item-picker .item-picker-note { margin: 0; }
 @media (max-width: 700px) { .item-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .item-picker { padding: 11px; } }
+
+/* Automatic ⇄ manual builder switch, under the name field. */
+.layout-switch { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin: -4px 0 16px; padding: 11px 14px; border: 1.5px dashed var(--chicago-blue); border-radius: 9px; background: var(--pale-blue); color: #344054; font-size: 14px; }
+.layout-switch small { color: var(--muted); font-size: 14px; }
+.layout-switch a { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 7px; background: var(--chicago-blue); color: #fff; font-weight: 800; text-decoration: none; }
+.layout-switch a:hover { background: #008db8; }
+.layout-switch a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* Manual mode: drag-and-place editor. */
+.manual-block { margin-top: 26px; }
+.manual-editor { display: grid; gap: 12px; margin-top: 10px; }
+.manual-controls { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.manual-length { display: grid; gap: 5px; color: #344054; font-size: 12px; font-weight: 700; }
+.manual-length select { height: 40px; padding: 0 10px; border: 1px solid var(--input); border-radius: 7px; background: #fff; color: var(--ink); font: inherit; font-weight: 600; }
+.manual-length small { color: var(--muted); font-weight: 500; }
+.manual-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.manual-tools button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 7px; background: #fff; color: #344054; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.manual-tools button:first-child { border-color: var(--chicago-blue); background: var(--chicago-blue); color: #fff; }
+.manual-tools button:hover:not(:disabled) { border-color: var(--chicago-blue); }
+.manual-tools button:disabled { opacity: .45; cursor: not-allowed; }
+.manual-tray { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; padding: 10px; border: 1px dashed var(--border); border-radius: 9px; background: #fafbfc; }
+.manual-tray-done { grid-column: 1 / -1; color: #0f6b36; font-size: 13px; font-weight: 700; }
+.manual-tile { display: grid; justify-items: center; gap: 3px; padding: 8px 6px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--ink); font: inherit; font-size: 11px; text-align: center; cursor: grab; touch-action: none; user-select: none; }
+.manual-tile:hover { border-color: var(--chicago-blue); }
+.manual-tile:focus-visible { outline: 2px solid var(--chicago-blue); outline-offset: 2px; }
+.manual-tile-art { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 6px; background: repeating-conic-gradient(#e7ebef 0% 25%, #fff 0% 50%) 0 0 / 10px 10px; }
+.manual-tile-art img { max-width: 100%; max-height: 100%; object-fit: contain; pointer-events: none; }
+.manual-tile strong { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.manual-tile span { color: var(--muted); }
+.manual-help { margin: 0; color: var(--muted); font-size: 12px; }
+.manual-problems { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.manual-problems li { padding: 7px 10px; border-radius: 7px; background: #fff1f2; color: var(--chicago-red); font-size: 12px; font-weight: 700; }
+.manual-sheet-wrap { max-height: 78vh; overflow: auto; padding: 1px; border-radius: 8px; }
+.manual-sheet { position: relative; margin: 0 auto; border: 1px solid #c9d1da; background: #fff; box-shadow: 0 2px 10px rgb(24 35 53 / 8%); touch-action: none; user-select: none; }
+.manual-zone { position: absolute; left: 0; right: 0; display: grid; place-items: center; background: #eef2f6; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.manual-side { position: absolute; top: 0; bottom: 0; background: #eef2f6; }
+.manual-ruler { position: absolute; left: 3px; transform: translateY(-50%); color: #8a96a6; font-size: 9px; font-variant-numeric: tabular-nums; pointer-events: none; }
+.manual-piece { position: absolute; display: grid; place-items: center; overflow: hidden; outline: 1px solid #9aa8b5; background: repeating-conic-gradient(#eef1f4 0% 25%, #fff 0% 50%) 0 0 / 8px 8px; cursor: grab; touch-action: none; }
+.manual-piece img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.manual-piece span { color: #344054; font-size: 10px; font-weight: 800; }
+.manual-piece.selected { outline: 2px solid var(--chicago-blue); z-index: 2; }
+.manual-piece.problem { outline: 3px solid var(--chicago-red); z-index: 2; }
+.manual-piece.dragging { cursor: grabbing; opacity: .85; z-index: 4; }
+.manual-piece:focus-visible { outline: 3px solid var(--chicago-blue); }
+.manual-legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0; color: var(--muted); font-size: 11px; }
+.manual-legend i { display: inline-block; width: 12px; height: 12px; margin-right: 4px; vertical-align: -2px; border-radius: 2px; }
+.manual-legend i.zone { background: #eef2f6; border: 1px solid #d5dce4; }
+.manual-legend i.cut { border: 1px dashed var(--chicago-red); }
+.manual-legend i.problem { border: 2px solid var(--chicago-red); }
+@media (max-width: 700px) { .manual-tray { grid-template-columns: repeat(2, minmax(0, 1fr)); } .manual-controls { align-items: stretch; } .manual-tools button { flex: 1 1 auto; justify-content: center; } }
+.manual-status { margin: 0; height: 34px; overflow: hidden; padding: 0 10px; border-radius: 7px; background: #f3fbf5; color: #0f6b36; font-size: 12px; font-weight: 700; line-height: 34px; white-space: nowrap; text-overflow: ellipsis; }
+.manual-status.has-problems { background: #fff1f2; color: var(--chicago-red); }

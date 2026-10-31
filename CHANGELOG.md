@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.13.0] — 2026-10-31
+
+### Added
+- **Manual DTF builder at `/manual`** ("Arrange My Own Gangsheet", store embed `/embed/manual`).
+  Same name, upload and size steps as `/`. The customer then drags every transfer from a tray onto
+  a to-scale 22.3 in sheet: ⅛ in snap, arrow-key nudge, Rotate 90°, Remove, Auto-arrange the rest
+  (the packer, below what is placed), and Clear. Live checks flag overlaps, designs too close
+  (cut lines touching with Pre-cut on, ⅛ in without), art in the label strip, cut-mark columns or
+  past the working length, and designs too tall for one cutter pass. Add to Cart is blocked until
+  every transfer is placed and nothing is flagged. Pre-cut works at the same rates. One sheet,
+  billed like `/` by how far down the art reaches. No Print & Press in manual mode.
+- `/` shows a **Switch to manual mode** link under the name field once a name is typed. The name
+  carries over (`/manual?name=`). Manual mode links back.
+- `lib/manual-layout.ts` (area, rules, auto-arrange, `manualSheetPage`) feeds the existing compose,
+  PLT, Drive and cart code unchanged. Checks: `scripts/verify-manual-layout.mjs`.
+
 ## [2.12.0] — 2026-10-31
 
 ### Changed

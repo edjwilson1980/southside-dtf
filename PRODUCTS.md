@@ -17,6 +17,13 @@ These are **separate products** that share print/packing libraries. Do not mix t
   - UV DTF lines go to the **UV DTF product** (Settings → Gang Sheet Builder, or auto-detected via `pa_print_type = uv-dtf`) and carry `Print type` + `Cut: Square Cut 2.5 mm / No` meta. Pre-cut adds the same per-transfer companion line as DTF
 - **Print & Press** add-on (customer supplies garments, we press): garment lines (Front / Left chest logo / Back / Front + Back / Left chest logo + Back) set the design quantities, every transfer is pre-cut (fee waived), a press sheet PDF goes to Drive with the PNGs/PLTs, and the plugin adds one **Print & Press labor** cart fee recomputed server-side (ladder $10 / $5 / $3 / $2 / $1.50 per garment for 1–10 / 11–20 / 21–50 / 51–99 / 100+, second side +$2 / +$1.50 / +$1.25 / +$1 / +$0.75, +$0.50 per personalized garment)
 
+## Customer manual builder (`/manual`)
+
+- "Arrange My Own Gangsheet": the same builder (`layout="manual"`) where the customer places every transfer on one DTF sheet. Linked from step 1 of `/` once a name is typed (the name carries over)
+- Rules, auto-arrange and the sheet page live in `lib/manual-layout.ts`. The editor is `components/manual-sheet-editor.tsx`
+- Billed like `/`: by how far down the art reaches, snapped up to the ladder. Pre-cut at the same rates. No Print & Press. Cart line is `sheetType: 'built'` (no plugin change); the project JSON records `layout: 'manual'`
+- `/embed/manual` → `/manual?embed=1`
+
 ## Customer UV DTF builder (`/uv-dtf`)
 
 - Same builder as `/` (`components/gang-sheet-builder.tsx`, product `UV_DTF_PRODUCT` in `lib/gang-sheet-product.ts`): 22 in media, title "Build My UV DTF Gangsheet"
@@ -64,7 +71,7 @@ Shared code lives under `lib/` (compose, cut layout, sheet size, image tools).
   (`Customer Name.ssp.json`) and embeds design art so Reopen shows the images.
 - **Automatic project JSON** — Drive uploads create/update the project `.ssp.json` in the job folder.
 - **Add to Cart progress card** — blocking status card with steps, elapsed time and Drive upload % from the click until the store cart opens.
-- **Version footer** — current version (v2.12.0) shown at the bottom of every builder page.
+- **Version footer** — current version (v2.13.0) shown at the bottom of every builder page.
 - Spec: [`docs/GANGSHEET_ADDON_SPEC.md`](docs/GANGSHEET_ADDON_SPEC.md)
 
 ### Shop sticker routes (staff)
