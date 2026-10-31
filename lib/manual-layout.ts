@@ -173,3 +173,65 @@ export function manualSheetPage<T extends PackItem & PlacedSheetPiece>(
     cutTooTall: opts.cutOut && pieces.some((piece) => piece.heightIn + CUT_MARGIN_IN * 2 > MARK_SECTION_IN),
   }
 }
+
+type Rect = { xIn: number; yIn: number; widthIn: number; heightIn: number }
+
+const fitsArea = (rect: Rect, area: ManualArtArea) =>
+  rect.xIn >= area.left - EPS && rect.yIn >= area.top - EPS &&
+  rect.xIn + rect.widthIn <= area.right + EPS && rect.yIn + rect.heightIn <= area.bottom + EPS
+
+/**
+ * Keep a piece inside the printable area (the black frame in the editor).
+ * `hit` is true when the requested spot had to be pulled back.
+ */
+export function clampToArea(rect: Rect, area: ManualArtArea) {
+  const xIn = Math.min(area.right - rect.widthIn, Math.max(area.left, rect.xIn))
+  const yIn = Math.min(area.bottom - rect.heightIn, Math.max(area.top, rect.yIn))
+  return { xIn, yIn, hit: Math.abs(xIn - rect.xIn) > EPS || Math.abs(yIn - rect.yIn) > EPS }
+}
+
+export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
+export const MIN_PIECE_IN = 0.5
+const RESIZE_STEP_IN = 1 / 8
+
+/**
+ * Scale a placed piece by `factor`, proportions locked. The handle decides what
+ * stays put: dragging a corner keeps the opposite corner, a side keeps the
+ * opposite side (centred along it). The width snaps to ⅛ in, the smaller side
+ * never drops under ½ in, and the piece is shrunk back until it fits the area.
+ * `start` is the placed rectangle at `startScale`.
+ */
+export function scaleWithin(start: Rect, startScale: number, factor: number, handle: ResizeHandle, area: ManualArtArea) {
+  const baseW = start.widthIn / startScale
+  const baseH = start.heightIn / startScale
+  const minW = MIN_PIECE_IN * Math.max(1, baseW / baseH)
+  const snapW = (value: number) => Math.round(value / RESIZE_STEP_IN) * RESIZE_STEP_IN
+  let widthIn = Math.max(minW, snapW(start.widthIn * Math.max(0, factor)))
+  let hit = false
+  const place = (w: number): Rect => {
+    const h = baseH * (w / baseW)
+    const fromRight = handle.includes('w')
+    const fromBottom = handle.includes('n')
+    const xIn = fromRight ? start.xIn + start.widthIn - w : handle === 'n' || handle === 's' ? start.xIn + (start.widthIn - w) / 2 : start.xIn
+    const yIn = fromBottom ? start.yIn + start.heightIn - h : handle === 'e' || handle === 'w' ? start.yIn + (start.heightIn - h) / 2 : start.yIn
+    return { xIn, yIn, widthIn: w, heightIn: h }
+  }
+  let rect = place(widthIn)
+  while (!fitsArea(rect, area) && widthIn - RESIZE_STEP_IN >= minW - EPS) {
+    // Growing into the frame: stop at it (shrink back a step) instead of sliding away.
+    widthIn -= RESIZE_STEP_IN
+    hit = true
+    rect = place(widthIn)
+  }
+  const clamped = clampToArea(rect, area)
+  return { xIn: clamped.xIn, yIn: clamped.yIn, scale: startScale * (rect.widthIn / start.widthIn), widthIn: rect.widthIn, heightIn: rect.heightIn, hit: hit || clamped.hit }
+}
+
+/** How far a resize handle has been dragged, as a scale factor of the start size. */
+export function resizeFactor(start: Rect, handle: ResizeHandle, pointer: { xIn: number; yIn: number }) {
+  const sx = handle.includes('e') ? (pointer.xIn - start.xIn) / start.widthIn
+    : handle.includes('w') ? (start.xIn + start.widthIn - pointer.xIn) / start.widthIn : null
+  const sy = handle.includes('s') ? (pointer.yIn - start.yIn) / start.heightIn
+    : handle.includes('n') ? (start.yIn + start.heightIn - pointer.yIn) / start.heightIn : null
+  return sx !== null && sy !== null ? Math.max(sx, sy) : (sx ?? sy ?? 1)
+}

@@ -89,5 +89,29 @@ check(manual.validateManualLayout(all, precut, true).length === 0, 'auto-arrange
 const tight = manual.autoArrangeRemaining([], Array.from({ length: 40 }, () => ({ widthIn: 10.5, heightIn: 12, allowRotate: false })), precut)
 check(tight.unplaced.length > 0 && manual.validateManualLayout(tight.pieces, precut, true).length === 0, `what does not fit stays in the tray (${tight.unplaced.length} left)`)
 
+// 6. The black frame is a hard stop: anything asked for outside lands on the frame.
+for (const area of [plain, precut]) {
+  const tag = area === precut ? 'pre-cut' : 'print-only'
+  const box = { widthIn: 4, heightIn: 3 }
+  const far = [[-10, -10], [100, -10], [-10, 100], [100, 100]].map(([xIn, yIn]) => manual.clampToArea({ xIn, yIn, ...box }, area))
+  const onFrame = far.every((spot) => spot.hit &&
+    (close(spot.xIn, area.left) || close(spot.xIn + 4, area.right)) && (close(spot.yIn, area.top) || close(spot.yIn + 3, area.bottom)))
+  check(onFrame, `${tag}: dragging past every corner stops exactly on the frame`)
+  check(!manual.clampToArea({ xIn: area.left + 1, yIn: area.top + 1, ...box }, area).hit, `${tag}: a spot inside the frame is left alone`)
+}
+
+// 7. Resizing: proportions locked, ⅛ in steps, ½ in minimum, never past the frame.
+const startRect = { xIn: x0 + 1, yIn: y0 + 1, widthIn: 4, heightIn: 2 }
+const grown = manual.scaleWithin(startRect, 1, 1.5, 'se', precut)
+check(close(grown.widthIn, 6) && close(grown.heightIn, 3) && close(grown.xIn, startRect.xIn) && close(grown.yIn, startRect.yIn), 'corner drag ×1.5: 4×2 → 6×3, top-left stays put')
+const fromLeft = manual.scaleWithin(startRect, 1, 1.5, 'w', precut)
+check(close(fromLeft.xIn + fromLeft.widthIn, startRect.xIn + 4) && close(fromLeft.yIn + fromLeft.heightIn / 2, startRect.yIn + 1), 'left-side drag keeps the right edge and the vertical centre')
+const huge = manual.scaleWithin(startRect, 1, 50, 'se', precut)
+check(huge.hit && huge.xIn + huge.widthIn <= precut.right + 1e-6 && huge.yIn + huge.heightIn <= precut.bottom + 1e-6 && close(huge.widthIn / huge.heightIn, 2), 'growing into the frame stops at it, still 2:1')
+const tiny = manual.scaleWithin(startRect, 1, 0.01, 'se', precut)
+check(close(tiny.heightIn, 0.5) && close(tiny.widthIn, 1), 'shrinking stops at ½ in on the short side')
+check(Math.abs(grown.widthIn * 8 - Math.round(grown.widthIn * 8)) < 1e-6 && close(grown.scale, 1.5), 'width snaps to ⅛ in and the scale follows')
+check(close(manual.resizeFactor(startRect, 'se', { xIn: startRect.xIn + 8, yIn: startRect.yIn + 2 }), 2), 'corner handle uses the larger of the two stretches')
+
 console.log(failed ? `\n${failed} check(s) failed` : '\nAll manual-layout checks passed')
 process.exit(failed ? 1 : 0)
