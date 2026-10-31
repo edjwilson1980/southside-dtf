@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.11.0] — 2026-10-31
+
+### Changed
+- **UV DTF builder has its own size chart.** Step 3 offers **UV DTF Decal** and **Custom**
+  instead of the garment cards. Decal sizes: Small 1.5 × 1.5 · Small+ 2 × 2 · **Medium 3 × 3**
+  (the starting size, the most popular) · Medium Tall 3 × 4 · Large 4 × 4 · Large Wide 5 × 3 ·
+  XL 6 × 4 · Window 5 × 5 · Door Sign 8 × 5 in. Custom still takes any width × height.
+- The UV DTF builder shows the **UV DTF Size Guide** (`public/uv-dtf-size-guide.webp`) instead of
+  the shirt chart.
+- Size charts live in `lib/size-charts.ts`, one per product. The DTF garment chart moved there
+  unchanged.
+
 ## [2.10.0] — 2026-10-31
 
 ### Added

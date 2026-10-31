@@ -1,5 +1,6 @@
 import { SHEET_WIDTH_IN } from '@/lib/sheet-size'
 import { UV_DTF_WIDTH_IN, sheetOptions, uvDtfSheetOptions, type SheetOption } from '@/lib/sheet-pricing'
+import { DTF_SIZE_CHART, UV_DTF_SIZE_CHART, type SizeChart } from '@/lib/size-charts'
 
 /** What the customer builder sells: DTF gang sheets (`/`) or UV DTF gang sheets (`/uv-dtf`). */
 export type GangSheetProduct = {
@@ -15,6 +16,8 @@ export type GangSheetProduct = {
   embedTitle: string
   /** Short name in "Pre-cut …" and similar copy. */
   shortName: string
+  /** Step 3 cards, size menus and the size guide picture. */
+  sizeChart: SizeChart
 }
 
 export const DTF_PRODUCT: GangSheetProduct = {
@@ -26,6 +29,7 @@ export const DTF_PRODUCT: GangSheetProduct = {
   title: 'Build My Gangsheet',
   embedTitle: 'Build your gang sheet',
   shortName: 'DTFs',
+  sizeChart: DTF_SIZE_CHART,
 }
 
 export const UV_DTF_PRODUCT: GangSheetProduct = {
@@ -37,6 +41,7 @@ export const UV_DTF_PRODUCT: GangSheetProduct = {
   title: 'Build My UV DTF Gangsheet',
   embedTitle: 'Build your UV DTF gang sheet',
   shortName: 'UV DTFs',
+  sizeChart: UV_DTF_SIZE_CHART,
 }
 
 export function maxSheetLengthIn(product: GangSheetProduct) {
