@@ -1,5 +1,41 @@
 # Changelog
 
+## [2.14.1] — 2026-11-01
+
+### Fixed
+- Add to Cart on a store page with no cart relay now fails in about 4 s with a clear message,
+  before any compose or Drive upload, instead of hanging 2 minutes and then saying "Timed out".
+  This is what happened on southsidedtf.com/uv-dtf/: the iframe there is pasted HTML, not the
+  `[southside_gangsheet mode="uv-dtf"]` shortcode, so the plugin never loads `embed.js`.
+  `useStoreBridge().checkCartRelay()` pings the page with an add-to-cart that has no file link.
+  Every `embed.js` version answers that at once, without calling the store. Used by the
+  gang sheet builder and the sticker maker when embedded.
+- **WordPress plugin 1.32** (`wordpress/southside-gangsheet-1.32.zip`): loads `embed.js` on pages that
+  show the builder through a pasted iframe (Custom HTML block, widgets, Elementor HTML widget), not
+  only through the shortcode. That page's Add to Cart now works. Same cart code as 1.31 otherwise.
+
+### Changed
+- UV DTF jobs lead with "UV" ("UV John Smith") on the film label, print/cut/image-list file
+  names, Drive job folder, project name and cart line (`jobCustomerName`). The name box, the
+  project's `customer.name` and DTF jobs are unchanged. A name that already starts with "UV"
+  isn't doubled.
+- After payment, `/api/drive/finalize` keeps UV DTF files starting with "UV" and the customer name.
+  The order number goes after the name, so the file is "UV John Smith #1234 11-1 1500 (36).png"
+  instead of "#1234__UV John Smith …" (`orderedFileName`). DTF files keep "#1234__" in front.
+
+## [2.14.0] — 2026-11-01
+
+### Added
+- Manual builder: **free rotation**. The round handle turns the selected design to any angle
+  (whole degrees, pulled to 0/90/180/270 within 4°, Shift for 15° steps) with a live angle readout.
+  The size box has an **Angle (°)** field, and Rotate 90° / R add a quarter turn.
+  `ManualPlacement.angle` replaces `rotated`. The print file draws the art at that angle
+  (`SheetPiece.angleDeg`, `artWidthIn`, `artHeightIn`). Spacing checks, cut boxes and billing
+  use the box the turned design takes up.
+- Manual builder: **Duplicate** (Ctrl+D) adds one more copy of the selected design beside it, at the
+  same size and angle (quantity + 1). **Delete** (Delete key) takes that copy off the order
+  (quantity − 1; the last copy removes the design). The old Remove is now **Back to tray**.
+
 ## [2.13.0] — 2026-10-31
 
 ### Added

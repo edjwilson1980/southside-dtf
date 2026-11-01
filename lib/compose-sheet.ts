@@ -8,6 +8,14 @@ export type SheetPiece = {
   heightIn: number
   /** Turned a quarter turn to nest better. widthIn/heightIn are already swapped. */
   rotated?: boolean
+  /**
+   * Turned to any angle (degrees, clockwise) about its centre, as placed by hand.
+   * widthIn/heightIn are then the box the turned art takes up; artWidthIn/artHeightIn
+   * are the art's own upright size.
+   */
+  angleDeg?: number
+  artWidthIn?: number
+  artHeightIn?: number
 }
 
 export type PlacedSheetPiece = SheetPiece & {
@@ -525,6 +533,20 @@ export async function composeGangSheet(opts: {
     // slack is zero, but a mismatch must never distort a customer's print.
     const naturalW = image.naturalWidth || w
     const naturalH = image.naturalHeight || h
+
+    if (piece.angleDeg && piece.artWidthIn && piece.artHeightIn) {
+      // Fit the art in its upright box, then turn that box about the slot's centre.
+      const artW = piece.artWidthIn * opts.pxPerIn
+      const artH = piece.artHeightIn * opts.pxPerIn
+      const fit = Math.min(artW / Math.max(1, naturalW), artH / Math.max(1, naturalH))
+      context.save()
+      context.translate(x + w / 2, y + h / 2)
+      context.rotate((piece.angleDeg * Math.PI) / 180)
+      context.drawImage(image, (-naturalW * fit) / 2, (-naturalH * fit) / 2, naturalW * fit, naturalH * fit)
+      context.restore()
+      continue
+    }
+
     // A turned piece is drawn in local space where the long edge runs along h.
     const boxW = piece.rotated ? h : w
     const boxH = piece.rotated ? w : h

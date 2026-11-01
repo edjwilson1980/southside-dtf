@@ -2,7 +2,7 @@
  * Top menu config (SPEC Part D). Labels live here so they can be renamed
  * without touching components. Empty href → "Coming soon" (never a broken link).
  *
- * Defaults match this app's routes (`/shop`, `/shop/sticker-maker`, `/shop/halftone`).
+ * Defaults match this app's routes (`/shop`, `/shop/uv-dtf`, `/shop/halftone`).
  * Override with NEXT_PUBLIC_NAV_* env vars when tools move to separate apps.
  */
 
@@ -31,7 +31,7 @@ export const TOP_MENU: TopMenuItem[] = [
   {
     key: 'dtf-stickers',
     label: 'DTF Stickers',
-    href: envUrl('NEXT_PUBLIC_NAV_DTF_STICKERS_URL') ?? '/shop/sticker-maker',
+    href: envUrl('NEXT_PUBLIC_NAV_DTF_STICKERS_URL') ?? '/shop/uv-dtf',
   },
   {
     key: 'vinyl',
@@ -48,6 +48,9 @@ export const TOP_MENU: TopMenuItem[] = [
 /** Resolve which menu key is active for the current pathname. */
 export function topMenuKeyForPath(pathname: string): TopMenuKey | null {
   const path = pathname.replace(/\/$/, '') || '/'
+  if (path === '/shop/uv-dtf' || path.startsWith('/shop/uv-dtf/')) {
+    return 'dtf-stickers'
+  }
   if (path === '/shop/sticker-maker' || path.startsWith('/shop/sticker-maker/')) {
     return 'dtf-stickers'
   }

@@ -242,7 +242,47 @@ export function useStoreBridge() {
     [origin],
   )
 
-  return { embedded, addToCart, status, error, reportHeight, storeOrigin: origin }
+  /**
+   * Is the store page's cart relay (the plugin's embed.js) listening? It is only
+   * loaded when the page uses the shortcode; a pasted iframe has none, and
+   * add-to-cart would then wait the full timeout. embed.js answers an add-to-cart
+   * with no file link straight away and without calling the store, so that
+   * message doubles as a ping that works with every plugin version.
+   */
+  const checkCartRelay = useCallback((timeoutMs = 4000): Promise<boolean> => {
+    if (typeof window === 'undefined' || !inIframe()) return Promise.resolve(false)
+    if (relayConfirmed) return Promise.resolve(true)
+    const requestId = `probe-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    return new Promise((resolve) => {
+      const timeout = window.setTimeout(() => {
+        window.removeEventListener('message', onMessage)
+        resolve(false)
+      }, timeoutMs)
+      function onMessage(event: MessageEvent) {
+        if (!isAllowedStoreOrigin(event.origin)) return
+        const data = event.data as CartResultMessage | null
+        if (!data || data.source !== 'southside-gangsheet' || data.type !== 'add-to-cart-result') return
+        if (data.requestId !== requestId) return
+        window.clearTimeout(timeout)
+        window.removeEventListener('message', onMessage)
+        relayConfirmed = true
+        resolve(true)
+      }
+      window.addEventListener('message', onMessage)
+      window.parent.postMessage({ source: 'southside-gangsheet', type: 'add-to-cart', requestId, payload: {} }, '*')
+    })
+  }, [])
+
+  return { embedded, addToCart, checkCartRelay, status, error, reportHeight, storeOrigin: origin }
+}
+
+/** Set once the store page has answered a relay check; it stays for the page's life. */
+let relayConfirmed = false
+
+/** What to tell the customer (and staff) when the store page has no cart relay. */
+export function missingCartRelayMessage(printType: 'dtf' | 'uv-dtf' = 'dtf') {
+  const shortcode = printType === 'uv-dtf' ? '[southside_gangsheet mode="uv-dtf"]' : '[southside_gangsheet]'
+  return `This page isn't connected to the store cart, so your sheet can't be added. Please call or message us. (Store setup: this page must use the ${shortcode} shortcode, not a pasted iframe.)`
 }
 
 export function slugify(value: string) {

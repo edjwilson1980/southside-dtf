@@ -6,13 +6,13 @@ Embed the customer builder and **Add to Cart** into WooCommerce on southsidedtf.
 
 Use the ready zip in this repo:
 
-- [`wordpress/southside-gangsheet-1.29.zip`](./southside-gangsheet-1.29.zip)
+- [`wordpress/southside-gangsheet-1.32.zip`](./southside-gangsheet-1.32.zip)
 
 Or zip the `southside-gangsheet/` folder yourself.
 
 ## Install on WordPress
 
-1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet-1.29.zip` → Activate
+1. **Plugins → Add New → Upload Plugin** → choose `southside-gangsheet-1.32.zip` → Activate
 2. **Settings → Gang Sheet Builder**
    - Builder URL: `https://southside-dtf.vercel.app`
    - WooCommerce product ID: **4365** (or leave `0` for slug `custom-gang-sheet-builder`)
@@ -32,6 +32,12 @@ Or zip the `southside-gangsheet/` folder yourself.
 
 4. Keep `NEXT_PUBLIC_STORE_ORIGIN=https://southsidedtf.com` on Vercel.
 
+## Pasted builder iframes (v1.32+)
+
+- Use the shortcode where you can. If a page shows the builder through a pasted `<iframe>` instead (a Custom HTML block, a classic or block widget, or an Elementor HTML widget), the plugin now notices it and still loads `embed.js` and its settings. Add to Cart then reaches WooCommerce instead of timing out after 2 minutes. 1.31 and earlier only loaded it for the shortcode.
+- It counts as the builder when the iframe has the `ssgs-embed-frame` class or points at the Builder URL's host.
+- Because of this, `southsidedtf.com/uv-dtf/`, which has a pasted iframe, works once 1.32 is installed. Swapping it to `[southside_gangsheet mode="uv-dtf"]` is still the better setup: the shortcode also adds the "open in a new tab" fallback link.
+
 ## Print & Press (v1.25+, prices updated in 1.27)
 
 - The customer builder can add **Print & Press** (customer supplies the garments, we press the transfers). The payload carries `printPress` with the garment lines (garment, color, location `front` / `chest` (left chest logo) / `back` / `both` / `chest-back`, S–3XL counts, names roster, which design goes on each side), the counts, the tier and the Drive link to the **press sheet PDF** that was uploaded with the sheet PNGs/PLTs.
@@ -49,7 +55,7 @@ Or zip the `southside-gangsheet/` folder yourself.
 - Single-length payloads that are longer than the largest variation (done-for-you intake, older builders) are split server-side into `n of N` lines on the ladder; the build fee and pre-cut total are charged once, on sheet 1.
 - The plugin no longer silently falls back to the largest variation when nothing fits — it reports the length instead.
 
-## UV DTF gang sheets (v1.29+)
+## UV DTF gang sheets (v1.29+; 1.31 was a version-number release only)
 
 - `[southside_gangsheet mode="uv-dtf"]` embeds `/embed/uv-dtf`: the UV DTF gang sheet builder, the same flow as the DTF builder, with 22 in media and the UV DTF price ladder. `mode="stickers"` / `mode="uv"` still work and load the same builder. The old sticker maker URLs redirect there.
 - The payload carries `printType: "uv-dtf"`, `cutEnabled`, `sheets[]` and the Drive links. The plugin routes every sheet to the **UV DTF product**, and each sheet picks the smallest length variation that fits. UV DTF variations needed: **12, 24, 36, 48, 60, 72, 120 and 240 in**. Anything longer than 240 in is split into more sheets.

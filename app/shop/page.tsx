@@ -24,6 +24,7 @@ import { prepareEditableUpload } from '@/lib/rasterize-upload'
 import { ShopTopBar } from '@/components/shop-top-bar'
 import { saveProjectWithArt } from '@/lib/project/auto-save'
 import { restoreDesignsFromProject } from '@/lib/project/restore'
+import { useOpenProjectFromUrl } from '@/lib/project/use-open-from-url'
 import type { ProjectSource, SspProject } from '@/lib/project/types'
 import { placements, recommendedSize, sizeOptions } from '@/lib/shop-sizes'
 
@@ -171,6 +172,9 @@ export default function Home() {
     setDriveFolderUrl(null)
     setProjectStatus(null)
   }, [customerName])
+
+  // Reopen Project on another staff page can hand a DTF project over here.
+  useOpenProjectFromUrl((project, meta) => loadProject(project, meta), setSaveError)
 
   async function loadProject(project: SspProject, meta?: { folderId?: string; fileId?: string }) {
     const ownerName = project.customer?.name || project.name || ''

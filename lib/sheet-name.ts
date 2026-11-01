@@ -37,6 +37,36 @@ function partSuffix(part?: SheetPart) {
   return ` ${part.index + 1} of ${part.count}`
 }
 
+/**
+ * The name a job is filed under. UV DTF jobs lead with "UV" ("UV John Smith") so
+ * they stand apart from DTF on the film label, files, Drive folder and cart.
+ * A name that already starts with "UV" is left alone, so it never doubles up.
+ */
+export function jobCustomerName(customerName: string, printType: 'dtf' | 'uv-dtf') {
+  const name = customerName.trim()
+  if (printType !== 'uv-dtf' || /^uv\b/i.test(name)) return name
+  return name ? `UV ${name}` : 'UV'
+}
+
+/**
+ * A Drive file's name once its order is paid. DTF files lead with the order
+ * ("#1234__John Smith 11-1 1500     (36).png"). UV DTF files must still start with
+ * "UV" and the customer name, so the order goes after the name, before the stamp:
+ * "UV John Smith #1234 11-1 1500     (36).png". Already-renamed files come back as is.
+ */
+export function orderedFileName(name: string, orderNumber: string) {
+  const order = `#${orderNumber.trim().replace(/^#/, '')}`
+  if (!/^uv\b/i.test(name)) {
+    return name.startsWith(`${order}__`) ? name : `${order}__${name}`.replace(/[\\/]+/g, '-')
+  }
+  if (new RegExp(`(^|\\s)${order.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|\\.|$)`).test(name)) return name
+  // The job stamp ("11-1 1500" once file-safe) marks where the customer name ends.
+  const stamp = name.match(/\s\d{1,2}-\d{1,2} \d{4}(?=\s|$)/)
+  if (stamp?.index !== undefined) return `${name.slice(0, stamp.index)} ${order}${name.slice(stamp.index)}`
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? `${name.slice(0, dot)} ${order}${name.slice(dot)}` : `${name} ${order}`
+}
+
 export function sheetJobName(
   customerName: string,
   billedLengthIn: number,

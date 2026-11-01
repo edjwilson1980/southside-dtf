@@ -1,7 +1,7 @@
 'use client'
 
 type ShopNavProps = {
-  current?: 'shop' | 'sticker-maker' | 'halftone' | 'connect-drive' | 'customer' | 'uv-dtf'
+  current?: 'shop' | 'sticker-maker' | 'halftone' | 'connect-drive' | 'customer' | 'manual' | 'uv-dtf'
   /** Hide Connect Drive when the page already has a dedicated Drive button. */
   hideConnectDrive?: boolean
 }
@@ -12,7 +12,8 @@ const LINKS: { href: string; label: string; key: NonNullable<ShopNavProps['curre
   { href: '/shop/halftone', label: 'Halftone generator', key: 'halftone' },
   { href: '/shop/connect-drive', label: 'Connect Drive', key: 'connect-drive' },
   { href: '/', label: 'Customer builder', key: 'customer' },
-  { href: '/uv-dtf?embed=1', label: 'UV DTF builder', key: 'uv-dtf' },
+  { href: '/manual', label: 'Manual builder', key: 'manual' },
+  { href: '/shop/uv-dtf', label: 'UV DTF builder', key: 'uv-dtf' },
 ]
 
 export function ShopNav({ current, hideConnectDrive = false }: ShopNavProps) {

@@ -37,7 +37,7 @@ import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { isEmbedSearchParam } from '@/lib/embed'
-import { slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
+import { missingCartRelayMessage, slugify, useStoreBridge, type GangSheetCartPayload } from '@/lib/ssgs-cart-bridge'
 import { DESIGN_ACCEPT, DESIGN_ACCEPT_LABEL, isAcceptedDesignFile } from '@/lib/accepted-uploads'
 import { prepareEditableUpload } from '@/lib/rasterize-upload'
 import { saveProjectWithArt } from '@/lib/project/auto-save'
@@ -181,7 +181,7 @@ function revokeUnusedUrls(urls: Array<string | null>, remaining: Design[]) {
 export function StickerMaker({ audience }: { audience: 'shop' | 'customer' }) {
   const customerOnly = audience === 'customer'
   const [embedParam, setEmbedParam] = useState(false)
-  const { embedded, addToCart, status: cartStatus, error: cartError, reportHeight } = useStoreBridge()
+  const { embedded, addToCart, checkCartRelay, status: cartStatus, error: cartError, reportHeight } = useStoreBridge()
   const embed = customerOnly || embedParam || embedded
   const shellRef = useRef<HTMLElement | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -980,6 +980,8 @@ export function StickerMaker({ audience }: { audience: 'shop' | 'customer' }) {
     setDriveFolderUrl(null)
     setDriveFolderId(null)
     try {
+      // Before compose and upload: make sure the store page can take the order.
+      if (embedded && !(await checkCartRelay())) throw new Error(missingCartRelayMessage('uv-dtf'))
       const stamp = jobStamp || sheetStamp()
       const label = sheetJobName(customerName.trim(), billedLength, stamp)
       const fileName = sheetFileName(customerName.trim(), billedLength, stamp)
