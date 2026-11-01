@@ -15,15 +15,15 @@ import { composeGangSheet, piecePrintSize, ART_INSET_IN, type PlacedSheetPiece }
 import { paginateGangSheet, partLabel, type SheetPage } from '@/lib/sheet-pages'
 import { cuttingFeeEach } from '@/lib/sheet-pricing'
 import { maxSheetLengthIn, type GangSheetProduct } from '@/lib/gang-sheet-product'
-import { manualArtArea, manualSheetPage, validateManualLayout } from '@/lib/manual-layout'
-import { ManualSheetEditor, placedSize, type ManualPlacements, type ManualTransfer } from '@/components/manual-sheet-editor'
+import { clampToArea, manualArtArea, manualSheetPage, validateManualLayout } from '@/lib/manual-layout'
+import { ManualSheetEditor, artSize, placedSize, type ManualPlacements, type ManualTransfer } from '@/components/manual-sheet-editor'
 import { type LayoutPiece } from '@/components/sheet-layout-overlay'
 import { BUILDER_VERSION } from '@/lib/version'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
 import { MARK_SECTION_IN, cutPlt } from '@/lib/cut-layout'
 import { trimEmptySpace } from '@/lib/crop-image'
 import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '@/lib/image-utils'
-import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
+import { jobCustomerName, sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
 import { isEmbedSearchParam } from '@/lib/embed'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
 import { autoSaveProjectJson, saveProjectWithArt } from '@/lib/project/auto-save'
@@ -32,7 +32,7 @@ import { restoreDesignsFromProject } from '@/lib/project/restore'
 import { useOpenProjectFromUrl } from '@/lib/project/use-open-from-url'
 import type { ProjectSource, SspProject } from '@/lib/project/types'
 import { ProjectActions } from '@/components/project-actions'
-import { slugify, useStoreBridge, type GangSheetCartPayload, type GangSheetCartSheet } from '@/lib/ssgs-cart-bridge'
+import { missingCartRelayMessage, slugify, useStoreBridge, type GangSheetCartPayload, type GangSheetCartSheet } from '@/lib/ssgs-cart-bridge'
 import { PrintPressPanel, type PrintPressDesignOption } from '@/components/print-press-panel'
 import { CartProgressOverlay, type CartProgress } from '@/components/cart-progress-overlay'
 import {
@@ -128,7 +128,7 @@ function HomeBuilder({ product, layout, staff }: { product: GangSheetProduct; la
   const manual = layout === 'manual'
   const searchParams = useSearchParams()
   const embedParam = isEmbedSearchParam(searchParams.get('embed'))
-  const { embedded, addToCart, status: cartStatus, error: cartError, reportHeight } = useStoreBridge()
+  const { embedded, addToCart, checkCartRelay, status: cartStatus, error: cartError, reportHeight } = useStoreBridge()
   const embed = embedParam || embedded
   const shellRef = useRef<HTMLElement | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -452,12 +452,16 @@ function HomeBuilder({ product, layout, staff }: { product: GangSheetProduct; la
   const manualPlaced = manualTransfers.filter((transfer) => manualPlacements[transfer.key])
   const manualPieces = manualPlaced.map((transfer) => {
     const placement = manualPlacements[transfer.key]
+    const art = artSize(transfer, placement)
     return {
       previewUrl: transfer.previewUrl,
       ...placedSize(transfer, placement),
       xIn: placement.xIn,
       yIn: placement.yIn,
-      rotated: placement.rotated,
+      rotated: false,
+      angleDeg: placement.angle ?? 0,
+      artWidthIn: art.widthIn,
+      artHeightIn: art.heightIn,
       allowRotate: true,
       designId: transfer.designId,
     }
@@ -599,6 +603,44 @@ function HomeBuilder({ product, layout, staff }: { product: GangSheetProduct; la
     })
     setInspectId((current) => current === id ? null : current)
   }
+  /**
+   * Manual mode: one more copy of a placed transfer's design, same size and angle,
+   * set down beside it (or below it when there's no room). Returns the new copy's key.
+   */
+  const duplicateManualCopy = (key: string) => {
+    const transfer = manualTransfers.find((item) => item.key === key)
+    const placement = manualPlacements[key]
+    const design = transfer && designs.find((item) => item.id === transfer.designId)
+    if (!transfer || !placement || !design) return null
+    const quantity = designQuantity(design)
+    const nextKey = `${design.id}:${quantity}`
+    const size = placedSize(transfer, placement)
+    const beside = { xIn: placement.xIn + size.widthIn + manualArea.minGapIn, yIn: placement.yIn }
+    const fitsBeside = beside.xIn + size.widthIn <= manualArea.right
+    const spot = clampToArea({ ...(fitsBeside ? beside : { xIn: placement.xIn, yIn: placement.yIn + size.heightIn + manualArea.minGapIn }), ...size }, manualArea)
+    setManualPlacements((current) => ({ ...current, [nextKey]: { ...placement, xIn: spot.xIn, yIn: spot.yIn } }))
+    updateDesign(design.id, { quantity: quantity + 1 })
+    return nextKey
+  }
+  /** Manual mode: take one copy off the order. Later copies shift down so keys stay `id:0…q-1`. */
+  const deleteManualCopy = (key: string) => {
+    const transfer = manualTransfers.find((item) => item.key === key)
+    const design = transfer && designs.find((item) => item.id === transfer.designId)
+    if (!transfer || !design) return
+    const quantity = designQuantity(design)
+    const copy = Number(key.slice(key.lastIndexOf(':') + 1))
+    setManualPlacements((current) => {
+      const next = { ...current }
+      for (let index = copy; index < quantity; index++) {
+        const later = current[`${design.id}:${index + 1}`]
+        if (later && index + 1 < quantity) next[`${design.id}:${index}`] = later
+        else delete next[`${design.id}:${index}`]
+      }
+      return next
+    })
+    if (quantity <= 1) removeDesign(design.id)
+    else updateDesign(design.id, { quantity: quantity - 1 })
+  }
   const applyInspectedDesign = (id: number, previewUrl: string) => {
     setDesigns((items) => items.map((item) => {
       if (item.id !== id) return item
@@ -701,7 +743,7 @@ function HomeBuilder({ product, layout, staff }: { product: GangSheetProduct; la
 
   /** Label printed on the sheet: `Customer 10/17 1530 (200) 2 of 3`. */
   function pageJobName(page: SheetPage<(typeof pieceInputs)[number]>, stamp: string) {
-    return sheetJobName(customerName.trim(), page.billedLength, stamp, { index: page.index, count: sheetCount })
+    return sheetJobName(jobCustomerName(customerName, product.printType), page.billedLength, stamp, { index: page.index, count: sheetCount })
   }
 
   async function previewGangSheet() {
@@ -815,18 +857,19 @@ function HomeBuilder({ product, layout, staff }: { product: GangSheetProduct; la
   async function saveProjectNow() {
     const name = customerName.trim()
     if (!name || projectSaving) return
+    const jobName = jobCustomerName(name, product.printType)
     setProjectSaving(true)
     setSaveError(null)
     setProjectStatus('Saving project…')
     try {
       const saved = await saveProjectWithArt({
         folderId: projectFolderId || undefined,
-        createFolder: projectFolderId ? undefined : { customerName: name, stamp: sheetStamp() },
+        createFolder: projectFolderId ? undefined : { customerName: jobName, stamp: sheetStamp() },
         source: projectSource === 'customer-site' ? 'customer-site' : 'shop-builder',
         projectId,
         revision: projectRevision,
         createdAt: projectCreatedAt,
-        name,
+        name: jobName,
         customer: { name },
         product: {
           printType: product.printType,
@@ -869,13 +912,15 @@ function HomeBuilder({ product, layout, staff }: { product: GangSheetProduct; la
     await new Promise((resolve) => window.setTimeout(resolve, 30))
     try {
       if (pages.length === 0) throw new Error('Add a design before adding the gang sheet to your cart.')
+      // Before minutes of compose and upload: make sure the store page can take the order.
+      if (embedded && !(await checkCartRelay())) throw new Error(missingCartRelayMessage(product.printType))
       if (tooLargeCount > 0) {
         throw new Error(`${tooLargeCount} design${tooLargeCount === 1 ? ' is' : 's are'} too large for a ${product.widthIn} × ${maxSheetIn} in sheet. Shrink it to continue.`)
       }
       if (ppProblem) throw new Error(ppProblem)
       if (manualBlocker) throw new Error(manualBlocker)
       const stamp = jobStamp || sheetStamp()
-      const who = customerName.trim()
+      const who = jobCustomerName(customerName, product.printType)
       const cartSlug = slugify(who)
       const designInfo = (id: number) => {
         const design = designs.find((item) => item.id === id)
@@ -1098,7 +1143,8 @@ function HomeBuilder({ product, layout, staff }: { product: GangSheetProduct; la
           folderId: drive.folderId,
           source: staff ? 'shop-builder' : 'customer-site',
           name: who,
-          customer: { name: who },
+          // The typed name, so a reopened project doesn't pick up a second "UV".
+          customer: { name: customerName.trim() },
           product: {
             printType: product.printType,
             rollWidthIn: product.widthIn,
@@ -1425,6 +1471,8 @@ function HomeBuilder({ product, layout, staff }: { product: GangSheetProduct; la
                 onWorkingLengthChange={setWorkingLengthIn}
                 labelWidthIn={product.widthIn}
                 sheetName={customerName.trim() || 'Your gang sheet'}
+                onDuplicate={duplicateManualCopy}
+                onDelete={deleteManualCopy}
               />
             )}
           </div>

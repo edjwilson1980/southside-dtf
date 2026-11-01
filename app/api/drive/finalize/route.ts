@@ -7,6 +7,7 @@ import {
   isGoogleDriveOAuthConfigured,
   isGoogleDriveServiceAccountConfigured,
 } from '@/lib/google-drive'
+import { orderedFileName } from '@/lib/sheet-name'
 
 export const runtime = 'nodejs'
 
@@ -86,8 +87,8 @@ export async function POST(req: Request) {
 
     let name = meta.data.name || fileId
     const orderNumber = String(body.orderNumber ?? '').trim().replace(/^#/, '')
-    if (orderNumber && !name.startsWith(`#${orderNumber}__`)) {
-      const nextName = `#${orderNumber}__${name}`.replace(/[\\/]+/g, '-')
+    const nextName = orderNumber ? orderedFileName(name, orderNumber) : name
+    if (nextName !== name) {
       const updated = await drive.files.update({
         fileId,
         requestBody: { name: nextName },

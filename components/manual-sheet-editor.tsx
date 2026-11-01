@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ChevronDown, Lock, LayoutGrid, RotateCw, Trash2, Undo2 } from 'lucide-react'
+import { ChevronDown, Copy, CornerUpLeft, Lock, LayoutGrid, RotateCw, Trash2, Undo2 } from 'lucide-react'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
 import { cutPreviewBoxes, registrationMarkBounds } from '@/lib/cut-layout'
 import { printDpi, qualityFromDpi } from '@/lib/image-utils'
@@ -29,8 +29,12 @@ export type ManualTransfer = {
   pixelWidth?: number
 }
 
-/** `scale` resizes this one copy (proportions locked); 1 when left out. */
-export type ManualPlacement = { xIn: number; yIn: number; rotated: boolean; scale?: number }
+/**
+ * `scale` resizes this one copy (proportions locked); 1 when left out.
+ * `angle` turns it clockwise about its centre, in degrees; 0 when left out.
+ * xIn/yIn are the top-left of the box the turned copy takes up.
+ */
+export type ManualPlacement = { xIn: number; yIn: number; angle?: number; scale?: number }
 export type ManualPlacements = Record<string, ManualPlacement>
 
 const SNAP_IN = 1 / 8
@@ -38,11 +42,34 @@ const snap = (value: number) => Math.round(value / SNAP_IN) * SNAP_IN
 const HANDLES: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 const round2 = (value: number) => Math.round(value * 100) / 100
 
-export function placedSize(transfer: ManualTransfer, placement: ManualPlacement) {
+/** Angle in [0, 360), rounded to hundredths. */
+export function normalizeAngle(degrees: number) {
+  const value = (((Math.round(degrees * 100) / 100) % 360) + 360) % 360
+  return value >= 360 ? 0 : value
+}
+
+/** The copy's own (upright) size at its scale. */
+export function artSize(transfer: ManualTransfer, placement: ManualPlacement) {
   const scale = placement.scale ?? 1
-  const widthIn = transfer.widthIn * scale
-  const heightIn = transfer.heightIn * scale
-  return placement.rotated ? { widthIn: heightIn, heightIn: widthIn } : { widthIn, heightIn }
+  return { widthIn: transfer.widthIn * scale, heightIn: transfer.heightIn * scale }
+}
+
+/** The box the copy takes up on the sheet once turned to its angle. */
+export function placedSize(transfer: ManualTransfer, placement: ManualPlacement) {
+  const { widthIn, heightIn } = artSize(transfer, placement)
+  const radians = ((placement.angle ?? 0) * Math.PI) / 180
+  // Round off float noise so a quarter turn gives exactly the swapped size.
+  const cos = Math.round(Math.abs(Math.cos(radians)) * 1e9) / 1e9
+  const sin = Math.round(Math.abs(Math.sin(radians)) * 1e9) / 1e9
+  return { widthIn: widthIn * cos + heightIn * sin, heightIn: widthIn * sin + heightIn * cos }
+}
+
+/** Free rotation in whole degrees, pulled to straight angles when close so lining up stays easy. */
+const STRAIGHT_PULL_DEG = 4
+function snapAngle(degrees: number, coarse: boolean) {
+  if (coarse) return normalizeAngle(Math.round(degrees / 15) * 15)
+  const straight = Math.round(degrees / 90) * 90
+  return normalizeAngle(Math.abs(degrees - straight) <= STRAIGHT_PULL_DEG ? straight : Math.round(degrees))
 }
 
 /** Print DPI of one copy at its current size. */
@@ -65,6 +92,10 @@ type Props = {
   labelWidthIn: number
   /** Gang sheet name, shown over the sheet. */
   sheetName: string
+  /** Add one more copy of this transfer's design next to it; returns the new copy's key. */
+  onDuplicate: (key: string) => string | null
+  /** Take this copy off the order (its design's quantity goes down by one). */
+  onDelete: (key: string) => void
 }
 
 /**
@@ -86,6 +117,8 @@ export function ManualSheetEditor({
   onWorkingLengthChange,
   labelWidthIn,
   sheetName,
+  onDuplicate,
+  onDelete,
 }: Props) {
   const sheetRef = useRef<HTMLDivElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -94,8 +127,9 @@ export function ManualSheetEditor({
   const [selected, setSelected] = useState<string | null>(null)
   const drag = useRef<{ key: string; offX: number; offY: number } | null>(null)
   const resize = useRef<{ key: string; handle: ResizeHandle; start: { xIn: number; yIn: number; widthIn: number; heightIn: number }; scale: number } | null>(null)
-  /** Rotate handle drag: the piece turns about its centre, snapping to upright or sideways. */
-  const turning = useRef<{ key: string; cx: number; cy: number; rotated: boolean } | null>(null)
+  /** Rotate handle drag: the piece turns about its centre by however far the pointer swings. */
+  const turning = useRef<{ key: string; cx: number; cy: number; startAngle: number; pointerStart: number } | null>(null)
+  const [turningAngle, setTurningAngle] = useState<number | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
   const [resizing, setResizing] = useState<string | null>(null)
   const [hitWall, setHitWall] = useState(false)
@@ -175,7 +209,7 @@ export function ManualSheetEditor({
   function moveTo(key: string, xIn: number, yIn: number) {
     const transfer = byKey.get(key)
     if (!transfer) return
-    const placement = placements[key] ?? { xIn: 0, yIn: 0, rotated: false }
+    const placement = placements[key] ?? { xIn: 0, yIn: 0 }
     const spot = landing(xIn, yIn, placedSize(transfer, placement))
     onPlacementsChange((current) => ({ ...current, [key]: { ...(current[key] ?? placement), ...spot } }))
   }
@@ -196,12 +230,9 @@ export function ManualSheetEditor({
     function onMove(event: PointerEvent) {
       const turn = turning.current
       if (turn) {
-        // Angle from straight up, clockwise. Each quarter turn flips upright ↔ sideways;
-        // a transfer can be pressed at any angle, so those two are all the film needs.
-        const point = inchesFromEvent(event)
-        const degrees = (Math.atan2(point.xIn - turn.cx, turn.cy - point.yIn) * 180) / Math.PI
-        const quarters = ((Math.round(degrees / 90) % 4) + 4) % 4
-        setRotation(turn.key, quarters % 2 === 1 ? !turn.rotated : turn.rotated, turn.cx, turn.cy)
+        const angle = snapAngle(turn.startAngle + pointerAngle(event, turn.cx, turn.cy) - turn.pointerStart, event.shiftKey)
+        setTurningAngle(angle)
+        setAngle(turn.key, angle, turn.cx, turn.cy)
         return
       }
       const sizing = resize.current
@@ -218,6 +249,7 @@ export function ManualSheetEditor({
     function onUp() {
       if (turning.current) {
         turning.current = null
+        setTurningAngle(null)
         setResizing(null)
         return
       }
@@ -249,7 +281,7 @@ export function ManualSheetEditor({
     const offY = transfer.heightIn / 2
     drag.current = { key: transfer.key, offX, offY }
     const spot = landing(point.xIn - offX, point.yIn - offY, transfer)
-    onPlacementsChange((current) => ({ ...current, [transfer.key]: { ...spot, rotated: false } }))
+    onPlacementsChange((current) => ({ ...current, [transfer.key]: spot }))
     setDragging(transfer.key)
     setSelected(transfer.key)
   }
@@ -287,29 +319,56 @@ export function ManualSheetEditor({
     event.preventDefault()
     event.stopPropagation()
     const size = placedSize(transfer, placement)
-    turning.current = { key, cx: placement.xIn + size.widthIn / 2, cy: placement.yIn + size.heightIn / 2, rotated: placement.rotated }
+    const cx = placement.xIn + size.widthIn / 2
+    const cy = placement.yIn + size.heightIn / 2
+    turning.current = { key, cx, cy, startAngle: placement.angle ?? 0, pointerStart: pointerAngle(event, cx, cy) }
+    setTurningAngle(placement.angle ?? 0)
     setResizing(key)
   }
 
-  /** Turn a piece about (cx, cy), held inside the frame. */
-  function setRotation(key: string, rotated: boolean, cx: number, cy: number) {
-    const transfer = byKey.get(key)
-    const placement = placements[key]
-    if (!transfer || !placement || placement.rotated === rotated) return
-    const size = placedSize(transfer, { ...placement, rotated })
-    const spot = landing(cx - size.widthIn / 2, cy - size.heightIn / 2, size)
-    onPlacementsChange((current) => current[key] ? { ...current, [key]: { ...current[key], rotated, ...spot } } : current)
+  /** Pointer direction from (cx, cy), in degrees clockwise from straight up. */
+  function pointerAngle(event: { clientX: number; clientY: number }, cx: number, cy: number) {
+    const point = inchesFromEvent(event)
+    return (Math.atan2(point.xIn - cx, cy - point.yIn) * 180) / Math.PI
   }
 
-  function rotate(key: string) {
+  /** Turn a piece to `angle` about (cx, cy), held inside the frame. */
+  function setAngle(key: string, angle: number, cx: number, cy: number) {
+    const transfer = byKey.get(key)
+    const placement = placements[key]
+    if (!transfer || !placement || (placement.angle ?? 0) === angle) return
+    const size = placedSize(transfer, { ...placement, angle })
+    // No ⅛ in snap here, or the centre would wander as the piece turns.
+    const spot = clampToArea({ xIn: cx - size.widthIn / 2, yIn: cy - size.heightIn / 2, ...size }, area)
+    if (spot.hit) flashWall()
+    onPlacementsChange((current) => current[key] ? { ...current, [key]: { ...current[key], angle, xIn: spot.xIn, yIn: spot.yIn } } : current)
+  }
+
+  /** Turn a piece to `angle` about its own centre. */
+  function turnTo(key: string, angle: number) {
     const transfer = byKey.get(key)
     const placement = placements[key]
     if (!transfer || !placement) return
-    const turned = { ...placement, rotated: !placement.rotated }
-    const spot = landing(turned.xIn, turned.yIn, placedSize(transfer, turned))
-    onPlacementsChange((current) => current[key] ? { ...current, [key]: { ...turned, ...spot } } : current)
+    const size = placedSize(transfer, placement)
+    setAngle(key, normalizeAngle(angle), placement.xIn + size.widthIn / 2, placement.yIn + size.heightIn / 2)
   }
 
+  function rotate(key: string) {
+    turnTo(key, (placements[key]?.angle ?? 0) + 90)
+  }
+
+  function duplicate(key: string) {
+    const copy = onDuplicate(key)
+    if (copy) setSelected(copy)
+  }
+
+  /** Off the sheet and off the order. */
+  function deleteCopy(key: string) {
+    onDelete(key)
+    setSelected(null)
+  }
+
+  /** Back to the uploads tray: off the sheet, still in the order. */
   function remove(key: string) {
     onPlacementsChange((current) => {
       const next = { ...current }
@@ -331,7 +390,7 @@ export function ManualSheetEditor({
         area,
       )
       const next = { ...current }
-      for (const piece of result.pieces) next[piece.key] = { xIn: piece.xIn, yIn: piece.yIn, rotated: Boolean(piece.rotated) }
+      for (const piece of result.pieces) next[piece.key] = { xIn: piece.xIn, yIn: piece.yIn, angle: piece.rotated ? 90 : 0 }
       return next
     })
   }
@@ -343,12 +402,15 @@ export function ManualSheetEditor({
     if (step) {
       event.preventDefault()
       moveTo(key, placement.xIn + step[0] * SNAP_IN, placement.yIn + step[1] * SNAP_IN)
+    } else if ((event.ctrlKey || event.metaKey) && (event.key === 'd' || event.key === 'D')) {
+      event.preventDefault()
+      duplicate(key)
     } else if (event.key === 'r' || event.key === 'R') {
       event.preventDefault()
       rotate(key)
     } else if (event.key === 'Delete' || event.key === 'Backspace') {
       event.preventDefault()
-      remove(key)
+      deleteCopy(key)
     }
   }
 
@@ -390,8 +452,14 @@ export function ManualSheetEditor({
           <button type="button" onClick={() => selected && rotate(selected)} disabled={!selected || !placements[selected]}>
             <RotateCw size={16} /> Rotate 90°
           </button>
+          <button type="button" onClick={() => selected && duplicate(selected)} disabled={!selected || !placements[selected]}>
+            <Copy size={16} /> Duplicate
+          </button>
+          <button type="button" className="danger" onClick={() => selected && deleteCopy(selected)} disabled={!selected || !placements[selected]}>
+            <Trash2 size={16} /> Delete
+          </button>
           <button type="button" onClick={() => selected && remove(selected)} disabled={!selected || !placements[selected]}>
-            <Trash2 size={16} /> Remove
+            <CornerUpLeft size={16} /> Back to tray
           </button>
           <button
             type="button"
@@ -445,19 +513,20 @@ export function ManualSheetEditor({
       {/* Always takes the same space, so selecting a design never moves the sheet under the pointer. */}
       {selectedTransfer && selectedPlacement && selected ? (
         <SizeBox
-          key={`${selected}:${selectedPlacement.scale ?? 1}:${selectedPlacement.rotated}`}
+          key={`${selected}:${selectedPlacement.scale ?? 1}:${selectedPlacement.angle ?? 0}`}
           transfer={selectedTransfer}
           placement={selectedPlacement}
           onScale={(factor) => applyScale(selected, factor, 'se')}
+          onAngle={(angle) => turnTo(selected, angle)}
         />
       ) : (
         <div className="manual-sizebox empty">
-          <strong>Resize a design</strong>
-          <span>Click a design on the sheet, then drag a corner or side handle, or type an exact size here.</span>
+          <strong>Resize or turn a design</strong>
+          <span>Click a design on the sheet, then drag a corner or side handle, or type an exact size or angle here.</span>
         </div>
       )}
       <p className="manual-help">
-        Drag a design onto the sheet, then drag to move it. Click it to resize from any corner or side handle (proportions stay locked). Arrow keys nudge ⅛ in, R rotates, Delete sends it back to your uploads. Designs stop at the black frame.
+        Drag a design onto the sheet, then drag to move it. Click it to resize from any corner or side handle (proportions stay locked), or drag the round handle to turn it to any angle (hold Shift for 15° steps). Arrow keys nudge ⅛ in, R turns 90°, Ctrl+D duplicates, Delete deletes the copy. Designs stop at the black frame.
       </p>
 
       {/* One fixed-height line above the sheet, so nothing shifts the sheet while dragging. Full list below. */}
@@ -503,6 +572,8 @@ export function ManualSheetEditor({
             const transfer = byKey.get(key) as ManualTransfer
             const placement = placements[key]
             const size = placedSize(transfer, placement)
+            const art = artSize(transfer, placement)
+            const angle = placement.angle ?? 0
             const problem = problems[key]
             const isSelected = selected === key
             const dpi = placedDpi(transfer, placement)
@@ -531,11 +602,11 @@ export function ManualSheetEditor({
                       src={transfer.previewUrl}
                       alt=""
                       draggable={false}
-                      // Turned a quarter turn clockwise, the same way the print file draws it.
-                      style={placement.rotated ? {
+                      // Upright size, turned about the centre: the same way the print file draws it.
+                      style={angle ? {
                         position: 'absolute', left: '50%', top: '50%',
-                        width: size.heightIn * pxPerIn, height: size.widthIn * pxPerIn,
-                        transform: 'translate(-50%, -50%) rotate(90deg)',
+                        width: art.widthIn * pxPerIn, height: art.heightIn * pxPerIn,
+                        transform: `translate(-50%, -50%) rotate(${angle}deg)`,
                       } : undefined}
                     />
                   ) : (
@@ -561,8 +632,9 @@ export function ManualSheetEditor({
                     >
                       <RotateCw size={13} />
                     </span>
+                    {turningAngle !== null && resizing === key && <span className="manual-angle">{Math.round(turningAngle)}°</span>}
                     <span className={`manual-badge ${quality.tone}${placement.xIn + size.widthIn / 2 > sheetWidthIn / 2 ? ' end' : ''}`}>
-                      {round2(size.widthIn)} × {round2(size.heightIn)} in{dpi ? <b> · {dpi} DPI · {quality.label}</b> : null}
+                      {round2(art.widthIn)} × {round2(art.heightIn)} in{angle ? ` · ${Math.round(angle)}°` : ''}{dpi ? <b> · {dpi} DPI · {quality.label}</b> : null}
                     </span>
                   </>
                 )}
@@ -595,17 +667,25 @@ export function ManualSheetEditor({
   )
 }
 
-/** Exact width / height for the selected copy. Proportions stay locked; typing one sets the other. */
-function SizeBox({ transfer, placement, onScale }: { transfer: ManualTransfer; placement: ManualPlacement; onScale: (factor: number) => void }) {
-  const size = placedSize(transfer, placement)
+/** Exact width / height / angle for the selected copy. Proportions stay locked; typing one sets the other. */
+function SizeBox({ transfer, placement, onScale, onAngle }: { transfer: ManualTransfer; placement: ManualPlacement; onScale: (factor: number) => void; onAngle: (angle: number) => void }) {
+  const size = artSize(transfer, placement)
+  const footprint = placedSize(transfer, placement)
+  const currentAngle = placement.angle ?? 0
   const [width, setWidth] = useState(String(round2(size.widthIn)))
   const [height, setHeight] = useState(String(round2(size.heightIn)))
+  const [angle, setAngleText] = useState(String(round2(currentAngle)))
   const dpi = placedDpi(transfer, placement)
   const quality = qualityFromDpi(dpi)
   function commit(value: string, current: number) {
     const next = Number(value)
     if (next > 0 && Math.abs(next - current) > 1e-3) onScale(next / current)
     else { setWidth(String(round2(size.widthIn))); setHeight(String(round2(size.heightIn))) }
+  }
+  function commitAngle() {
+    const next = Number(angle)
+    if (angle.trim() !== '' && Number.isFinite(next) && Math.abs(normalizeAngle(next) - currentAngle) > 1e-3) onAngle(next)
+    else setAngleText(String(round2(currentAngle)))
   }
   const onEnter = (event: React.KeyboardEvent<HTMLInputElement>) => { if (event.key === 'Enter') event.currentTarget.blur() }
   return (
@@ -619,8 +699,14 @@ function SizeBox({ transfer, placement, onScale }: { transfer: ManualTransfer; p
         <label>Height (in)
           <input type="number" min="0.5" step="0.125" value={height} onChange={(event) => setHeight(event.target.value)} onBlur={() => commit(height, size.heightIn)} onKeyDown={onEnter} />
         </label>
+        <label>Angle (°)
+          <input type="number" min="0" max="359" step="1" value={angle} onChange={(event) => setAngleText(event.target.value)} onBlur={commitAngle} onKeyDown={onEnter} />
+        </label>
       </div>
-      <span>Resizes this copy only. Proportions stay locked so the art never stretches.</span>
+      <span>
+        Resizes this copy only. Proportions stay locked so the art never stretches.
+        {currentAngle ? ` Turned, it takes up ${round2(footprint.widthIn)} × ${round2(footprint.heightIn)} in on the sheet.` : ''}
+      </span>
       {dpi > 0 && <span className={`manual-sizebox-quality ${quality.tone}`}>Print quality at this size: {dpi} DPI · {quality.label}</span>}
     </div>
   )

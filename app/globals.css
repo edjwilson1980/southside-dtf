@@ -2200,6 +2200,8 @@ html, body {
 .manual-tools button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 7px; background: #fff; color: #344054; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
 .manual-tools button:first-child { border-color: var(--chicago-blue); background: var(--chicago-blue); color: #fff; }
 .manual-tools button:hover:not(:disabled) { border-color: var(--chicago-blue); }
+.manual-tools button.danger:not(:disabled) { color: var(--chicago-red); }
+.manual-tools button.danger:hover:not(:disabled) { border-color: var(--chicago-red); }
 .manual-tools button:disabled { opacity: .45; cursor: not-allowed; }
 /* Uploads list: fixed height, scrolls inside itself so 5+ uploads are never cut off. */
 .manual-uploads { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #fafbfc; }
@@ -2219,10 +2221,11 @@ html, body {
 .manual-tile-count { padding: 3px 8px; border-radius: 999px; background: #e8f6fb; color: var(--chicago-blue); font-size: 11px; font-weight: 700; white-space: nowrap; }
 .manual-tile-count.done { background: #f3fbf5; color: #0f6b36; }
 /* Size box: same height whether or not a design is selected, so the sheet never moves. */
-.manual-sizebox { display: grid; align-content: start; gap: 6px; height: 150px; overflow: hidden; padding: 10px 12px; border: 1.5px solid var(--chicago-blue); border-radius: 10px; background: #f2fafd; font-size: 12px; }
+.manual-sizebox { display: grid; align-content: start; gap: 6px; height: 168px; overflow: hidden; padding: 10px 12px; border: 1.5px solid var(--chicago-blue); border-radius: 10px; background: #f2fafd; font-size: 12px; }
 .manual-sizebox.empty { border-style: dashed; border-color: var(--border); background: #fafbfc; color: var(--muted); }
 .manual-sizebox strong { color: var(--ink); font-size: 13px; }
-.manual-sizebox-row { display: flex; align-items: flex-end; gap: 8px; }
+.manual-sizebox-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.manual-sizebox-row label:last-child { margin-left: 8px; }
 .manual-sizebox-row svg { margin-bottom: 11px; color: var(--muted); }
 .manual-sizebox label { display: grid; gap: 3px; color: #344054; font-size: 11px; font-weight: 700; }
 .manual-sizebox input { width: 92px; height: 34px; padding: 0 8px; border: 1px solid var(--input); border-radius: 7px; background: #fff; color: var(--ink); font: inherit; font-weight: 600; }
@@ -2256,8 +2259,10 @@ html, body {
 .manual-rotate { position: absolute; z-index: 6; left: calc(50% - 11px); top: -34px; display: grid; place-items: center; width: 22px; height: 22px; border: 2px solid var(--chicago-blue); border-radius: 50%; background: #fff; color: var(--chicago-blue); cursor: grab; touch-action: none; }
 .manual-rotate::after { content: ""; position: absolute; left: 50%; top: 100%; width: 2px; height: 10px; background: var(--chicago-blue); transform: translateX(-50%); }
 .manual-rotate:active { cursor: grabbing; }
+.manual-angle { position: absolute; z-index: 7; left: calc(50% + 16px); top: -33px; padding: 2px 7px; border-radius: 6px; background: #172033; color: #fff; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none; }
 .manual-piece { position: absolute; z-index: 2; outline: 1px solid #9aa8b5; cursor: grab; touch-action: none; }
-.manual-piece-art { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; }
+/* Not clipped: a turned design fills its box corner to corner, and the box is exactly its footprint. */
+.manual-piece-art { position: absolute; inset: 0; display: grid; place-items: center; }
 .manual-piece-art img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
 .manual-piece-art > span { color: #344054; font-size: 10px; font-weight: 800; }
 .manual-handle { position: absolute; z-index: 6; width: 12px; height: 12px; border: 2px solid var(--chicago-blue); border-radius: 3px; background: #fff; touch-action: none; }
@@ -2285,6 +2290,6 @@ html, body {
 .manual-legend i.zone { background: repeating-linear-gradient(45deg, #cfd4da 0 3px, #dde1e6 3px 6px); }
 .manual-legend i.cut { border: 1px dashed var(--chicago-red); }
 .manual-legend i.problem { border: 2px solid var(--chicago-red); }
-@media (max-width: 700px) { .manual-tray { grid-template-columns: 1fr; max-height: 240px; } .manual-sizebox { height: 172px; } .manual-controls { align-items: stretch; } .manual-tools button { flex: 1 1 auto; justify-content: center; } }
+@media (max-width: 700px) { .manual-tray { grid-template-columns: 1fr; max-height: 240px; } .manual-sizebox { height: 200px; } .manual-controls { align-items: stretch; } .manual-tools button { flex: 1 1 auto; justify-content: center; } }
 .manual-status { margin: 0; height: 34px; overflow: hidden; padding: 0 10px; border-radius: 7px; background: #f3fbf5; color: #0f6b36; font-size: 12px; font-weight: 700; line-height: 34px; white-space: nowrap; text-overflow: ellipsis; }
 .manual-status.has-problems { background: #fff1f2; color: var(--chicago-red); }
