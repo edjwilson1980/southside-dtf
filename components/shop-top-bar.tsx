@@ -1,9 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { FolderOpen, Save } from 'lucide-react'
 import { ShopNav } from '@/components/shop-nav'
-import { ReopenProjectDialog } from '@/components/reopen-project-dialog'
+import { ProjectActions } from '@/components/project-actions'
 import type { SspProject } from '@/lib/project/types'
 
 const logoUrl =
@@ -22,30 +20,14 @@ type ShopTopBarProps = {
 
 /** Shop Builder title row + Save / Reopen Project (top right) — SPEC E1. */
 export function ShopTopBar({ onOpenProject, onSaveProject, saveDisabled, saving }: ShopTopBarProps) {
-  const [reopenOpen, setReopenOpen] = useState(false)
-
   return (
     <>
-      <div className="shop-utility-bar" aria-label="Project actions">
-        {onSaveProject ? (
-          <button
-            type="button"
-            className="sticker-job-btn"
-            disabled={saveDisabled}
-            title={saveDisabled && !saving ? 'Enter a customer name first' : undefined}
-            onClick={onSaveProject}
-          >
-            <Save size={16} /> {saving ? 'Saving…' : 'Save Project'}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="sticker-job-btn"
-          onClick={() => setReopenOpen(true)}
-        >
-          <FolderOpen size={16} /> Reopen Project
-        </button>
-      </div>
+      <ProjectActions
+        onOpenProject={onOpenProject}
+        onSaveProject={onSaveProject}
+        saveDisabled={saveDisabled}
+        saving={saving}
+      />
 
       <div className="builder-topbar">
         <img src={logoUrl} alt="South Side DTF" className="brand-logo" />
@@ -56,12 +38,6 @@ export function ShopTopBar({ onOpenProject, onSaveProject, saveDisabled, saving 
         </div>
         <ShopNav current="shop" />
       </div>
-
-      <ReopenProjectDialog
-        open={reopenOpen}
-        onClose={() => setReopenOpen(false)}
-        onOpenProject={onOpenProject}
-      />
     </>
   )
 }

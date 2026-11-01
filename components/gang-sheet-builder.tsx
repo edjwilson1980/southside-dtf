@@ -26,8 +26,12 @@ import { parsePrintWidthInches, printDpi, qualityFromDpi, readImageSize } from '
 import { sheetCutFileName, sheetFileName, sheetJobName, sheetStamp } from '@/lib/sheet-name'
 import { isEmbedSearchParam } from '@/lib/embed'
 import { uploadJobToGoogleDrive } from '@/lib/upload-to-drive'
-import { autoSaveProjectJson } from '@/lib/project/auto-save'
+import { autoSaveProjectJson, saveProjectWithArt } from '@/lib/project/auto-save'
 import { imagesFromUploadedArt, prepareDesignArtUploads, type DesignArtInput } from '@/lib/project/images'
+import { restoreDesignsFromProject } from '@/lib/project/restore'
+import { useOpenProjectFromUrl } from '@/lib/project/use-open-from-url'
+import type { ProjectSource, SspProject } from '@/lib/project/types'
+import { ProjectActions } from '@/components/project-actions'
 import { slugify, useStoreBridge, type GangSheetCartPayload, type GangSheetCartSheet } from '@/lib/ssgs-cart-bridge'
 import { PrintPressPanel, type PrintPressDesignOption } from '@/components/print-press-panel'
 import { CartProgressOverlay, type CartProgress } from '@/components/cart-progress-overlay'
@@ -111,15 +115,16 @@ type BuilderLayout = 'auto' | 'manual'
  * Customer gang sheet builder. `product` picks DTF (`/`) or UV DTF (`/uv-dtf`);
  * `layout="manual"` (`/manual`) lets the customer place every transfer themselves.
  */
-export function GangSheetBuilder({ product, layout = 'auto' }: { product: GangSheetProduct; layout?: BuilderLayout }) {
+export function GangSheetBuilder({ product, layout = 'auto', staff = false }: { product: GangSheetProduct; layout?: BuilderLayout; staff?: boolean }) {
   return (
     <Suspense fallback={<main className="builder-shell"><p className="sublead">Loading builder…</p></main>}>
-      <HomeBuilder product={product} layout={layout} />
+      <HomeBuilder product={product} layout={layout} staff={staff} />
     </Suspense>
   )
 }
 
-function HomeBuilder({ product, layout }: { product: GangSheetProduct; layout: BuilderLayout }) {
+/** `staff` (the `/shop/uv-dtf` copy) adds Save Project / Reopen Project, like the Shop Builder. */
+function HomeBuilder({ product, layout, staff }: { product: GangSheetProduct; layout: BuilderLayout; staff: boolean }) {
   const manual = layout === 'manual'
   const searchParams = useSearchParams()
   const embedParam = isEmbedSearchParam(searchParams.get('embed'))
@@ -197,6 +202,36 @@ function HomeBuilder({ product, layout }: { product: GangSheetProduct; layout: B
   const [pendingCartAfterCut, setPendingCartAfterCut] = useState(false)
   const previewGen = useRef(0)
   const precutCartKickoff = useRef(false)
+
+  /** Staff: the Drive project this sheet saves into (Save Project / Reopen Project). */
+  const [projectId, setProjectId] = useState<string | undefined>(undefined)
+  const [projectRevision, setProjectRevision] = useState<number | undefined>(undefined)
+  const [projectCreatedAt, setProjectCreatedAt] = useState<string | undefined>(undefined)
+  const [projectSource, setProjectSource] = useState<ProjectSource>('shop-builder')
+  const [projectFolderId, setProjectFolderId] = useState<string | null>(null)
+  const [projectStatus, setProjectStatus] = useState<string | null>(null)
+  const [projectSaving, setProjectSaving] = useState(false)
+  /**
+   * Customer the current project belongs to. Typing a different name starts a new
+   * project instead of saving into the previous customer's folder under their id.
+   */
+  const projectOwner = useRef<string | null>(null)
+  const ownerKey = (name: string) => name.trim().toLowerCase()
+
+  useEffect(() => {
+    if (projectOwner.current === null) return
+    if (ownerKey(customerName) === projectOwner.current) return
+    projectOwner.current = null
+    setProjectId(undefined)
+    setProjectRevision(undefined)
+    setProjectCreatedAt(undefined)
+    setProjectSource('shop-builder')
+    setProjectFolderId(null)
+    setProjectStatus(null)
+  }, [customerName])
+
+  // Reopen Project on another staff page can hand a UV DTF project over here.
+  useOpenProjectFromUrl((project, meta) => loadProject(project, meta), setSaveError, staff)
 
   // Where the customer last clicked, in document coordinates — the progress card is
   // placed there because inside the store iframe "centre of the page" can be far
@@ -710,6 +745,117 @@ function HomeBuilder({ product, layout }: { product: GangSheetProduct; layout: B
     }
   }
 
+  /** Each design's art, size and quantity for the Drive project JSON. */
+  function designArtInputs(): DesignArtInput[] {
+    return designs.map((design) => {
+      const printSize = piecePrintSize({
+        placement: design.placement,
+        size: design.size,
+        customWidth: design.customWidth,
+        customHeight: design.customHeight,
+        pixelWidth: design.pixelWidth,
+        pixelHeight: design.pixelHeight,
+        widthIn: parsePrintWidthInches(design.size, design.placement, design.customWidth),
+      })
+      return {
+        id: design.id,
+        name: design.name,
+        previewUrl: design.previewUrl,
+        originalUrl: design.originalUrl,
+        placement: design.placement,
+        size: design.size,
+        customWidth: design.customWidth,
+        customHeight: design.customHeight,
+        quantity: designQuantity(design),
+        keepUpright: design.keepUpright,
+        pixelWidth: design.pixelWidth,
+        pixelHeight: design.pixelHeight,
+        sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
+      }
+    })
+  }
+
+  /** Staff: load a saved project's designs, name and Pre-cut back into the builder. */
+  async function loadProject(project: SspProject, meta?: { folderId?: string; fileId?: string }) {
+    const ownerName = (project.customer?.name || project.name || '').slice(0, 80)
+    projectOwner.current = ownerKey(ownerName)
+    if (ownerName) setCustomerName(ownerName)
+    if (typeof project.cut?.enabled === 'boolean') setCutOut(project.cut.enabled)
+    setProjectId(project.projectId)
+    setProjectRevision(project.revision)
+    setProjectCreatedAt(project.createdAt)
+    setProjectSource(project.source || 'shop-builder')
+    if (meta?.folderId) setProjectFolderId(meta.folderId)
+    setProjectStatus('Loading project art…')
+    setSaveError(null)
+    const { designs: restored, missingArtCount } = await restoreDesignsFromProject(project.images, {
+      placements,
+      sizeOptions,
+      recommendedSize,
+    })
+    const nextDesigns: Design[] = restored.map(({ needsReupload: _missing, ...design }) => design)
+    setDesigns((current) => {
+      for (const design of current) {
+        revokeUnusedUrls([design.originalUrl, design.previewUrl], nextDesigns)
+      }
+      return nextDesigns
+    })
+    setBuilt(false)
+    setPreviewing(false)
+    const label = project.name || ownerName || project.projectId
+    if (missingArtCount > 0) {
+      setProjectStatus(`Reopened “${label}” — ${missingArtCount} design${missingArtCount === 1 ? '' : 's'} need re-upload`)
+      setSaveError(`${missingArtCount} design${missingArtCount === 1 ? '' : 's'} could not load artwork from Drive. Use Replace on those rows.`)
+    } else {
+      setProjectStatus(`Reopened “${label}” ✓`)
+    }
+  }
+
+  /** Staff: write `{Customer}.ssp.json` and the art to Drive, creating the job folder if needed. */
+  async function saveProjectNow() {
+    const name = customerName.trim()
+    if (!name || projectSaving) return
+    setProjectSaving(true)
+    setSaveError(null)
+    setProjectStatus('Saving project…')
+    try {
+      const saved = await saveProjectWithArt({
+        folderId: projectFolderId || undefined,
+        createFolder: projectFolderId ? undefined : { customerName: name, stamp: sheetStamp() },
+        source: projectSource === 'customer-site' ? 'customer-site' : 'shop-builder',
+        projectId,
+        revision: projectRevision,
+        createdAt: projectCreatedAt,
+        name,
+        customer: { name },
+        product: {
+          printType: product.printType,
+          rollWidthIn: product.widthIn,
+          widthIn: product.widthIn,
+          heightIn: billedLength,
+          sheetCount,
+        },
+        cut: { enabled: cutOut },
+        designs: designArtInputs(),
+        fromUpload: false,
+      })
+      projectOwner.current = ownerKey(name)
+      setProjectId(saved.projectId)
+      setProjectRevision(saved.revision)
+      setProjectCreatedAt(saved.payload.createdAt)
+      setProjectFolderId(saved.folderId)
+      setDriveFolderUrl(saved.folderUrl)
+      const when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+      setProjectStatus(`Saved ${saved.fileName} · ${when} ✓`)
+      if (saved.artError) setSaveError(`Project saved, but design art did not upload: ${saved.artError}`)
+    } catch (err) {
+      setProjectStatus('Not saved')
+      setSaveError(err instanceof Error ? `Project could not be saved to Drive: ${err.message}` : 'Project could not be saved to Drive.')
+    } finally {
+      setProjectSaving(false)
+    }
+  }
+
   async function addSheetToStoreCart() {
     if (!customerName.trim() || designs.length === 0 || saving || cartStatus === 'sending') return
     setSaving(true)
@@ -781,32 +927,7 @@ function HomeBuilder({ product, layout }: { product: GangSheetProduct; layout: B
       // Each design's art goes up in the same batch as the print PNG. The store page
       // redirects to the cart the moment WooCommerce accepts the line, so anything
       // still in flight after add-to-cart is lost — the art must land before that.
-      const artInputs: DesignArtInput[] = designs.map((design) => {
-        const printSize = piecePrintSize({
-          placement: design.placement,
-          size: design.size,
-          customWidth: design.customWidth,
-          customHeight: design.customHeight,
-          pixelWidth: design.pixelWidth,
-          pixelHeight: design.pixelHeight,
-          widthIn: parsePrintWidthInches(design.size, design.placement, design.customWidth),
-        })
-        return {
-          id: design.id,
-          name: design.name,
-          previewUrl: design.previewUrl,
-          originalUrl: design.originalUrl,
-          placement: design.placement,
-          size: design.size,
-          customWidth: design.customWidth,
-          customHeight: design.customHeight,
-          quantity: designQuantity(design),
-          keepUpright: design.keepUpright,
-          pixelWidth: design.pixelWidth,
-          pixelHeight: design.pixelHeight,
-          sizeIn: { w: printSize.widthIn, h: printSize.heightIn },
-        }
-      })
+      const artInputs = designArtInputs()
       setCartProgress({ step: 'art', detail: `${designs.length} design${designs.length === 1 ? '' : 's'}` })
       const artPlan = await prepareDesignArtUploads(artInputs)
 
@@ -975,7 +1096,7 @@ function HomeBuilder({ product, layout }: { product: GangSheetProduct; layout: B
       try {
         await autoSaveProjectJson({
           folderId: drive.folderId,
-          source: 'customer-site',
+          source: staff ? 'shop-builder' : 'customer-site',
           name: who,
           customer: { name: who },
           product: {
@@ -1105,6 +1226,16 @@ function HomeBuilder({ product, layout }: { product: GangSheetProduct; layout: B
   }, [pendingCartAfterCut, cutOut, layoutKey])
 
   return <main ref={shellRef} className={`builder-shell${embed ? ' embed-mode' : ''}`}>
+    {staff && (
+      <ProjectActions
+        hostPath={product.printType === 'uv-dtf' ? '/shop/uv-dtf' : '/shop'}
+        onOpenProject={(project, meta) => void loadProject(project, meta)}
+        onSaveProject={() => void saveProjectNow()}
+        saveDisabled={!customerName.trim() || projectSaving || saving}
+        saving={projectSaving}
+      />
+    )}
+    {staff && projectStatus && <p className="project-status-banner" aria-live="polite">{projectStatus}</p>}
     {embed ? (
       <div className="embed-bar">
         <strong>{manual ? 'Arrange your own gang sheet' : product.embedTitle}</strong>

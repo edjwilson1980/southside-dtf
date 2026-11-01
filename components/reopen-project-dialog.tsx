@@ -14,14 +14,17 @@ import {
   type SspProject,
 } from '@/lib/project/types'
 import { PROJECT_FORMAT } from '@/lib/project/types'
+import { PENDING_PROJECT_KEY, projectOpenPath, type ProjectOpenPath } from '@/lib/project/open-path'
 
 type SourceFilter = 'all' | ProjectSource
 
 type ReopenProjectDialogProps = {
   open: boolean
   onClose: () => void
-  /** Called when a shop-builder / customer-site project should load into this page. */
+  /** Called when a project belongs on this page (same builder as `hostPath`). */
   onOpenProject: (project: SspProject, meta?: { folderId?: string; fileId?: string }) => void
+  /** Staff page hosting the dialog. Projects for another builder open on their own page. */
+  hostPath?: ProjectOpenPath
 }
 
 function formatWhen(iso: string) {
@@ -37,7 +40,20 @@ function formatWhen(iso: string) {
   }
 }
 
-export function ReopenProjectDialog({ open, onClose, onOpenProject }: ReopenProjectDialogProps) {
+export function ReopenProjectDialog({ open, onClose, onOpenProject, hostPath = '/shop' }: ReopenProjectDialogProps) {
+  /** Hand a project read from a file / paste to the page that edits it. */
+  function openOnItsPage(project: SspProject, text: string): boolean {
+    const path = projectOpenPath(project)
+    if (path === hostPath) return false
+    try {
+      sessionStorage.setItem(PENDING_PROJECT_KEY, text)
+    } catch {
+      // ignore
+    }
+    window.location.href = `${path}?fromUpload=1`
+    return true
+  }
+
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [source, setSource] = useState<SourceFilter>('all')
@@ -89,13 +105,6 @@ export function ReopenProjectDialog({ open, onClose, onOpenProject }: ReopenProj
     setBusy(true)
     setError(null)
     try {
-      if (hit.source === 'dtf-stickers') {
-        const params = new URLSearchParams()
-        if (hit.projectId) params.set('projectId', hit.projectId)
-        if (hit.fileId) params.set('fileId', hit.fileId)
-        window.location.href = `/shop/sticker-maker?${params.toString()}`
-        return
-      }
       const params = new URLSearchParams()
       if (hit.projectId) params.set('projectId', hit.projectId)
       if (hit.fileId) params.set('fileId', hit.fileId)
@@ -109,8 +118,10 @@ export function ReopenProjectDialog({ open, onClose, onOpenProject }: ReopenProj
         source?: ProjectSource
       }
       if (!res.ok || !json.project) throw new Error(json.error || 'Could not open project.')
-      if (json.source === 'dtf-stickers' || json.openPath === '/shop/sticker-maker') {
-        window.location.href = `/shop/sticker-maker?projectId=${encodeURIComponent(hit.projectId)}`
+      const path = projectOpenPath(json.project)
+      if (path !== hostPath) {
+        if (json.fileId) params.set('fileId', json.fileId)
+        window.location.href = `${path}?${params.toString()}`
         return
       }
       rememberRecentProject(hit)
@@ -132,15 +143,7 @@ export function ReopenProjectDialog({ open, onClose, onOpenProject }: ReopenProj
       if (project.format !== PROJECT_FORMAT) {
         throw new Error('This file is not a gang sheet project (.ssp.json).')
       }
-      if (project.source === 'dtf-stickers') {
-        try {
-          sessionStorage.setItem('ssp.pending-project', text)
-        } catch {
-          // ignore
-        }
-        window.location.href = '/shop/sticker-maker?fromUpload=1'
-        return
-      }
+      if (openOnItsPage(project, text)) return
       rememberRecentProject({
         projectId: project.projectId || `local_${Date.now()}`,
         name: project.name || file.name,
@@ -165,11 +168,7 @@ export function ReopenProjectDialog({ open, onClose, onOpenProject }: ReopenProj
       try {
         const project = JSON.parse(value) as SspProject
         if (project.format !== PROJECT_FORMAT) throw new Error('Not a project JSON.')
-        if (project.source === 'dtf-stickers') {
-          sessionStorage.setItem('ssp.pending-project', value)
-          window.location.href = '/shop/sticker-maker?fromUpload=1'
-          return
-        }
+        if (openOnItsPage(project, value)) return
         onOpenProject(project)
         onClose()
         return

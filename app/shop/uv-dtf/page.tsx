@@ -6,7 +6,10 @@ export const metadata: Metadata = {
   title: 'UV DTF Builder | Shop Gang Sheet Tools',
 }
 
-/** Staff copy of the customer UV DTF builder (`/uv-dtf`), under `/shop` so the staff top menu shows. */
+/**
+ * Staff copy of the customer UV DTF builder (`/uv-dtf`), under `/shop` so the staff
+ * top menu shows, plus Save Project / Reopen Project like the Shop Builder.
+ */
 export default function ShopUvDtfPage() {
-  return <GangSheetBuilder product={UV_DTF_PRODUCT} />
+  return <GangSheetBuilder product={UV_DTF_PRODUCT} staff />
 }
