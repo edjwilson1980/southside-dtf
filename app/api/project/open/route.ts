@@ -6,6 +6,7 @@ import {
 } from '@/lib/google-drive'
 import { isProjectSource } from '@/lib/project/driveTags'
 import { PROJECT_FORMAT } from '@/lib/project/types'
+import { projectOpenPath } from '@/lib/project/open-path'
 
 export const runtime = 'nodejs'
 
@@ -45,7 +46,7 @@ export async function GET(req: Request) {
     }
 
     const source = isProjectSource(project.source) ? project.source : 'shop-builder'
-    const openPath = source === 'dtf-stickers' ? '/shop/sticker-maker' : '/shop'
+    const openPath = projectOpenPath({ source, product: project.product })
 
     return NextResponse.json({
       ok: true,
