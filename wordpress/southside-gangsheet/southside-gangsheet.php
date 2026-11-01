@@ -2,7 +2,7 @@
 /**
  * Plugin Name: South Side Gang Sheet Builder
  * Description: Embed the South Side DTF customer gang sheet builder and UV DTF gang sheet builder, and add finished sheets (with optional Print & Press labor) to the WooCommerce cart.
- * Version: 1.29
+ * Version: 1.32
  * Author: South Side DTF
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
   exit;
 }
 
-define('SSGS_PLUGIN_VERSION', '1.29');
+define('SSGS_PLUGIN_VERSION', '1.32');
 define('SSGS_DEFAULT_BUILDER_URL', 'https://southside-dtf.vercel.app');
 /** WooCommerce attribute + term that marks a product as UV DTF (spec A9). */
 define('SSGS_UV_DTF_ATTRIBUTE', 'pa_print_type');
@@ -181,11 +181,16 @@ function ssgs_render_settings_page() {
 add_shortcode('southside_gangsheet', 'ssgs_render_shortcode');
 add_shortcode('southside_artwork_intake', 'ssgs_render_intake_shortcode');
 
-function ssgs_render_embed_iframe($base, $src, $title, $height, $fallback_label, $fallback_url = '') {
-  $height = max(intval($height), 400);
-  $id = 'ssgs-frame-' . uniqid();
-  $fallback_url = $fallback_url ?: ($base . '/');
-
+/**
+ * Load embed.js (resize, scroll and the Add to Cart relay) and its settings, once per page.
+ * Without it the builder's Add to Cart has nothing to talk to and times out.
+ */
+function ssgs_enqueue_embed($base) {
+  static $done = false;
+  if ($done) {
+    return;
+  }
+  $done = true;
   wp_enqueue_script(
     'southside-gangsheet-embed',
     plugins_url('embed.js', __FILE__),
@@ -195,10 +200,46 @@ function ssgs_render_embed_iframe($base, $src, $title, $height, $fallback_label,
   );
   wp_localize_script('southside-gangsheet-embed', 'ssgsEmbed', array(
     'minHeight' => intval(ssgs_get_options()['min_height']),
-    'builderOrigin' => $base,
+    'builderOrigin' => untrailingslashit($base),
     'ajaxUrl' => admin_url('admin-ajax.php'),
     'nonce' => wp_create_nonce('ssgs_add_to_cart'),
   ));
+}
+
+/**
+ * Does this HTML hold a builder iframe that was pasted in (a Custom HTML block or
+ * page-builder HTML widget) instead of coming from the shortcode? Those pages
+ * still need embed.js, or Add to Cart can never reach WooCommerce.
+ */
+function ssgs_has_pasted_builder_iframe($html) {
+  if (!is_string($html) || stripos($html, '<iframe') === false) {
+    return false;
+  }
+  if (strpos($html, 'ssgs-embed-frame') !== false) {
+    return true;
+  }
+  $host = wp_parse_url(ssgs_get_options()['builder_url'], PHP_URL_HOST);
+  return $host && stripos($html, '//' . $host) !== false;
+}
+
+function ssgs_enqueue_for_pasted_iframe($html) {
+  if (!is_admin() && ssgs_has_pasted_builder_iframe($html)) {
+    ssgs_enqueue_embed(ssgs_get_options()['builder_url']);
+  }
+  return $html;
+}
+add_filter('the_content', 'ssgs_enqueue_for_pasted_iframe', 20);
+add_filter('widget_text', 'ssgs_enqueue_for_pasted_iframe', 20);
+add_filter('widget_block_content', 'ssgs_enqueue_for_pasted_iframe', 20);
+// Elementor renders its HTML widgets outside the_content.
+add_filter('elementor/widget/render_content', 'ssgs_enqueue_for_pasted_iframe', 20);
+
+function ssgs_render_embed_iframe($base, $src, $title, $height, $fallback_label, $fallback_url = '') {
+  $height = max(intval($height), 400);
+  $id = 'ssgs-frame-' . uniqid();
+  $fallback_url = $fallback_url ?: ($base . '/');
+
+  ssgs_enqueue_embed($base);
 
   ob_start();
   ?>
