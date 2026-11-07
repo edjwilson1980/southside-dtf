@@ -19,7 +19,7 @@ These are **separate products** that share print/packing libraries. Do not mix t
 
 ## Customer manual builder (`/manual`)
 
-- "Arrange My Own Gangsheet": the same builder (`layout="manual"`) where the customer places every transfer on one DTF sheet. Linked from step 1 of `/` once a name is typed (the name carries over)
+- "Arrange My Own Gangsheet": the same builder (`layout="manual"`) where the customer places every transfer on one DTF sheet. The DTF builder shows **We'll arrange it** and **Build my own gang sheet** at the top, before a name is typed. A name already entered carries over.
 - Rules, auto-arrange and the sheet page live in `lib/manual-layout.ts`. The editor is `components/manual-sheet-editor.tsx`
 - Billed like `/`: by how far down the art reaches, snapped up to the ladder. Pre-cut at the same rates. No Print & Press. Cart line is `sheetType: 'built'` (no plugin change); the project JSON records `layout: 'manual'`
 - `/embed/manual` → `/manual?embed=1`
@@ -71,7 +71,7 @@ Shared code lives under `lib/` (compose, cut layout, sheet size, image tools).
   (`Customer Name.ssp.json`) and embeds design art so Reopen shows the images.
 - **Automatic project JSON** — Drive uploads create/update the project `.ssp.json` in the job folder.
 - **Add to Cart progress card** — blocking status card with steps, elapsed time and Drive upload % from the click until the store cart opens.
-- **Version footer** — current version (v2.13.0) shown at the bottom of every builder page.
+- **Version footer** — current version (v2.14.2) shown at the bottom of every builder page.
 - Spec: [`docs/GANGSHEET_ADDON_SPEC.md`](docs/GANGSHEET_ADDON_SPEC.md)
 
 ### Shop sticker routes (staff)

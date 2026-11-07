@@ -89,6 +89,36 @@ const howToSteps = [
   { id: 'step-5', number: 5, title: 'Review & order', detail: 'Check the layout, then add it to your cart.' },
 ]
 
+/** Always-visible DTF choice: we arrange the sheet, or the customer builds it in manual mode. */
+function LayoutChoice({ manual, autoHref, manualHref }: { manual: boolean; autoHref: string; manualHref: string }) {
+  return (
+    <div className="layout-choice" role="group" aria-label="How should this gang sheet be built?">
+      {manual ? (
+        <a href={autoHref}>
+          <strong>We&apos;ll arrange it</strong>
+          <span>We pack and size your designs.</span>
+        </a>
+      ) : (
+        <div className="selected" aria-current="page">
+          <strong>We&apos;ll arrange it</strong>
+          <span>We pack and size your designs.</span>
+        </div>
+      )}
+      {manual ? (
+        <div className="selected" aria-current="page">
+          <strong>Build my own gang sheet</strong>
+          <span>Manual mode. Place every design yourself.</span>
+        </div>
+      ) : (
+        <a href={manualHref}>
+          <strong>Build my own gang sheet</strong>
+          <span>Manual mode. Place every design yourself.</span>
+        </a>
+      )}
+    </div>
+  )
+}
+
 function GuideHeading({ number, title, hint }: { number: number; title: string; hint: string }) {
   return (
     <div className="guide-heading">
@@ -1271,6 +1301,15 @@ function HomeBuilder({ product, layout, staff }: { product: GangSheetProduct; la
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingCartAfterCut, cutOut, layoutKey])
 
+  // Name and store-embed mode ride along when switching automatic ⇄ manual.
+  const withModeQuery = (path: string) => {
+    const query = [
+      embed ? 'embed=1' : '',
+      customerName.trim() ? `name=${encodeURIComponent(customerName.trim())}` : '',
+    ].filter(Boolean).join('&')
+    return query ? `${path}?${query}` : path
+  }
+
   return <main ref={shellRef} className={`builder-shell${embed ? ' embed-mode' : ''}`}>
     {staff && (
       <ProjectActions
@@ -1291,11 +1330,19 @@ function HomeBuilder({ product, layout, staff }: { product: GangSheetProduct; la
         <img src={logoUrl} alt="South Side DTF" className="brand-logo" />
         <div className="title-block">
           <h1>{manual ? 'Arrange My Own Gangsheet' : product.title}</h1>
-          <p className="lead">No gang sheet experience needed.</p>
-          <p className="sublead">Follow the numbered steps. We pack and size your designs for South Side DTF.</p>
+          <p className="lead">{manual ? 'You place every design.' : 'No gang sheet experience needed.'}</p>
+          <p className="sublead">
+            {manual
+              ? 'Upload your art, then drag each transfer onto the sheet yourself.'
+              : 'Follow the numbered steps. We pack and size your designs for South Side DTF.'}
+          </p>
         </div>
       </div>
     )}
+    {product.printType === 'dtf' && (
+      <LayoutChoice manual={manual} autoHref={withModeQuery('/')} manualHref={withModeQuery('/manual')} />
+    )}
+
     <ol className="how-to" aria-label="How to build your gang sheet">
       {howToSteps.map((step) => (
         <li key={step.id}>
@@ -1304,8 +1351,14 @@ function HomeBuilder({ product, layout, staff }: { product: GangSheetProduct; la
             className={`how-to-item ${currentGuideStep === step.number ? 'current' : ''} ${currentGuideStep > step.number ? 'done' : ''}`}
           >
             <b>{step.number}</b>
-            <strong>{step.title}</strong>
-            <span>{step.number === 3 ? chart.pickDetail : step.detail}</span>
+            <strong>{manual && step.number === 4 ? 'Arrange your sheet' : step.title}</strong>
+            <span>
+              {step.number === 3
+                ? chart.pickDetail
+                : manual && step.number === 4
+                  ? 'Drag each design onto the sheet. Nothing is packed for you.'
+                  : step.detail}
+            </span>
           </a>
         </li>
       ))}
@@ -1355,19 +1408,6 @@ function HomeBuilder({ product, layout, staff }: { product: GangSheetProduct; la
         <div id="step-1" className="guide-block">
           <GuideHeading number={1} title="Your name" hint="Enter your name before you upload anything. We use it to label your sheet." />
           <label className="customer-name-field workspace-customer-name">Your name <span className="required-field">Required</span><input required type="text" maxLength={80} placeholder="Enter your name before uploading" value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></label>
-          {/* Switch between the automatic builder and manual mode, keeping the name (and store mode). */}
-          {!manual && customerName.trim() && product.printType === 'dtf' && (
-            <div className="layout-switch">
-              <span>Think you can lay out a better sheet? <small>Place every design yourself.</small></span>
-              <a href={`/manual?${embed ? 'embed=1&' : ''}name=${encodeURIComponent(customerName.trim())}`}>Switch to manual mode →</a>
-            </div>
-          )}
-          {manual && (
-            <div className="layout-switch">
-              <span>Manual mode: you place every transfer. <small>Rather have us arrange it?</small></span>
-              <a href={`/?${embed ? 'embed=1&' : ''}${customerName.trim() ? `name=${encodeURIComponent(customerName.trim())}` : ''}`}>← Back to automatic</a>
-            </div>
-          )}
         </div>
         <div id="step-2" className="guide-block">
           <GuideHeading number={2} title="Upload your design" hint="Drop a PNG, JPG, PDF, or SVG here, or click to choose a file from your computer." />

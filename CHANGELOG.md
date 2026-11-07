@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.14.2] — 2026-11-07
+
+### Fixed
+- The DTF gang sheet builder shows **We'll arrange it** and **Build my own gang sheet** at the top of the page, before a name is typed. Opening Build A Gangsheet (including the store embed) no longer hides manual mode until the name field is filled in. Manual mode says you place every design, and step 4 is **Arrange your sheet**.
+
 ## [2.14.1] — 2026-11-01
 
 ### Fixed
