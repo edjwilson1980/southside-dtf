@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.14.3] — 2026-11-08
+
+### Added
+- **Create Gangsheet Manually** (the manual builder): each image has its own width and height. Duplicate adds another copy of the same size, Copy makes a separate image that can be sized on its own, and Delete removes that image. Drag an image onto the sheet, or drop artwork from the computer onto the sheet.
+- **Perspective** on each image, on the customer builder and the shop builder. It stays on so the image keeps its shape. Turn it off to stretch the image to the width and height, including taller than it is wide.
+
 ## [2.14.2] — 2026-11-07
 
 ### Fixed

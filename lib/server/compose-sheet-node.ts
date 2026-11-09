@@ -54,9 +54,9 @@ export async function composeGangSheetNode(opts: {
     const h = piece.heightIn * ppi
     const boxW = piece.rotated ? h : w
     const boxH = piece.rotated ? w : h
-    const scale = Math.min(boxW / Math.max(1, art.width), boxH / Math.max(1, art.height))
-    const drawW = Math.max(1, Math.round(art.width * scale))
-    const drawH = Math.max(1, Math.round(art.height * scale))
+    const scale = piece.stretch ? 0 : Math.min(boxW / Math.max(1, art.width), boxH / Math.max(1, art.height))
+    const drawW = piece.stretch ? Math.max(1, Math.round(boxW)) : Math.max(1, Math.round(art.width * scale))
+    const drawH = piece.stretch ? Math.max(1, Math.round(boxH)) : Math.max(1, Math.round(art.height * scale))
     const key = `${piece.previewUrl}|${drawW}x${drawH}|${piece.rotated ? 'r' : 'u'}`
     let buffer = cache.get(key)
     if (!buffer) {

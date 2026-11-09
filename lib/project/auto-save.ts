@@ -204,6 +204,7 @@ export async function saveProjectWithArt(
     customHeight: design.customHeight,
     quantity: Math.max(1, design.quantity || 1),
     keepUpright: Boolean(design.keepUpright),
+    stretch: Boolean(design.stretch),
     pixelWidth: design.pixelWidth,
     pixelHeight: design.pixelHeight,
     placement: design.placement,

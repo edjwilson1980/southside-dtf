@@ -26,6 +26,7 @@ export type DesignArtInput = {
   customHeight?: string
   quantity?: number
   keepUpright?: boolean
+  stretch?: boolean
   pixelWidth?: number
   pixelHeight?: number
   placement?: string
@@ -84,6 +85,7 @@ export async function buildImagesWithEmbeddedArt(
       customHeight: design.customHeight,
       quantity: Math.max(1, design.quantity || 1),
       keepUpright: Boolean(design.keepUpright),
+      stretch: Boolean(design.stretch),
       pixelWidth: design.pixelWidth,
       pixelHeight: design.pixelHeight,
       placement: design.placement,
@@ -155,6 +157,7 @@ export function imagesFromUploadedArt(
       customHeight: design.customHeight,
       quantity: Math.max(1, design.quantity || 1),
       keepUpright: Boolean(design.keepUpright),
+      stretch: Boolean(design.stretch),
       pixelWidth: design.pixelWidth,
       pixelHeight: design.pixelHeight,
       placement: design.placement,

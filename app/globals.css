@@ -2211,17 +2211,29 @@ html, body {
 .manual-uploads { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #fafbfc; }
 .manual-uploads-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: #f1f4f7; font-size: 13px; }
 .manual-uploads-head span { color: var(--muted); font-size: 12px; }
-.manual-tray { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); align-content: start; gap: 6px; padding: 8px; max-height: 300px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.manual-tray { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); align-content: start; gap: 8px; padding: 8px; max-height: 460px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .manual-tray-more { display: flex; width: 100%; align-items: center; justify-content: center; gap: 4px; padding: 6px; border: 0; border-top: 1px solid var(--border); background: #e8f6fb; color: var(--chicago-blue); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-.manual-tile { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--ink); font: inherit; font-size: 12px; text-align: left; cursor: grab; touch-action: none; user-select: none; }
-.manual-tile:hover:not(:disabled) { border-color: var(--chicago-blue); }
-.manual-tile:focus-visible { outline: 2px solid var(--chicago-blue); outline-offset: 2px; }
-.manual-tile.done { cursor: default; opacity: .65; }
-.manual-tile-art { display: grid; place-items: center; width: 58px; height: 58px; border: 1px solid var(--border); border-radius: 6px; background: repeating-conic-gradient(#e3e3e3 0% 25%, #f8f8f8 0% 50%) 0 0 / 10px 10px; }
+.manual-tile { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 8px 10px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--ink); font: inherit; font-size: 12px; text-align: left; }
+.manual-tile:hover { border-color: var(--chicago-blue); }
+.manual-tile.done { border-style: dashed; }
+.manual-tray-empty { grid-column: 1 / -1; padding: 14px 8px; color: var(--muted); font-size: 13px; }
+.manual-tile-art { display: grid; place-items: center; width: 64px; height: 64px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: repeating-conic-gradient(#e3e3e3 0% 25%, #f8f8f8 0% 50%) 0 0 / 10px 10px; cursor: grab; touch-action: none; }
+.manual-tile-art:disabled { cursor: default; opacity: .55; }
+.manual-tile-art:focus-visible { outline: 2px solid var(--chicago-blue); outline-offset: 2px; }
 .manual-tile-art img { max-width: 100%; max-height: 100%; object-fit: contain; pointer-events: none; }
-.manual-tile-meta { display: grid; gap: 1px; min-width: 0; }
-.manual-tile-meta strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.manual-tile-meta span { color: var(--muted); font-size: 11px; }
+.manual-tile-meta { display: grid; gap: 4px; min-width: 0; justify-items: start; }
+.manual-tile-meta strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; font-size: 13px; }
+.manual-tile-size { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.manual-tile-size label { display: grid; gap: 2px; color: #344054; font-size: 11px; font-weight: 700; }
+.manual-tile-size input { width: 88px; height: 32px; padding: 0 8px; border: 1px solid var(--input); border-radius: 7px; background: #fff; color: var(--ink); font: inherit; font-weight: 600; }
+.manual-tile-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.manual-tile-actions button { display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: #344054; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.manual-tile-actions button:hover { border-color: var(--chicago-blue); }
+.manual-tile-actions button.danger { color: var(--chicago-red); }
+.manual-tile-actions button.danger:hover { border-color: var(--chicago-red); }
+.manual-ghost { position: fixed; z-index: 80; display: grid; place-items: center; pointer-events: none; border: 2px solid var(--chicago-blue); border-radius: 6px; background: #fff; box-shadow: 0 8px 24px rgb(24 35 53 / 25%); }
+.manual-ghost img { width: 100%; height: 100%; object-fit: contain; }
+.manual-sheet.drop-hover { outline-color: var(--chicago-blue); }
 .manual-tile-count { padding: 3px 8px; border-radius: 999px; background: #e8f6fb; color: var(--chicago-blue); font-size: 11px; font-weight: 700; white-space: nowrap; }
 .manual-tile-count.done { background: #f3fbf5; color: #0f6b36; }
 /* Size box: same height whether or not a design is selected, so the sheet never moves. */
@@ -2268,6 +2280,9 @@ html, body {
 /* Not clipped: a turned design fills its box corner to corner, and the box is exactly its footprint. */
 .manual-piece-art { position: absolute; inset: 0; display: grid; place-items: center; }
 .manual-piece-art img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.manual-piece.stretch .manual-piece-art img { object-fit: fill; }
+.perspective-toggle { display: inline-flex; align-items: center; gap: 6px; width: fit-content; margin-top: 4px; color: #344054; font-size: 12px; font-weight: 700; cursor: pointer; }
+.perspective-toggle input { width: 16px; height: 16px; margin: 0; accent-color: var(--chicago-blue); cursor: pointer; }
 .manual-piece-art > span { color: #344054; font-size: 10px; font-weight: 800; }
 .manual-handle { position: absolute; z-index: 6; width: 12px; height: 12px; border: 2px solid var(--chicago-blue); border-radius: 3px; background: #fff; touch-action: none; }
 .manual-handle[data-h="nw"] { left: -7px; top: -7px; cursor: nwse-resize; }

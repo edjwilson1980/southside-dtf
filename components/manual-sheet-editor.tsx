@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronDown, Copy, CornerUpLeft, Lock, LayoutGrid, RotateCw, Trash2, Undo2 } from 'lucide-react'
+import { PerspectiveToggle } from '@/components/perspective-toggle'
 import { CutBoxOverlay } from '@/components/cut-box-overlay'
 import { cutPreviewBoxes, registrationMarkBounds } from '@/lib/cut-layout'
 import { printDpi, qualityFromDpi } from '@/lib/image-utils'
@@ -27,6 +28,8 @@ export type ManualTransfer = {
   heightIn: number
   /** Art pixel width, for the print-quality readout while resizing. */
   pixelWidth?: number
+  /** Perspective is off: the image is stretched to widthIn × heightIn. */
+  stretch?: boolean
 }
 
 /**
@@ -96,6 +99,20 @@ type Props = {
   onDuplicate: (key: string) => string | null
   /** Take this copy off the order (its design's quantity goes down by one). */
   onDelete: (key: string) => void
+  /** Set this image's own print size, in inches. Applies to that image only. */
+  onSizeDesign?: (designId: number, widthIn: number, heightIn: number) => void
+  /** One more copy of this image, same size, waiting to be dragged onto the sheet. */
+  onDuplicateDesign?: (designId: number) => void
+  /** A separate copy of this image that can be sized on its own. */
+  onCopyDesign?: (designId: number) => void
+  /** Remove this image and every copy of it. */
+  onDeleteDesign?: (designId: number) => void
+  /** Drop an image onto the sheet at this point (inches from the film's top-left). */
+  onPlaceDesign?: (designId: number, xIn: number, yIn: number) => void
+  /** Artwork dropped on the sheet from the computer. */
+  onAddFiles?: (files: FileList | File[]) => void
+  /** Perspective on keeps this image's shape. Off lets width and height stretch it. */
+  onPerspective?: (designId: number, on: boolean) => void
 }
 
 /**
@@ -119,13 +136,24 @@ export function ManualSheetEditor({
   sheetName,
   onDuplicate,
   onDelete,
+  onSizeDesign,
+  onDuplicateDesign,
+  onCopyDesign,
+  onDeleteDesign,
+  onPlaceDesign,
+  onAddFiles,
+  onPerspective,
 }: Props) {
   const sheetRef = useRef<HTMLDivElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const trayRef = useRef<HTMLDivElement>(null)
   const [pxPerIn, setPxPerIn] = useState(24)
   const [selected, setSelected] = useState<string | null>(null)
-  const drag = useRef<{ key: string; offX: number; offY: number } | null>(null)
+  const drag = useRef<{ key: string; offX: number; offY: number; fromTray: boolean; onSheet: boolean } | null>(null)
+  const dragOrigin = useRef({ x: 0, y: 0 })
+  const dragMoved = useRef(false)
+  const [ghost, setGhost] = useState<{ src: string; x: number; y: number; w: number; h: number } | null>(null)
+  const [dropHover, setDropHover] = useState(false)
   const resize = useRef<{ key: string; handle: ResizeHandle; start: { xIn: number; yIn: number; widthIn: number; heightIn: number }; scale: number } | null>(null)
   /** Rotate handle drag: the piece turns about its centre by however far the pointer swings. */
   const turning = useRef<{ key: string; cx: number; cy: number; startAngle: number; pointerStart: number } | null>(null)
@@ -226,6 +254,12 @@ export function ManualSheetEditor({
       : current)
   }
 
+  function pointerOverSheet(event: { clientX: number; clientY: number }) {
+    const rect = sheetRef.current?.getBoundingClientRect()
+    if (!rect) return false
+    return event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom
+  }
+
   useEffect(() => {
     function onMove(event: PointerEvent) {
       const turn = turning.current
@@ -243,6 +277,42 @@ export function ManualSheetEditor({
       }
       const active = drag.current
       if (!active) return
+      if (Math.hypot(event.clientX - dragOrigin.current.x, event.clientY - dragOrigin.current.y) > 6) dragMoved.current = true
+      if (active.fromTray && !pointerOverSheet(event)) {
+        if (active.onSheet) {
+          const key = active.key
+          active.onSheet = false
+          onPlacementsChange((current) => {
+            if (!current[key]) return current
+            const next = { ...current }
+            delete next[key]
+            return next
+          })
+        }
+        const transfer = byKey.get(active.key)
+        setDropHover(false)
+        if (transfer) {
+          setGhost({
+            src: transfer.previewUrl,
+            x: event.clientX - (transfer.widthIn * pxPerIn) / 2,
+            y: event.clientY - (transfer.heightIn * pxPerIn) / 2,
+            w: Math.max(36, transfer.widthIn * pxPerIn),
+            h: Math.max(36, transfer.heightIn * pxPerIn),
+          })
+        }
+        return
+      }
+      setGhost(null)
+      if (active.fromTray) setDropHover(true)
+      if (active.fromTray && !active.onSheet) {
+        active.onSheet = true
+        const transfer = byKey.get(active.key)
+        if (!transfer) return
+        const point = inchesFromEvent(event)
+        const spot = landing(point.xIn - active.offX, point.yIn - active.offY, { widthIn: transfer.widthIn, heightIn: transfer.heightIn })
+        onPlacementsChange((current) => ({ ...current, [active.key]: { ...current[active.key], ...spot } }))
+        return
+      }
       const point = inchesFromEvent(event)
       moveTo(active.key, point.xIn - active.offX, point.yIn - active.offY)
     }
@@ -259,10 +329,17 @@ export function ManualSheetEditor({
         return
       }
       if (!drag.current) return
-      const key = drag.current.key
+      const active = drag.current
       drag.current = null
       setDragging(null)
-      requestAnimationFrame(() => sheetRef.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(key)}"]`)?.focus())
+      setGhost(null)
+      setDropHover(false)
+      if (active.fromTray && !active.onSheet) {
+        const transfer = byKey.get(active.key)
+        if (transfer && !dragMoved.current) placeOne(transfer)
+        return
+      }
+      requestAnimationFrame(() => sheetRef.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(active.key)}"]`)?.focus())
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
@@ -276,14 +353,19 @@ export function ManualSheetEditor({
 
   function startFromTray(event: React.PointerEvent, transfer: ManualTransfer) {
     event.preventDefault()
-    const point = inchesFromEvent(event)
-    const offX = transfer.widthIn / 2
-    const offY = transfer.heightIn / 2
-    drag.current = { key: transfer.key, offX, offY }
-    const spot = landing(point.xIn - offX, point.yIn - offY, transfer)
-    onPlacementsChange((current) => ({ ...current, [transfer.key]: spot }))
+    event.stopPropagation()
+    dragOrigin.current = { x: event.clientX, y: event.clientY }
+    dragMoved.current = false
+    drag.current = { key: transfer.key, offX: transfer.widthIn / 2, offY: transfer.heightIn / 2, fromTray: true, onSheet: false }
     setDragging(transfer.key)
     setSelected(transfer.key)
+    setGhost({
+      src: transfer.previewUrl,
+      x: event.clientX - (transfer.widthIn * pxPerIn) / 2,
+      y: event.clientY - (transfer.heightIn * pxPerIn) / 2,
+      w: Math.max(36, transfer.widthIn * pxPerIn),
+      h: Math.max(36, transfer.heightIn * pxPerIn),
+    })
   }
 
   /** Keyboard / click placement for an upload row: drop it at the top-left free spot via Auto-arrange. */
@@ -297,7 +379,7 @@ export function ManualSheetEditor({
     if (!placement) return
     event.preventDefault()
     const point = inchesFromEvent(event)
-    drag.current = { key, offX: point.xIn - placement.xIn, offY: point.yIn - placement.yIn }
+    drag.current = { key, offX: point.xIn - placement.xIn, offY: point.yIn - placement.yIn, fromTray: false, onSheet: true }
     setDragging(key)
     setSelected(key)
   }
@@ -477,29 +559,59 @@ export function ManualSheetEditor({
           <strong>Your uploads</strong>
           <span>{uploads.length} design{uploads.length === 1 ? '' : 's'} · {unplaced.length ? `${unplaced.length} transfer${unplaced.length === 1 ? '' : 's'} left to place` : 'all placed'}</span>
         </div>
-        <div className="manual-tray" ref={trayRef} onScroll={updateMoreBelow} aria-label="Your uploaded designs">
+        <div
+          className="manual-tray"
+          ref={trayRef}
+          onScroll={updateMoreBelow}
+          aria-label="Your uploaded designs"
+          onDragOver={(event) => { if (event.dataTransfer.files?.length) { event.preventDefault(); setDropHover(true) } }}
+          onDragLeave={() => setDropHover(false)}
+          onDrop={(event) => {
+            if (!event.dataTransfer.files?.length) return
+            event.preventDefault()
+            setDropHover(false)
+            onAddFiles?.(event.dataTransfer.files)
+          }}
+        >
+          {uploads.length === 0 && (
+            <div className="manual-tray-empty">Drop images here, or use Upload above. Then size, copy, and drag each one onto the sheet.</div>
+          )}
           {uploads.map(({ designId, first, copies, left }) => {
             const next = left[0]
-            const size = `${round2(first.widthIn)} × ${round2(first.heightIn)} in`
             return (
-              <button
-                key={designId}
-                type="button"
-                className={`manual-tile${next ? '' : ' done'}`}
-                disabled={!next}
-                onPointerDown={(event) => { if (next) startFromTray(event, next) }}
-                onKeyDown={(event) => { if (next && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); placeOne(next) } }}
-                aria-label={next
-                  ? `Place ${first.name}, ${left.length} of ${copies} left. Drag onto the sheet, or press Enter to place it.`
-                  : `${first.name}: all ${copies} placed.`}
-              >
-                <span className="manual-tile-art">{first.previewUrl ? <img src={first.previewUrl} alt="" draggable={false} /> : null}</span>
-                <span className="manual-tile-meta">
+              <div key={designId} className={`manual-tile${next ? '' : ' done'}`}>
+                <button
+                  type="button"
+                  className="manual-tile-art"
+                  disabled={!next}
+                  title={next ? 'Drag onto the sheet' : 'All copies are on the sheet. Duplicate to add another.'}
+                  aria-label={next
+                    ? `Drag ${first.name} onto the sheet, ${left.length} of ${copies} left`
+                    : `${first.name}: all ${copies} placed`}
+                  onPointerDown={(event) => { if (next) startFromTray(event, next) }}
+                  onKeyDown={(event) => { if (next && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); placeOne(next) } }}
+                >
+                  {first.previewUrl ? <img src={first.previewUrl} alt="" draggable={false} /> : null}
+                </button>
+                <div className="manual-tile-meta">
                   <strong>#{first.designNumber} {first.name}</strong>
-                  <span>{size}</span>
-                </span>
-                <span className={`manual-tile-count${next ? '' : ' done'}`}>{next ? `${left.length} of ${copies} left` : '✓ All placed'}</span>
-              </button>
+                  <span className={`manual-tile-count${next ? '' : ' done'}`}>{next ? `${left.length} of ${copies} left` : '✓ All placed'}</span>
+                </div>
+                <ImageSizeFields
+                  name={first.name}
+                  widthIn={first.widthIn}
+                  heightIn={first.heightIn}
+                  maxWidthIn={sheetWidthIn}
+                  lockAspect={!first.stretch}
+                  onCommit={(widthIn, heightIn) => onSizeDesign?.(designId, widthIn, heightIn)}
+                />
+                <PerspectiveToggle checked={!first.stretch} onChange={(on) => onPerspective?.(designId, on)} name={first.name} />
+                <div className="manual-tile-actions">
+                  <button type="button" onClick={() => onDuplicateDesign?.(designId)}><Copy size={14} /> Duplicate</button>
+                  <button type="button" onClick={() => onCopyDesign?.(designId)}><Copy size={14} /> Copy</button>
+                  <button type="button" className="danger" onClick={() => onDeleteDesign?.(designId)}><Trash2 size={14} /> Delete</button>
+                </div>
+              </div>
             )
           })}
         </div>
@@ -513,10 +625,12 @@ export function ManualSheetEditor({
       {/* Always takes the same space, so selecting a design never moves the sheet under the pointer. */}
       {selectedTransfer && selectedPlacement && selected ? (
         <SizeBox
-          key={`${selected}:${selectedPlacement.scale ?? 1}:${selectedPlacement.angle ?? 0}`}
+          key={`${selected}:${selectedPlacement.scale ?? 1}:${selectedPlacement.angle ?? 0}:${selectedTransfer.widthIn}:${selectedTransfer.heightIn}`}
           transfer={selectedTransfer}
           placement={selectedPlacement}
+          lockAspect={!selectedTransfer.stretch}
           onScale={(factor) => applyScale(selected, factor, 'se')}
+          onAbsoluteSize={(widthIn, heightIn) => onSizeDesign?.(selectedTransfer.designId, widthIn, heightIn)}
           onAngle={(angle) => turnTo(selected, angle)}
         />
       ) : (
@@ -526,16 +640,18 @@ export function ManualSheetEditor({
         </div>
       )}
       <p className="manual-help">
-        Drag a design onto the sheet, then drag to move it. Click it to resize from any corner or side handle (proportions stay locked), or drag the round handle to turn it to any angle (hold Shift for 15° steps). Arrow keys nudge ⅛ in, R turns 90°, Ctrl+D duplicates, Delete deletes the copy. Designs stop at the black frame.
+        Set each image&apos;s width and height, then drag it onto the sheet. Duplicate adds another copy of the same size. Copy makes a separate image you can size on its own. Delete removes that image. On the sheet, drag to move a copy, drag a handle to size that copy, Ctrl+D duplicates it, and Delete removes that copy.
       </p>
 
       {/* One fixed-height line above the sheet, so nothing shifts the sheet while dragging. Full list below. */}
       <p className={`manual-status${problemMessages.length ? ' has-problems' : ''}`} aria-live="polite">
         {problemMessages.length
           ? `${problemMessages.length} to fix: ${problemMessages[0]}`
-          : unplaced.length
-            ? `${unplaced.length} transfer${unplaced.length === 1 ? '' : 's'} left to place.`
-            : 'Layout looks good. Every transfer is placed.'}
+          : transfers.length === 0
+            ? 'Upload an image, then drag it onto the sheet.'
+            : unplaced.length
+              ? `${unplaced.length} transfer${unplaced.length === 1 ? '' : 's'} left to place.`
+              : 'Layout looks good. Every transfer is placed.'}
       </p>
 
       <div className="manual-sheet-head">
@@ -546,9 +662,24 @@ export function ManualSheetEditor({
         {/* Only the printable stretch is shown: the label strips above and below are ours, not the customer's. */}
         <div
           ref={sheetRef}
-          className="manual-sheet"
+          className={`manual-sheet${dropHover ? ' drop-hover' : ''}`}
           style={{ width: sheetWidthIn * pxPerIn, height: (area.bottom - area.top) * pxPerIn }}
           onPointerDown={(event) => { if (event.target === sheetRef.current) setSelected(null) }}
+          onDragOver={(event) => {
+            const text = event.dataTransfer.types.includes('text/plain')
+            if (text || event.dataTransfer.files?.length) { event.preventDefault(); setDropHover(true) }
+          }}
+          onDragLeave={() => setDropHover(false)}
+          onDrop={(event) => {
+            event.preventDefault()
+            setDropHover(false)
+            if (event.dataTransfer.files?.length) { onAddFiles?.(event.dataTransfer.files); return }
+            const match = /^ssgs-design:(\d+)$/.exec(event.dataTransfer.getData('text/plain'))
+            if (!match || !onPlaceDesign) return
+            const point = inchesFromEvent(event)
+            const transfer = transfers.find((item) => item.designId === Number(match[1]))
+            onPlaceDesign(Number(match[1]), point.xIn - (transfer?.widthIn ?? 2) / 2, point.yIn - (transfer?.heightIn ?? 2) / 2)
+          }}
         >
           {area.left > 0 && <div className="manual-side" style={{ left: 0, width: area.left * pxPerIn }} />}
           {area.left > 0 && <div className="manual-side" style={{ right: 0, width: (sheetWidthIn - area.right) * pxPerIn }} />}
@@ -585,7 +716,7 @@ export function ManualSheetEditor({
                 role="button"
                 tabIndex={0}
                 aria-label={`${transfer.name}, ${round2(size.widthIn)} by ${round2(size.heightIn)} inches${problem ? `. ${problem}` : ''}`}
-                className={`manual-piece${isSelected ? ' selected' : ''}${problem ? ' problem' : ''}${dragging === key ? ' dragging' : ''}`}
+                className={`manual-piece${isSelected ? ' selected' : ''}${problem ? ' problem' : ''}${dragging === key ? ' dragging' : ''}${transfer.stretch ? ' stretch' : ''}`}
                 style={{
                   left: placement.xIn * pxPerIn,
                   top: (placement.yIn - area.top) * pxPerIn,
@@ -656,6 +787,11 @@ export function ManualSheetEditor({
           {problemMessages.map((message) => <li key={message}>{message}</li>)}
         </ul>
       )}
+      {ghost && (
+        <div className="manual-ghost" style={{ left: ghost.x, top: ghost.y, width: ghost.w, height: ghost.h }} aria-hidden="true">
+          {ghost.src ? <img src={ghost.src} alt="" /> : null}
+        </div>
+      )}
       <p className="manual-legend">
         <span><i className="frame" /> Sheet edge: designs stop here</span>
         {cutOut && <span><i className="zone" /> Cut-mark columns</span>}
@@ -668,7 +804,14 @@ export function ManualSheetEditor({
 }
 
 /** Exact width / height / angle for the selected copy. Proportions stay locked; typing one sets the other. */
-function SizeBox({ transfer, placement, onScale, onAngle }: { transfer: ManualTransfer; placement: ManualPlacement; onScale: (factor: number) => void; onAngle: (angle: number) => void }) {
+function SizeBox({ transfer, placement, lockAspect = true, onScale, onAbsoluteSize, onAngle }: {
+  transfer: ManualTransfer
+  placement: ManualPlacement
+  lockAspect?: boolean
+  onScale: (factor: number) => void
+  onAbsoluteSize?: (widthIn: number, heightIn: number) => void
+  onAngle: (angle: number) => void
+}) {
   const size = artSize(transfer, placement)
   const footprint = placedSize(transfer, placement)
   const currentAngle = placement.angle ?? 0
@@ -677,10 +820,25 @@ function SizeBox({ transfer, placement, onScale, onAngle }: { transfer: ManualTr
   const [angle, setAngleText] = useState(String(round2(currentAngle)))
   const dpi = placedDpi(transfer, placement)
   const quality = qualityFromDpi(dpi)
-  function commit(value: string, current: number) {
-    const next = Number(value)
-    if (next > 0 && Math.abs(next - current) > 1e-3) onScale(next / current)
-    else { setWidth(String(round2(size.widthIn))); setHeight(String(round2(size.heightIn))) }
+  function commit(side: 'width' | 'height') {
+    const typed = Number(side === 'width' ? width : height)
+    if (!(typed >= 0.5)) {
+      setWidth(String(round2(size.widthIn)))
+      setHeight(String(round2(size.heightIn)))
+      return
+    }
+    if (!lockAspect && onAbsoluteSize) {
+      const nextWidth = side === 'width' ? typed : size.widthIn
+      const nextHeight = side === 'height' ? typed : size.heightIn
+      if (Math.abs(nextWidth - size.widthIn) > 1e-3 || Math.abs(nextHeight - size.heightIn) > 1e-3) onAbsoluteSize(nextWidth, nextHeight)
+      return
+    }
+    const current = side === 'width' ? size.widthIn : size.heightIn
+    if (Math.abs(typed - current) > 1e-3) onScale(typed / current)
+    else {
+      setWidth(String(round2(size.widthIn)))
+      setHeight(String(round2(size.heightIn)))
+    }
   }
   function commitAngle() {
     const next = Number(angle)
@@ -693,21 +851,74 @@ function SizeBox({ transfer, placement, onScale, onAngle }: { transfer: ManualTr
       <strong>Selected: #{transfer.designNumber} {transfer.name}</strong>
       <div className="manual-sizebox-row">
         <label>Width (in)
-          <input type="number" min="0.5" step="0.125" value={width} onChange={(event) => setWidth(event.target.value)} onBlur={() => commit(width, size.widthIn)} onKeyDown={onEnter} />
+          <input type="number" min="0.5" step="0.125" value={width} onChange={(event) => setWidth(event.target.value)} onBlur={() => commit('width')} onKeyDown={onEnter} />
         </label>
-        <Lock size={14} aria-label="Proportions locked" />
+        {lockAspect ? <Lock size={14} aria-label="Proportions locked" /> : null}
         <label>Height (in)
-          <input type="number" min="0.5" step="0.125" value={height} onChange={(event) => setHeight(event.target.value)} onBlur={() => commit(height, size.heightIn)} onKeyDown={onEnter} />
+          <input type="number" min="0.5" step="0.125" value={height} onChange={(event) => setHeight(event.target.value)} onBlur={() => commit('height')} onKeyDown={onEnter} />
         </label>
         <label>Angle (°)
           <input type="number" min="0" max="359" step="1" value={angle} onChange={(event) => setAngleText(event.target.value)} onBlur={commitAngle} onKeyDown={onEnter} />
         </label>
       </div>
       <span>
-        Resizes this copy only. Proportions stay locked so the art never stretches.
+        {lockAspect
+          ? 'Resizes this copy only. Proportions stay locked so the art never stretches.'
+          : 'Perspective is off. This image stretches to the width and height, even if it is taller than it is wide.'}
         {currentAngle ? ` Turned, it takes up ${round2(footprint.widthIn)} × ${round2(footprint.heightIn)} in on the sheet.` : ''}
       </span>
       {dpi > 0 && <span className={`manual-sizebox-quality ${quality.tone}`}>Print quality at this size: {dpi} DPI · {quality.label}</span>}
+    </div>
+  )
+}
+
+/** Width and height for one image in the manual list. Each image keeps its own size. */
+function ImageSizeFields({ name, widthIn, heightIn, maxWidthIn, lockAspect = true, onCommit }: {
+  name: string
+  widthIn: number
+  heightIn: number
+  maxWidthIn: number
+  lockAspect?: boolean
+  onCommit: (widthIn: number, heightIn: number) => void
+}) {
+  const [width, setWidth] = useState(String(round2(widthIn)))
+  const [height, setHeight] = useState(String(round2(heightIn)))
+  useEffect(() => {
+    setWidth(String(round2(widthIn)))
+    setHeight(String(round2(heightIn)))
+  }, [widthIn, heightIn])
+  function reset() {
+    setWidth(String(round2(widthIn)))
+    setHeight(String(round2(heightIn)))
+  }
+  /** Locked: one side sets the other. Perspective off: width and height are independent and the art stretches. */
+  function commit(side: 'width' | 'height') {
+    const typed = Number(side === 'width' ? width : height)
+    if (!lockAspect) {
+      const nextWidth = side === 'width' ? typed : widthIn
+      const nextHeight = side === 'height' ? typed : heightIn
+      if (nextWidth < 0.5 || nextHeight < 0.5 || nextWidth > maxWidthIn || nextHeight > 199) { reset(); return }
+      if (Math.abs(nextWidth - widthIn) <= 1e-3 && Math.abs(nextHeight - heightIn) <= 1e-3) { reset(); return }
+      onCommit(nextWidth, nextHeight)
+      return
+    }
+    const aspect = widthIn > 0 ? heightIn / widthIn : 1
+    if (!(typed >= 0.5) || !Number.isFinite(aspect) || aspect <= 0) { reset(); return }
+    const nextWidth = side === 'width' ? Math.min(maxWidthIn, typed) : Math.min(maxWidthIn, typed / aspect)
+    const nextHeight = nextWidth * aspect
+    if (nextWidth < 0.5 || nextHeight < 0.5 || nextHeight > 199) { reset(); return }
+    if (Math.abs(nextWidth - widthIn) <= 1e-3 && Math.abs(nextHeight - heightIn) <= 1e-3) { reset(); return }
+    onCommit(nextWidth, nextHeight)
+  }
+  const onEnter = (event: React.KeyboardEvent<HTMLInputElement>) => { if (event.key === 'Enter') event.currentTarget.blur() }
+  return (
+    <div className="manual-tile-size">
+      <label>Width (in)
+        <input aria-label={`Width for ${name}`} type="number" min="0.5" max={maxWidthIn} step="0.125" value={width} onChange={(event) => setWidth(event.target.value)} onBlur={() => commit('width')} onKeyDown={onEnter} />
+      </label>
+      <label>Height (in)
+        <input aria-label={`Height for ${name}`} type="number" min="0.5" max="199" step="0.125" value={height} onChange={(event) => setHeight(event.target.value)} onBlur={() => commit('height')} onKeyDown={onEnter} />
+      </label>
     </div>
   )
 }
