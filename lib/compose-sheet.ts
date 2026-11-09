@@ -16,6 +16,8 @@ export type SheetPiece = {
   angleDeg?: number
   artWidthIn?: number
   artHeightIn?: number
+  /** Draw the art stretched to widthIn × heightIn instead of keeping its shape. */
+  stretch?: boolean
 }
 
 export type PlacedSheetPiece = SheetPiece & {
@@ -105,10 +107,12 @@ export type PieceSizeInput = {
   pixelHeight: number
   /** Box width already parsed from the preset or the custom field. */
   widthIn: number
+  /** When true, the box is the printed size and the art is stretched to fill it. */
+  stretch?: boolean
 }
 
 /** The box a design is allowed to fill, before the artwork is fitted into it. */
-function pieceBoxInches(piece: PieceSizeInput): { widthIn: number; heightIn: number } {
+export function pieceBoxSize(piece: PieceSizeInput): { widthIn: number; heightIn: number } {
   if (piece.placement === 'Custom') {
     const height = Number(piece.customHeight)
     return {
@@ -127,7 +131,13 @@ function pieceBoxInches(piece: PieceSizeInput): { widthIn: number; heightIn: num
  * Returns the box itself only when the artwork's pixel size is not known yet.
  */
 export function piecePrintSize(piece: PieceSizeInput): { widthIn: number; heightIn: number } {
-  const box = pieceBoxInches(piece)
+  const box = pieceBoxSize(piece)
+  if (piece.stretch) {
+    return {
+      widthIn: Math.max(0.5, box.widthIn),
+      heightIn: Math.max(0.5, box.heightIn),
+    }
+  }
   // Custom W × H is the size the customer wants printed, whichever way the art
   // is turned. Garment presets stay as max width × height on the shirt.
   if (piece.placement === 'Custom') {
@@ -533,6 +543,29 @@ export async function composeGangSheet(opts: {
     // slack is zero, but a mismatch must never distort a customer's print.
     const naturalW = image.naturalWidth || w
     const naturalH = image.naturalHeight || h
+
+    if (piece.stretch) {
+      if (piece.angleDeg && piece.artWidthIn && piece.artHeightIn) {
+        const artW = piece.artWidthIn * opts.pxPerIn
+        const artH = piece.artHeightIn * opts.pxPerIn
+        context.save()
+        context.translate(x + w / 2, y + h / 2)
+        context.rotate((piece.angleDeg * Math.PI) / 180)
+        context.drawImage(image, -artW / 2, -artH / 2, artW, artH)
+        context.restore()
+        continue
+      }
+      if (piece.rotated) {
+        context.save()
+        context.translate(x, y)
+        context.rotate(Math.PI / 2)
+        context.drawImage(image, 0, -w, h, w)
+        context.restore()
+        continue
+      }
+      context.drawImage(image, x, y, w, h)
+      continue
+    }
 
     if (piece.angleDeg && piece.artWidthIn && piece.artHeightIn) {
       // Fit the art in its upright box, then turn that box about the slot's centre.

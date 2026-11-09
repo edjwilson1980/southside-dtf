@@ -19,7 +19,8 @@ These are **separate products** that share print/packing libraries. Do not mix t
 
 ## Customer manual builder (`/manual`)
 
-- "Arrange My Own Gangsheet": the same builder (`layout="manual"`) where the customer places every transfer on one DTF sheet. The DTF builder shows **We'll arrange it** and **Build my own gang sheet** at the top, before a name is typed. A name already entered carries over.
+- **Create Gangsheet Manually** (`layout="manual"`): the customer sizes each image, then drags it onto one DTF sheet. Each image can be duplicated, copied (a separate image with its own size), or deleted. The DTF builder shows **We'll arrange it** and **Create Gangsheet Manually** at the top, before a name is typed. A name already entered carries over.
+- **Perspective** (customer builder and shop builder): on by default, so the image keeps its shape inside the size box. Turn it off to stretch the image to the exact width and height, including taller than it is wide. The print file stretches the same way.
 - Rules, auto-arrange and the sheet page live in `lib/manual-layout.ts`. The editor is `components/manual-sheet-editor.tsx`
 - Billed like `/`: by how far down the art reaches, snapped up to the ladder. Pre-cut at the same rates. No Print & Press. Cart line is `sheetType: 'built'` (no plugin change); the project JSON records `layout: 'manual'`
 - `/embed/manual` → `/manual?embed=1`

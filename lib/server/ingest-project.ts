@@ -35,6 +35,7 @@ type Design = {
   customHeight: string
   quantity: number
   keepUpright: boolean
+  stretch: boolean
   art: { png: Buffer; width: number; height: number }
   sizeIn: { w: number; h: number }
 }
@@ -106,6 +107,7 @@ export async function designsFromProject(project: SspProject): Promise<Design[]>
       pixelWidth: art.width,
       pixelHeight: art.height,
       widthIn: parsePrintWidthInches(coerced.size, coerced.placement, coerced.customWidth),
+      stretch: Boolean(image.stretch),
     })
     out.push({
       key: `art-${index}`,
@@ -113,6 +115,7 @@ export async function designsFromProject(project: SspProject): Promise<Design[]>
       ...coerced,
       quantity: Math.max(1, image.quantity || 1),
       keepUpright: Boolean(image.keepUpright),
+      stretch: Boolean(image.stretch),
       art: { png: art.png, width: art.width, height: art.height },
       sizeIn: { w: printed.widthIn, h: printed.heightIn },
     })
@@ -120,7 +123,7 @@ export async function designsFromProject(project: SspProject): Promise<Design[]>
   return out
 }
 
-type PieceInput = { previewUrl: string; widthIn: number; heightIn: number; allowRotate: boolean }
+type PieceInput = { previewUrl: string; widthIn: number; heightIn: number; allowRotate: boolean; stretch?: boolean }
 export type IngestPage = SheetPage<PieceInput>
 
 /**
@@ -129,7 +132,7 @@ export type IngestPage = SheetPage<PieceInput>
  */
 export function layoutSheets(designs: Design[], cutOut: boolean) {
   const pieceInputs: PieceInput[] = designs.flatMap((d) =>
-    Array.from({ length: d.quantity }, () => ({ previewUrl: d.key, widthIn: d.sizeIn.w, heightIn: d.sizeIn.h, allowRotate: !d.keepUpright })),
+    Array.from({ length: d.quantity }, () => ({ previewUrl: d.key, widthIn: d.sizeIn.w, heightIn: d.sizeIn.h, allowRotate: !d.keepUpright, stretch: d.stretch })),
   )
   const pagination = paginateGangSheet(pieceInputs, { cutOut })
   if (pagination.tooLarge.length) {

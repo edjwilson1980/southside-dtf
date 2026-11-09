@@ -33,6 +33,8 @@ export type ProjectImageRef = {
   customHeight?: string
   quantity?: number
   keepUpright?: boolean
+  /** True when Perspective is off and the art is stretched to its width and height. */
+  stretch?: boolean
   pixelWidth?: number
   pixelHeight?: number
   placement?: string

@@ -33,6 +33,7 @@ export type RestoredDesignSeed = {
   pixelWidth: number
   pixelHeight: number
   keepUpright: boolean
+  stretch: boolean
   /** True when art could not be loaded — staff should re-upload this slot. */
   needsReupload: boolean
 }
@@ -180,6 +181,7 @@ export async function restoreDesignsFromProject(
       pixelHeight:
         art?.height || image.pixelHeight || image.original?.pxH || image.processed?.pxH || 0,
       keepUpright: Boolean(image.keepUpright),
+      stretch: Boolean(image.stretch),
       needsReupload: !url,
     }
   })
